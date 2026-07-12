@@ -1,41 +1,36 @@
 import React, { useEffect, useState } from 'react';
-import type { AppInfoDto } from '@pi-ide/ipc-contracts';
-import { rpcResult } from './bridge.js';
+import { Workbench } from './workbench/Workbench.js';
+import { StartupErrorView } from './views/StartupErrorView.js';
+import { useAppStore } from './store/appStore.js';
 
-/** Milestone-1 shell: proves the isolated renderer ↔ typed IPC pipeline end to end.
- * Replaced by the full IDE workbench in Milestone 2/3. */
+function parseStartupError(): { code: string; message: string } | null {
+  const hash = window.location.hash;
+  if (!hash.startsWith('#/startup-error')) return null;
+  const query = new URLSearchParams(hash.split('?')[1] ?? '');
+  return {
+    code: query.get('code') ?? 'APP_STARTUP_FAILED',
+    message: query.get('msg') ?? 'The application failed to start.',
+  };
+}
+
 export function App(): React.JSX.Element {
-  const [info, setInfo] = useState<AppInfoDto | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [startupError] = useState(parseStartupError);
+  const ready = useAppStore((s) => s.ready);
+  const init = useAppStore((s) => s.init);
 
   useEffect(() => {
-    void rpcResult('app.getInfo', {}).then((res) => {
-      if (res.ok) setInfo(res.data);
-      else setError(`${res.error.code}: ${res.error.userMessage}`);
-    });
-  }, []);
+    if (!startupError) void init();
+  }, [startupError, init]);
 
-  return (
-    <div className="m1-shell" data-testid="app-shell">
-      <h1>Pi IDE</h1>
-      <p>Engineering baseline (Milestone 1)</p>
-      {error ? <p role="alert">{error}</p> : null}
-      {info ? (
-        <dl data-testid="app-info">
-          <dt>App</dt>
-          <dd data-testid="app-version">{info.appVersion}</dd>
-          <dt>Electron</dt>
-          <dd>{info.electron}</dd>
-          <dt>Node</dt>
-          <dd>{info.node}</dd>
-          <dt>Platform</dt>
-          <dd>
-            {info.platform}/{info.arch}
-          </dd>
-        </dl>
-      ) : (
-        <p data-testid="loading">Loading…</p>
-      )}
-    </div>
-  );
+  if (startupError) {
+    return <StartupErrorView code={startupError.code} message={startupError.message} />;
+  }
+  if (!ready) {
+    return (
+      <div className="empty-state" data-testid="app-loading">
+        Starting…
+      </div>
+    );
+  }
+  return <Workbench />;
 }

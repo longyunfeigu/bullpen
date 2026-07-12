@@ -7,3 +7,4 @@ export * from './ids.js';
 export * from './clock.js';
 export * from './logger.js';
 export * from './async.js';
+export * from './fuzzy.js';

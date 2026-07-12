@@ -20,12 +20,12 @@
 
 | 任务 | 交付 | 依赖 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| M2-01 | 主窗口、菜单、命令面板、主题、布局框架 | M1 | NOT_STARTED |  |
-| M2-02 | Preload 白名单 API 与 schema IPC router | M1-04 | NOT_STARTED |  |
-| M2-03 | SQLite 数据库、migration、事务与备份 | M1 | NOT_STARTED |  |
-| M2-04 | SettingsService、全局/Workspace 覆盖 | M2-03 | NOT_STARTED |  |
-| M2-05 | 结构化日志、错误页、Diagnostics 基础 | M2-03 | NOT_STARTED |  |
-| M2-06 | 窗口/布局/最近项目恢复 | M2-01,M2-03 | NOT_STARTED |  |
+| M2-01 | 主窗口、菜单、命令面板、主题、布局框架 | M1 | VERIFIED | Workbench/menu/palette/theme/layout (E2E m2-shell) |
+| M2-02 | Preload 白名单 API 与 schema IPC router | M1-04 | VERIFIED | preload whitelist + schema router (M1) + settings/layout channels |
+| M2-03 | SQLite 数据库、migration、事务与备份 | M1 | VERIFIED | node:sqlite + migrations + checksum + backup/restore (6 unit tests) |
+| M2-04 | SettingsService、全局/Workspace 覆盖 | M2-03 | VERIFIED | SettingsService + lenient resolve (4 unit tests) + Settings UI |
+| M2-05 | 结构化日志、错误页、Diagnostics 基础 | M2-03 | VERIFIED | FileLogSink rotation + app_errors + Diagnostics view + startup safe mode (E2E m2-db-failure) |
+| M2-06 | 窗口/布局/最近项目恢复 | M2-01,M2-03 | VERIFIED | window-state.json + ui_workspace_state + recent list (E2E restart restore) |
 
 ## Milestone 3: Workspace 与编辑器
 

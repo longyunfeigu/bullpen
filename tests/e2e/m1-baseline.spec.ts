@@ -5,8 +5,8 @@ test.describe('M1 engineering baseline', () => {
   test('renderer is isolated and typed IPC works end to end', async () => {
     const { app, page } = await launchApp();
     try {
-      await expect(page.getByTestId('app-shell')).toBeVisible();
-      await expect(page.getByTestId('app-version')).toHaveText('1.0.0');
+      await expect(page.getByTestId('workbench')).toBeVisible();
+      await expect(page.getByTestId('status-version')).toHaveText('v1.0.0');
 
       // Renderer isolation (spec §12.3): no Node globals, bridge is the only surface.
       const isolation = await page.evaluate(() => ({

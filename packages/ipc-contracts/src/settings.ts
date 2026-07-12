@@ -1,0 +1,90 @@
+import { z } from 'zod';
+
+export const SETTINGS_SCHEMA_VERSION = 1;
+
+export const ThemeSchema = z.enum(['light', 'dark', 'system']);
+
+export const SettingsSchema = z.object({
+  schemaVersion: z.number().int().default(SETTINGS_SCHEMA_VERSION),
+  general: z
+    .object({
+      theme: ThemeSchema.default('system'),
+      uiScale: z.number().min(0.8).max(2).default(1),
+      confirmOnQuitWithRunningAgent: z.boolean().default(true),
+    })
+    .prefault({}),
+  editor: z
+    .object({
+      fontSize: z.number().min(8).max(40).default(13),
+      fontFamily: z
+        .string()
+        .default("Menlo, Monaco, 'SF Mono', Consolas, 'Courier New', monospace"),
+      lineHeight: z.number().min(1).max(3).default(1.55),
+      tabSize: z.number().int().min(1).max(8).default(2),
+      insertSpaces: z.boolean().default(true),
+      wordWrap: z.enum(['off', 'on']).default('off'),
+      minimap: z.boolean().default(true),
+      renderWhitespace: z.enum(['none', 'boundary', 'all']).default('none'),
+      autoSave: z.enum(['off', 'afterDelay', 'onFocusChange']).default('off'),
+      autoSaveDelayMs: z.number().int().min(200).max(60000).default(1000),
+      largeFileSizeMb: z.number().min(1).max(512).default(10),
+    })
+    .prefault({}),
+  terminal: z
+    .object({
+      fontSize: z.number().min(8).max(32).default(12),
+      shellPath: z.string().nullable().default(null),
+      scrollback: z.number().int().min(100).max(200000).default(5000),
+    })
+    .prefault({}),
+  agent: z
+    .object({
+      defaultMode: z.enum(['ask', 'edit', 'auto']).default('edit'),
+      /** Auto mode may auto-approve R1 workspace writes when enabled (spec §19.3 default: off → R0 only). */
+      autoApproveR1: z.boolean().default(false),
+      /** Auto mode may auto-approve recognized verification commands (R2). */
+      autoApproveKnownR2: z.boolean().default(false),
+      maxOutputKb: z.number().int().min(64).max(4096).default(1024),
+    })
+    .prefault({}),
+  models: z
+    .object({
+      defaultProviderId: z.string().nullable().default(null),
+      defaultModelId: z.string().nullable().default(null),
+      defaultThinkingLevel: z
+        .enum(['off', 'minimal', 'low', 'medium', 'high', 'max'])
+        .default('medium'),
+      /** Use the deterministic mock runtime instead of Pi (dev/test only). */
+      useMockRuntime: z.boolean().default(false),
+    })
+    .prefault({}),
+  privacy: z
+    .object({
+      telemetryEnabled: z.boolean().default(false),
+      crashReportsEnabled: z.boolean().default(false),
+    })
+    .prefault({}),
+  updates: z
+    .object({
+      channel: z.enum(['stable', 'beta']).default('stable'),
+      autoCheck: z.boolean().default(true),
+    })
+    .prefault({}),
+  workspace: z
+    .object({
+      ignoreGlobs: z.array(z.string()).default([]),
+      trustProjectPiResources: z.boolean().default(false),
+    })
+    .prefault({}),
+});
+
+export type Settings = z.infer<typeof SettingsSchema>;
+
+/** Sections that a workspace override may touch (WS-014). */
+export const WORKSPACE_OVERRIDABLE_SECTIONS = [
+  'editor',
+  'terminal',
+  'agent',
+  'models',
+  'workspace',
+] as const;

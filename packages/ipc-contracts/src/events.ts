@@ -22,6 +22,11 @@ export const EVENT_CHANNELS = {
     1,
     z.object({ theme: z.enum(['light', 'dark', 'system']), effective: z.enum(['light', 'dark']) }),
   ),
+  'settings.changed': ev(
+    'settings.changed',
+    1,
+    z.object({ issues: z.array(z.string()), overrideKeys: z.array(z.string()) }),
+  ),
 } as const;
 
 export type EventChannelName = keyof typeof EVENT_CHANNELS;

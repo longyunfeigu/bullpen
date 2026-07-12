@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import { fail, ok, productError, type Result } from '@pi-ide/foundation';
 import { AppInfoSchema, RecentWorkspaceSchema, WorkspaceDtoSchema } from './dto.js';
+import { SettingsSchema } from './settings.js';
+import { LayoutStateSchema } from './layout.js';
+
+const SettingsStateSchema = z.object({
+  effective: SettingsSchema,
+  issues: z.array(z.string()),
+  overrideKeys: z.array(z.string()),
+});
 
 export interface ChannelDef<Req extends z.ZodType = z.ZodType, Res extends z.ZodType = z.ZodType> {
   name: string;
@@ -48,6 +56,80 @@ export const CHANNELS = {
     1,
     z.object({}).strict(),
     z.object({ items: z.array(RecentWorkspaceSchema) }),
+  ),
+  'settings.get': ch('settings.get', 1, z.object({}).strict(), SettingsStateSchema),
+  'settings.update': ch(
+    'settings.update',
+    1,
+    z
+      .object({
+        scope: z.enum(['global', 'workspace']),
+        patch: z.record(z.string(), z.unknown()),
+      })
+      .strict(),
+    SettingsStateSchema,
+  ),
+  'settings.reset': ch(
+    'settings.reset',
+    1,
+    z.object({ scope: z.enum(['global', 'workspace']) }).strict(),
+    SettingsStateSchema,
+  ),
+  'layout.get': ch(
+    'layout.get',
+    1,
+    z.object({}).strict(),
+    z.object({ layout: LayoutStateSchema.nullable() }),
+  ),
+  'layout.save': ch(
+    'layout.save',
+    1,
+    z.object({ layout: LayoutStateSchema }).strict(),
+    z.object({ saved: z.boolean() }),
+  ),
+  'diagnostics.get': ch(
+    'diagnostics.get',
+    1,
+    z.object({}).strict(),
+    z.object({
+      dbOk: z.boolean(),
+      dbDetail: z.string(),
+      logsDir: z.string(),
+      components: z.array(
+        z.object({
+          name: z.string(),
+          status: z.enum(['ok', 'degraded', 'down', 'idle']),
+          detail: z.string(),
+        }),
+      ),
+      recentErrors: z.array(
+        z.object({ code: z.string(), component: z.string(), severity: z.string(), at: z.string() }),
+      ),
+    }),
+  ),
+  'diagnostics.openLogsFolder': ch(
+    'diagnostics.openLogsFolder',
+    1,
+    z.object({}).strict(),
+    z.object({ opened: z.boolean() }),
+  ),
+  'app.reportClientError': ch(
+    'app.reportClientError',
+    1,
+    z
+      .object({
+        code: z.string().max(64),
+        message: z.string().max(2000),
+        stack: z.string().max(8000).optional(),
+      })
+      .strict(),
+    z.object({ logged: z.boolean() }),
+  ),
+  'app.setQuitBlockers': ch(
+    'app.setQuitBlockers',
+    1,
+    z.object({ blockers: z.array(z.string().max(200)).max(20) }).strict(),
+    z.object({ ok: z.boolean() }),
   ),
 } as const;
 
