@@ -31,13 +31,13 @@
 
 | 任务 | 交付 | 依赖 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| M3-01 | Workspace open/close/recent/trust model | M2 | NOT_STARTED |  |
-| M3-02 | canonical path、文件树、忽略规则、监听器 | M3-01 | NOT_STARTED |  |
-| M3-03 | Document Store revision/hash/dirty model | M3-01 | NOT_STARTED |  |
-| M3-04 | Monaco tabs、split、save、autosave | M3-03 | NOT_STARTED |  |
-| M3-05 | 外部变化与冲突 UI | M3-02,M3-03 | NOT_STARTED |  |
-| M3-06 | Diff/Conflict Editor | M3-04 | NOT_STARTED |  |
-| M3-07 | 大文件/二进制/编码/换行符处理 | M3-03 | NOT_STARTED |  |
+| M3-01 | Workspace open/close/recent/trust model | M2 | VERIFIED | WorkspaceHost + workspaces table + trust prompt (WS-015) |
+| M3-02 | canonical path、文件树、忽略规则、监听器 | M3-01 | VERIFIED | canonical/realpath boundary (9 unit tests incl. symlink escape), lazy tree + ignore, recursive watcher |
+| M3-03 | Document Store revision/hash/dirty model | M3-01 | VERIFIED | DocumentStore 11 unit tests: revisions/hash/dirty/conflict/binary/large/EOL/own-write suppression |
+| M3-04 | Monaco tabs、split、save、autosave | M3-03 | VERIFIED | Monaco tabs/split/save/autosave/viewstate + tab restore (E2E-002) |
+| M3-05 | 外部变化与冲突 UI | M3-02,M3-03 | VERIFIED | conflict bar Reload/Compare/Keep + renderer dirty-guard (E2E-003) |
+| M3-06 | Diff/Conflict Editor | M3-04 | VERIFIED | Monaco diff compare overlay (disk vs buffer) |
+| M3-07 | 大文件/二进制/编码/换行符处理 | M3-03 | VERIFIED | binary/large/EOL/BOM handling + editable cap + status bar EOL toggle |
 
 ## Milestone 4: 搜索、LSP 与终端
 

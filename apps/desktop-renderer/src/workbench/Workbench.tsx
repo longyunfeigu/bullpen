@@ -145,6 +145,8 @@ export const statusBarRegistry: { left: React.ComponentType[]; right: React.Comp
   right: [],
 };
 export const titleBarRegistry: { center: React.ComponentType[] } = { center: [] };
+export const overlayRegistry: React.ComponentType[] = [];
+export const initRegistry: Array<() => void> = [];
 
 function BottomPanelContent({ tab }: { tab: BottomTab }): React.JSX.Element {
   const Component = bottomTabRegistry[tab];
@@ -195,6 +197,11 @@ export function Workbench(): React.JSX.Element {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [setOverlay]);
+
+  useEffect(() => {
+    for (const init of initRegistry) init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     return onEvent('app.menuAction', ({ action }) => {
@@ -428,6 +435,10 @@ export function Workbench(): React.JSX.Element {
           </div>
         </div>
       ) : null}
+
+      {overlayRegistry.map((C, i) => (
+        <C key={i} />
+      ))}
 
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (

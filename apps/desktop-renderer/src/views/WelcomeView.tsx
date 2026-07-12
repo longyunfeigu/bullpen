@@ -3,6 +3,7 @@ import type { RecentWorkspaceDto } from '@pi-ide/ipc-contracts';
 import { rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { executeCommand } from '../commands.js';
+import { useWorkspaceStore } from '../store/workspaceStore.js';
 
 export function WelcomeView(): React.JSX.Element {
   const appInfo = useAppStore((s) => s.appInfo);
@@ -45,7 +46,7 @@ export function WelcomeView(): React.JSX.Element {
               data-testid="recent-workspace"
               disabled={!r.exists}
               title={r.path}
-              onClick={() => executeCommand(`workspace.openRecent:${r.path}`)}
+              onClick={() => void useWorkspaceStore.getState().openPath(r.path)}
             >
               <span>{r.displayName}</span>
               <span className="qp-detail">

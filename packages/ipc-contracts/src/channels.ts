@@ -3,6 +3,7 @@ import { fail, ok, productError, type Result } from '@pi-ide/foundation';
 import { AppInfoSchema, RecentWorkspaceSchema, WorkspaceDtoSchema } from './dto.js';
 import { SettingsSchema } from './settings.js';
 import { LayoutStateSchema } from './layout.js';
+import { DirEntrySchema, DocumentDtoSchema, EolSchema, OpenTabsStateSchema } from './documents.js';
 
 const SettingsStateSchema = z.object({
   effective: SettingsSchema,
@@ -130,6 +131,110 @@ export const CHANNELS = {
     1,
     z.object({ blockers: z.array(z.string().max(200)).max(20) }).strict(),
     z.object({ ok: z.boolean() }),
+  ),
+  'workspace.close': ch(
+    'workspace.close',
+    1,
+    z.object({}).strict(),
+    z.object({ closed: z.boolean() }),
+  ),
+  'workspace.current': ch(
+    'workspace.current',
+    1,
+    z.object({}).strict(),
+    z.object({ workspace: WorkspaceDtoSchema.nullable() }),
+  ),
+  'workspace.setTrust': ch(
+    'workspace.setTrust',
+    1,
+    z.object({ trusted: z.boolean() }).strict(),
+    z.object({ workspace: WorkspaceDtoSchema }),
+  ),
+  'fs.listDir': ch(
+    'fs.listDir',
+    1,
+    z.object({ dir: z.string(), showIgnored: z.boolean().default(false) }).strict(),
+    z.object({ entries: z.array(DirEntrySchema) }),
+  ),
+  'fs.create': ch(
+    'fs.create',
+    1,
+    z
+      .object({
+        parentDir: z.string(),
+        name: z.string().min(1).max(255),
+        kind: z.enum(['file', 'dir']),
+      })
+      .strict(),
+    z.object({ path: z.string() }),
+  ),
+  'fs.rename': ch(
+    'fs.rename',
+    1,
+    z.object({ path: z.string(), newName: z.string().min(1).max(255) }).strict(),
+    z.object({ newPath: z.string() }),
+  ),
+  'fs.trash': ch(
+    'fs.trash',
+    1,
+    z.object({ path: z.string() }).strict(),
+    z.object({ trashed: z.boolean() }),
+  ),
+  'doc.open': ch(
+    'doc.open',
+    1,
+    z.object({ path: z.string() }).strict(),
+    z.object({ doc: DocumentDtoSchema }),
+  ),
+  'doc.update': ch(
+    'doc.update',
+    1,
+    z.object({ path: z.string(), content: z.string() }).strict(),
+    z.object({ dirty: z.boolean(), bufferRevision: z.number().int() }),
+  ),
+  'doc.save': ch(
+    'doc.save',
+    1,
+    z
+      .object({ path: z.string(), content: z.string().optional(), force: z.boolean().optional() })
+      .strict(),
+    z.object({ doc: DocumentDtoSchema }),
+  ),
+  'doc.close': ch(
+    'doc.close',
+    1,
+    z.object({ path: z.string() }).strict(),
+    z.object({ closed: z.boolean() }),
+  ),
+  'doc.resolveExternal': ch(
+    'doc.resolveExternal',
+    1,
+    z.object({ path: z.string(), choice: z.enum(['reload', 'keep']) }).strict(),
+    z.object({ doc: DocumentDtoSchema }),
+  ),
+  'doc.setEol': ch(
+    'doc.setEol',
+    1,
+    z.object({ path: z.string(), eol: EolSchema }).strict(),
+    z.object({ doc: DocumentDtoSchema }),
+  ),
+  'doc.readDisk': ch(
+    'doc.readDisk',
+    1,
+    z.object({ path: z.string() }).strict(),
+    z.object({ content: z.string(), exists: z.boolean() }),
+  ),
+  'tabs.get': ch(
+    'tabs.get',
+    1,
+    z.object({}).strict(),
+    z.object({ tabs: OpenTabsStateSchema.nullable() }),
+  ),
+  'tabs.save': ch(
+    'tabs.save',
+    1,
+    z.object({ tabs: OpenTabsStateSchema }).strict(),
+    z.object({ saved: z.boolean() }),
   ),
 } as const;
 

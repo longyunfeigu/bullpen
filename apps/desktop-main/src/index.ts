@@ -13,6 +13,8 @@ import { StateService } from './services/state-service.js';
 import { WindowStateKeeper } from './services/window-state.js';
 import { installApplicationMenu } from './menu.js';
 import { broadcast } from './broadcast.js';
+import { WorkspaceHost } from './services/workspace-host.js';
+import { registerWorkspaceHandlers } from './ipc/workspace-handlers.js';
 
 const DEV_SERVER_URL = process.env.PI_IDE_DEV_SERVER_URL;
 const isDev = Boolean(DEV_SERVER_URL);
@@ -28,6 +30,7 @@ interface Bootstrap {
   logger: Logger;
   settings: SettingsService | null;
   state: StateService | null;
+  workspaceHost: WorkspaceHost | null;
   startupError: ProductError | null;
 }
 
@@ -307,17 +310,19 @@ if (!gotLock) {
 
     let settings: SettingsService | null = null;
     let state: StateService | null = null;
+    let workspaceHost: WorkspaceHost | null = null;
     let startupError: ProductError | null = null;
 
     try {
       settings = new SettingsService(paths.settingsFile, logger.child('settings'));
       state = new StateService(paths.databaseFile, paths.backupsDir, logger.child('db'));
+      workspaceHost = new WorkspaceHost(state, settings, logger.child('workspace'));
     } catch (e) {
       startupError = toProductError(e, 'APP_STARTUP_FAILED');
       logger.error('startup degraded: database unavailable', { code: startupError.code });
     }
 
-    boot = { paths, logs, logger, settings, state, startupError };
+    boot = { paths, logs, logger, settings, state, workspaceHost, startupError };
 
     // Theme (APP-006)
     if (settings) {
@@ -339,6 +344,19 @@ if (!gotLock) {
     if (!isDev) registerAppProtocol(join(app.getAppPath(), 'apps/desktop-renderer/dist'));
     installApplicationMenu({ isDev });
     registerCoreHandlers(boot);
+    if (workspaceHost && state) {
+      registerWorkspaceHandlers(workspaceHost, state, logger.child('ipc'));
+    }
+
+    // E2E hook: open a workspace directly from the environment.
+    const autoOpen = process.env.PI_IDE_OPEN_WORKSPACE;
+    if (autoOpen && workspaceHost) {
+      workspaceHost.open(autoOpen).catch((e) => {
+        logger.error('auto-open workspace failed', {
+          error: e instanceof Error ? e.message : String(e),
+        });
+      });
+    }
 
     logger.info('app ready', {
       dev: isDev,

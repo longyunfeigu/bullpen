@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { DocumentDtoSchema, FsChangeSchema } from './documents.js';
+import { WorkspaceDtoSchema } from './dto.js';
 
 export interface EventChannelDef<S extends z.ZodType = z.ZodType> {
   name: string;
@@ -27,6 +29,13 @@ export const EVENT_CHANNELS = {
     1,
     z.object({ issues: z.array(z.string()), overrideKeys: z.array(z.string()) }),
   ),
+  'workspace.changed': ev(
+    'workspace.changed',
+    1,
+    z.object({ workspace: WorkspaceDtoSchema.nullable() }),
+  ),
+  'fs.batch': ev('fs.batch', 1, z.object({ changes: z.array(FsChangeSchema).max(2000) })),
+  'doc.changedExternally': ev('doc.changedExternally', 1, z.object({ doc: DocumentDtoSchema })),
 } as const;
 
 export type EventChannelName = keyof typeof EVENT_CHANNELS;
