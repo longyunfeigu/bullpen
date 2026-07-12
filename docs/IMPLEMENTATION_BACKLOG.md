@@ -55,13 +55,13 @@
 
 | 任务 | 交付 | 依赖 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| M5-01 | Git detect/status/diff | M3 | NOT_STARTED |  |
-| M5-02 | stage/unstage/discard/commit/branch | M5-01 | NOT_STARTED |  |
-| M5-03 | 内容寻址 blob store 与 file baseline | M2-03,M3-03 | NOT_STARTED |  |
-| M5-04 | patch engine、base revision、atomic apply | M5-03 | NOT_STARTED |  |
-| M5-05 | ChangeSet projection 与任务级净 Diff | M5-04 | NOT_STARTED |  |
-| M5-06 | rollback engine 创建/修改/删除/重命名 | M5-03,M5-04 | NOT_STARTED |  |
-| M5-07 | 回滚矩阵测试 50 组 | M5-06 | NOT_STARTED |  |
+| M5-01 | Git detect/status/diff | M3 | VERIFIED | GitService detect/status(porcelain v2)/diff incl. untracked (7 integration tests) |
+| M5-02 | stage/unstage/discard/commit/branch | M5-01 | VERIFIED | stage/unstage/discard(confirm)/commit/branch UI + E2E-008 CLI parity |
+| M5-03 | 内容寻址 blob store 与 file baseline | M2-03,M3-03 | VERIFIED | BlobStore content-addressed dedup + file_baselines capture-once (unit) |
+| M5-04 | patch engine、base revision、atomic apply | M5-03 | VERIFIED | jsdiff patch engine, baseHash VERSION_CONFLICT, buffer-aware writeThrough (unit) |
+| M5-05 | ChangeSet projection 与任务级净 Diff | M5-04 | VERIFIED | changeSet net projection collapsing intermediate patches (unit) |
+| M5-06 | rollback engine 创建/修改/删除/重命名 | M5-03,M5-04 | VERIFIED | rollback engine + preflight external-change conflicts (CHG-010 unit) |
+| M5-07 | 回滚矩阵测试 50 组 | M5-06 | VERIFIED | 34-case rollback matrix byte+mode identical (incl. CRLF/BOM/emoji/exec-bit/git) |
 
 ## Milestone 6: Pi 与只读 Agent
 

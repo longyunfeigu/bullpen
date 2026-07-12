@@ -64,6 +64,7 @@ export const EVENT_CHANNELS = {
   ),
   'terminal.data': ev('terminal.data', 1, z.object({ id: z.string(), data: z.string() })),
   'terminal.exit': ev('terminal.exit', 1, z.object({ id: z.string(), exitCode: z.number() })),
+  'git.changed': ev('git.changed', 1, z.object({ reason: z.string() })),
   'lsp.pythonDiagnostics': ev(
     'lsp.pythonDiagnostics',
     1,

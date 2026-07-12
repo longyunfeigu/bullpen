@@ -338,6 +338,87 @@ export const CHANNELS = {
       ),
     }),
   ),
+  'git.status': ch(
+    'git.status',
+    1,
+    z.object({}).strict(),
+    z.object({
+      gitAvailable: z.boolean(),
+      isRepo: z.boolean(),
+      branch: z.string().nullable(),
+      upstream: z.string().nullable(),
+      ahead: z.number(),
+      behind: z.number(),
+      detached: z.boolean(),
+      head: z.string().nullable(),
+      entries: z.array(
+        z.object({
+          path: z.string(),
+          origPath: z.string().nullable(),
+          group: z.enum(['staged', 'changes', 'untracked', 'conflict']),
+          indexState: z.string(),
+          workState: z.string(),
+        }),
+      ),
+    }),
+  ),
+  'git.diffFile': ch(
+    'git.diffFile',
+    1,
+    z.object({ path: z.string(), staged: z.boolean() }).strict(),
+    z.object({ diff: z.string() }),
+  ),
+  'git.show': ch(
+    'git.show',
+    1,
+    z.object({ path: z.string(), ref: z.string() }).strict(),
+    z.object({ content: z.string() }),
+  ),
+  'git.stage': ch(
+    'git.stage',
+    1,
+    z.object({ paths: z.array(z.string()).min(1).max(500) }).strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  'git.unstage': ch(
+    'git.unstage',
+    1,
+    z.object({ paths: z.array(z.string()).min(1).max(500) }).strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  'git.discard': ch(
+    'git.discard',
+    1,
+    z
+      .object({ paths: z.array(z.string()).min(1).max(500), includeUntracked: z.boolean() })
+      .strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  'git.commit': ch(
+    'git.commit',
+    1,
+    z.object({ message: z.string().min(1).max(5000) }).strict(),
+    z.object({ output: z.string() }),
+  ),
+  'git.branches': ch(
+    'git.branches',
+    1,
+    z.object({}).strict(),
+    z.object({ items: z.array(z.object({ name: z.string(), current: z.boolean() })) }),
+  ),
+  'git.checkout': ch(
+    'git.checkout',
+    1,
+    z.object({ name: z.string().min(1).max(200) }).strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  'git.createBranch': ch(
+    'git.createBranch',
+    1,
+    z.object({ name: z.string().min(1).max(200) }).strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  'git.init': ch('git.init', 1, z.object({}).strict(), z.object({ ok: z.boolean() })),
   'lsp.status': ch(
     'lsp.status',
     1,

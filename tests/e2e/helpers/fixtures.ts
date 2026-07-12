@@ -1,4 +1,5 @@
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -32,5 +33,16 @@ export function createTsSmallFixture(): string {
     `const ok = 2 + 3 === 5;\nconsole.log(ok ? 'PASS add' : 'FAIL add');\nprocess.exit(ok ? 0 : 1);\n`,
   );
   writeFileSync(join(root, 'README.md'), '# Fixture\n\nSmall TS project for E2E.\n');
+  return root;
+}
+
+/** ts-small fixture with an initialized git repository and one commit. */
+export function createGitFixture(): string {
+  const root = createTsSmallFixture();
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 'e2e@example.com'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 'E2E'], { cwd: root });
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-qm', 'initial'], { cwd: root });
   return root;
 }

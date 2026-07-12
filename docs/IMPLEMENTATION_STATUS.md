@@ -1,7 +1,7 @@
 # IMPLEMENTATION_STATUS.md
 
 Overall status: IN_PROGRESS  
-Current milestone: 5  
+Current milestone: 6  
 Last verified commit: —
 
 ## Status legend
@@ -20,7 +20,7 @@ Last verified commit: —
 | 2. Shell and persistence | VERIFIED | E2E m2-shell (restart restore), m2-db-failure (safe mode), 10 unit tests (db+settings) | |
 | 3. Workspace and editor | VERIFIED | E2E-002/003 pass (m3-editor.spec), 31 unit tests (doc store/workspace/path boundary), 10k-file lazy tree integration test | Data-loss race renderer-guard documented in editorStore |
 | 4. Search, LSP, terminal | VERIFIED | E2E-004..007 pass, 6 search unit tests, full E2E suite 12/12 twice | rg via system binary (ADR-0003); python LSP degrades with guidance |
-| 5. Git and changes | NOT_STARTED | | |
+| 5. Git and changes | VERIFIED | E2E-008 + non-git flow, 51 unit tests incl. 34-case rollback matrix | Full 50-case matrix expands at M12 gate run |
 | 6. Pi read-only agent | NOT_STARTED | | |
 | 7. Tools and permissions | NOT_STARTED | | |
 | 8. Agent editing and review | NOT_STARTED | | |

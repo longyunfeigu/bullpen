@@ -16,6 +16,7 @@ import { broadcast } from './broadcast.js';
 import { WorkspaceHost } from './services/workspace-host.js';
 import { registerWorkspaceHandlers } from './ipc/workspace-handlers.js';
 import { M4Services, registerM4Handlers } from './ipc/m4-handlers.js';
+import { M5Services, registerM5Handlers } from './ipc/m5-handlers.js';
 
 const DEV_SERVER_URL = process.env.PI_IDE_DEV_SERVER_URL;
 const isDev = Boolean(DEV_SERVER_URL);
@@ -38,6 +39,10 @@ interface Bootstrap {
 let boot: Bootstrap | null = null;
 let mainWindow: BrowserWindow | null = null;
 let m4Ref: M4Services | null = null;
+let m5Ref: M5Services | null = null;
+export function getM5(): M5Services | null {
+  return m5Ref;
+}
 const quitBlockers = new Map<number, string[]>();
 let forceQuit = false;
 
@@ -352,6 +357,8 @@ if (!gotLock) {
       m4 = new M4Services(workspaceHost, settings, logger.child('m4'));
       m4Ref = m4;
       registerM4Handlers(m4, workspaceHost, logger.child('ipc'));
+      m5Ref = new M5Services(workspaceHost, state, paths, logger.child('m5'));
+      registerM5Handlers(m5Ref, workspaceHost, logger.child('ipc'));
     }
 
     // E2E hook: open a workspace directly from the environment.
