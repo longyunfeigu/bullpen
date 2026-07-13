@@ -166,13 +166,13 @@ export function HomeView(): React.JSX.Element {
     return () => document.removeEventListener('mousedown', onDown);
   }, [projectMenuOpen, pickerOpen]);
 
+  // ADR-0008 (PIVOT-021/022): tasks open in their Task Room — never the Editor.
   const openTask = useCallback(
     (taskId: string, options: { review?: boolean } = {}) => {
       void taskStore.openTask(taskId).then(() => {
         if (options.review) void taskStore.openReview();
       });
-      app.setSurface('workspace');
-      app.setLayout({ agentPanelVisible: true });
+      app.openTaskRoom(taskId);
     },
     [taskStore, app],
   );
@@ -227,8 +227,9 @@ export function HomeView(): React.JSX.Element {
       setCriteria('');
       setSelectedVerif(new Set());
       setCustomVerif([]);
-      app.setSurface('workspace');
-      app.setLayout({ agentPanelVisible: true });
+      // Stay on the Home surface (PIVOT-022): open the new task's room.
+      const newId = useTaskStore.getState().activeTaskId;
+      if (newId) app.openTaskRoom(newId);
     }
   };
 
@@ -484,16 +485,7 @@ export function HomeView(): React.JSX.Element {
 
       {/* ---------- main ---------- */}
       <main className="hm-main">
-        <div className="hm-main-top">
-          <button
-            className="tb-chip"
-            data-testid="home-enter-ide"
-            title="Open the full editor"
-            onClick={() => app.setSurface('workspace')}
-          >
-            Editor →
-          </button>
-        </div>
+        <div className="hm-main-top" />
 
         <div className={`hm-hero ${needsYou.length > 0 || running.length > 0 ? 'compact' : ''}`}>
           <h1>What should we build?</h1>
@@ -818,12 +810,11 @@ export function HomeView(): React.JSX.Element {
   );
 }
 
-/** Notification click → surface the task (PIVOT-014); registered once. */
+/** Notification click → the task's room (PIVOT-014/021); registered once. */
 export function registerHomeSurfaceListeners(): void {
   onEvent('app.focusTask', ({ taskId }) => {
     void useTaskStore.getState().openTask(taskId);
-    useAppStore.getState().setSurface('workspace');
-    useAppStore.getState().setLayout({ agentPanelVisible: true });
+    useAppStore.getState().openTaskRoom(taskId);
   });
   useActivityStore.getState().init();
 }

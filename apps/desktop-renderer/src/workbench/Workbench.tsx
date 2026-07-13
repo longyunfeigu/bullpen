@@ -389,7 +389,9 @@ export function Workbench(): React.JSX.Element {
               data-testid="agent-panel"
               aria-label="Agent panel"
             >
-              {AgentMain ? (
+              {/* Mounted only on the Editor surface — the Task Room owns these
+                  testids/flows while the Home surface covers the workbench. */}
+              {AgentMain && surface === 'workspace' ? (
                 <AgentMain />
               ) : (
                 <div className="empty-state">

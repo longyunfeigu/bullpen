@@ -42,8 +42,10 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
       await page.getByTestId('home-intent').fill('[scenario:edit-basic] quick change with context');
       await page.getByTestId('home-submit').click();
 
-      // The charter carries everything into the run's opening message.
+      // The charter carries everything into the run's opening message; submit
+      // opens the Task Room (PIVOT-021/022), never the Editor.
       await expect(page.getByTestId('home-view')).toHaveCount(0);
+      await expect(page.getByTestId('task-room')).toBeVisible();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
       });
@@ -71,16 +73,17 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
 
       // The run pauses for plan approval; Home shows it under "Needs you".
       await expect(page.getByTestId('plan-card')).toBeVisible({ timeout: 20000 });
-      await page.getByTestId('surface-home').click();
+      await page.getByTestId('task-room-back').click();
       const needs = page.getByTestId('home-mc-needs');
       await expect(needs).toBeVisible();
       await expect(needs).toContainText('Plan ready');
       await expect(needs).toContainText('refactor utils');
       await expect(needs).toContainText('Proposed a plan'); // live activity line
 
-      // Card click jumps straight to the waiting task.
+      // Card click jumps straight to the waiting task's room.
       await needs.locator('button.hm-tcard').first().click();
       await expect(page.getByTestId('home-view')).toHaveCount(0);
+      await expect(page.getByTestId('task-room')).toBeVisible();
       await expect(page.getByTestId('plan-card')).toBeVisible();
       await page.getByTestId('plan-approve').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
@@ -88,7 +91,7 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
       });
 
       // Review-ready tasks surface in Needs you and behind the Reviews badge.
-      await page.getByTestId('surface-home').click();
+      await page.getByTestId('task-room-back').click();
       await expect(page.getByTestId('home-mc-needs')).toContainText('Review');
       await expect(page.getByTestId('home-reviews')).toContainText('1');
       await page.getByTestId('home-reviews').click();

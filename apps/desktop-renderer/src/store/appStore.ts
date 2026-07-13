@@ -31,6 +31,8 @@ interface AppStore {
   toasts: Toast[];
   /** Dual-form shell (ADR-0004): Home task launcher vs full IDE workspace. */
   surface: 'home' | 'workspace';
+  /** Task Room (ADR-0008, PIVOT-021): task page inside the Home surface. */
+  taskRoomTaskId: string | null;
   /** True while the Home project menu is opening a workspace — suppresses the auto-switch. */
   homePick: boolean;
   /** File refs queued for the next Home charter (e.g. "attach annotated image"). */
@@ -38,6 +40,8 @@ interface AppStore {
 
   init(): Promise<void>;
   setSurface(surface: 'home' | 'workspace'): void;
+  openTaskRoom(taskId: string): void;
+  closeTaskRoom(): void;
   setHomePick(inProgress: boolean): void;
   addPendingRefs(refs: string[]): void;
   consumePendingRefs(): string[];
@@ -104,11 +108,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
   overlay: 'none',
   toasts: [],
   surface: 'home',
+  taskRoomTaskId: null,
   homePick: false,
   pendingRefs: [],
 
   setSurface(surface) {
     set({ surface });
+  },
+
+  openTaskRoom(taskId) {
+    set({ taskRoomTaskId: taskId, surface: 'home' });
+  },
+
+  closeTaskRoom() {
+    set({ taskRoomTaskId: null });
   },
 
   setHomePick(inProgress) {

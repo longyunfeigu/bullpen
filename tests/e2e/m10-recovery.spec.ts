@@ -202,7 +202,9 @@ test.describe('M10 — crash recovery, reliability, diagnostics', () => {
         timeout: 30000,
       });
 
-      // Export from Diagnostics (command palette route).
+      // Export from Diagnostics (command palette route) — the palette chip
+      // lives in the Editor's title bar (ADR-0008).
+      await page.getByTestId('task-room-open-editor').click();
       await page.getByTestId('palette-chip').click();
       await page.getByPlaceholder('Type a command…').fill('diagnostics');
       await page.keyboard.press('Enter');

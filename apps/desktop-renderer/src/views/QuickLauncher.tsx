@@ -6,6 +6,7 @@ import { useTaskStore } from '../store/taskStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { openWorkspaceFile } from './PathLinks.js';
 import { Ic } from './home-icons.js';
+import { stateShort } from './labels.js';
 
 interface Entry {
   id: string;
@@ -109,11 +110,11 @@ export function QuickLauncher(): React.JSX.Element | null {
         group: 'Tasks',
         icon: 'inbox',
         label: t.title,
-        sub: t.state,
+        sub: stateShort(t.state),
         run: () => {
+          // ADR-0008: tasks open in their Task Room, not the Editor.
           void useTaskStore.getState().openTask(t.id);
-          useAppStore.getState().setSurface('workspace');
-          useAppStore.getState().setLayout({ agentPanelVisible: true });
+          useAppStore.getState().openTaskRoom(t.id);
         },
       });
     }

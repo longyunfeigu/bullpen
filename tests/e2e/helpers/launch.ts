@@ -45,7 +45,8 @@ export async function launchApp(
         .waitFor({ state: 'hidden', timeout: 15000 })
         .catch(() => undefined);
     } else {
-      const enter = page.getByTestId('home-enter-ide');
+      // ADR-0008 entry consolidation: the sidebar "Editor" row is the way in.
+      const enter = page.getByTestId('home-open-ide');
       await enter.waitFor({ state: 'visible', timeout: 4000 }).catch(() => undefined);
       if (await enter.isVisible().catch(() => false)) {
         await enter.click().catch(() => undefined);

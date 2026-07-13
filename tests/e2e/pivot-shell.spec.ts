@@ -14,8 +14,8 @@ test.describe('Dual-form shell pivot (ADR-0004, PIVOT-001..010)', () => {
       await expect(page.getByTestId('home-view')).toContainText('What should we build?');
       await expect(page.getByTestId('home-view')).not.toContainText('Pi IDE');
 
-      // PIVOT-006: into the IDE surface and back.
-      await page.getByTestId('home-enter-ide').click();
+      // PIVOT-006/022: into the Editor via the sidebar row and back.
+      await page.getByTestId('home-open-ide').click();
       await expect(page.getByTestId('home-view')).toHaveCount(0);
       await expect(page.getByTestId('workbench')).toBeVisible();
       await expect(page.locator('.tb-title')).toHaveText('Charter');
@@ -56,18 +56,19 @@ test.describe('Dual-form shell pivot (ADR-0004, PIVOT-001..010)', () => {
       await expect(page.getByTestId('home-model')).toHaveValue(/mock/);
       await page.getByTestId('home-mode-auto').click();
 
-      // PIVOT-005: submit switches to the workspace surface with the task running.
+      // PIVOT-005/021/022: submit stays on the Home surface — the task's room
+      // opens (never the Editor).
       await page.getByTestId('home-intent').fill('[scenario:edit-basic] quick fix from home');
       await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('home-view')).toHaveCount(0);
-      await expect(page.getByTestId('agent-panel-main')).toBeVisible();
+      await expect(page.getByTestId('task-room')).toBeVisible();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
       });
       await expect(page.getByTestId('tl-report')).toBeVisible();
 
       // PIVOT-007: back on Home, the task shows up in recent tasks.
-      await page.getByTestId('surface-home').click();
+      await page.getByTestId('task-room-back').click();
       await expect(page.getByTestId('home-view')).toContainText('quick fix from home');
     } finally {
       await app.close();

@@ -56,7 +56,18 @@ test('soak: 50 consecutive tasks, one worker, zero restarts, clean exit', async 
   let firstPid: number | null = null;
   try {
     for (let i = 1; i <= 50; i += 1) {
-      await page.getByTestId('surface-home').click();
+      // Back to the launcher: from the previous task's room, or from the Editor
+      // on the first lap (ADR-0008 navigation).
+      if (
+        await page
+          .getByTestId('task-room-back')
+          .isVisible()
+          .catch(() => false)
+      ) {
+        await page.getByTestId('task-room-back').click();
+      } else {
+        await page.getByTestId('surface-home').click();
+      }
       await expect(page.getByTestId('home-model')).toHaveValue(/mock/);
       await page.getByTestId('home-mode-auto').click();
       await page.getByTestId('home-intent').fill(`[scenario:edit-basic] soak run ${i}`);

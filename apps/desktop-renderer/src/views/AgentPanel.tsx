@@ -10,8 +10,6 @@ import { useTaskStore, activeTask, RUNNING_TASK_STATES } from '../store/taskStor
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useEditorStore } from '../store/editorStore.js';
 import { NewTaskDialog } from './NewTaskDialog.js';
-import { ReviewView } from './ReviewView.js';
-import { ReplayView } from './ReplayView.js';
 import { PathChips } from './PathLinks.js';
 import { Ic } from './home-icons.js';
 import { ConfirmDangerButton } from './ui.js';
@@ -475,7 +473,7 @@ function QuestionCard(props: { prompt: AskUserPromptDto; answered: boolean }): R
 }
 
 /** Human state chip (PIVOT-023). Tests assert the machine state via data-state. */
-function StateBadge({ state }: { state: string }): React.JSX.Element {
+export function StateBadge({ state }: { state: string }): React.JSX.Element {
   const color = TONE_COLOR[stateTone(state)];
   return (
     <span
@@ -949,31 +947,14 @@ function TimelineCard({
   }
 }
 
-export function AgentPanel(): React.JSX.Element {
-  const store = useTaskStore();
-  const workspace = useWorkspaceStore((s) => s.workspace);
-  const task = activeTask(store);
-  const [input, setInput] = useState('');
-  const [sendMode, setSendMode] = useState<'steer' | 'followUp'>('steer');
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    store.init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [store.timeline.length, store.streaming?.text.length]);
-
-  // Cross-event context: which permission requests are decided, which questions answered.
-  // Computed before any early return so hook order stays stable (rules of hooks).
-  const timelineContext: TimelineContext = React.useMemo(() => {
+/** Cross-event context shared by every timeline consumer (panel + Task Room). */
+export function useTimelineContext(taskState: string): TimelineContext {
+  const timeline = useTaskStore((s) => s.timeline);
+  return React.useMemo(() => {
     const permissionResolutions = new Map<string, { outcome: string; scope?: string | null }>();
     const answeredCallIds = new Set<string>();
     let openPlanSeq: number | null = null;
-    for (const event of store.timeline) {
+    for (const event of timeline) {
       const payload = event.payload as Record<string, unknown>;
       if (event.type === 'permission.decided' && typeof payload.requestId === 'string') {
         permissionResolutions.set(payload.requestId, {
@@ -987,13 +968,135 @@ export function AgentPanel(): React.JSX.Element {
       if (event.type === 'agent.planProposed') openPlanSeq = event.sequence;
       if (event.type === 'user.planDecision') openPlanSeq = null;
     }
-    return {
-      permissionResolutions,
-      answeredCallIds,
-      openPlanSeq,
-      taskState: task?.state ?? '',
-    };
-  }, [store.timeline, task?.state]);
+    return { permissionResolutions, answeredCallIds, openPlanSeq, taskState };
+  }, [timeline, taskState]);
+}
+
+/** The scrollable event list (auto-scrolls on growth). Used by panel + room. */
+export function TimelineList({ taskState }: { taskState: string }): React.JSX.Element {
+  const store = useTaskStore();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const timelineContext = useTimelineContext(taskState);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [store.timeline.length, store.streaming?.text.length]);
+
+  return (
+    <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', minHeight: 0 }} data-testid="timeline">
+      {store.loadingTimeline ? (
+        <div className="text-muted" style={{ padding: 12 }}>
+          Loading timeline…
+        </div>
+      ) : (
+        <>
+          {store.timeline.map((event) => (
+            <TimelineCard
+              key={`${event.id}-${event.sequence}`}
+              event={event}
+              context={timelineContext}
+            />
+          ))}
+          {store.streaming ? (
+            <Card icon="bot" title="Agent (streaming…)" testid="tl-streaming">
+              <div style={{ whiteSpace: 'pre-wrap' }}>{store.streaming.text}</div>
+            </Card>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Reply composer (steer / queue / new run). Used by panel + room. */
+export function TaskComposer({ running }: { running: boolean }): React.JSX.Element {
+  const store = useTaskStore();
+  const [input, setInput] = useState('');
+  const [sendMode, setSendMode] = useState<'steer' | 'followUp'>('steer');
+  return (
+    <div
+      style={{
+        borderTop: '1px solid var(--border)',
+        padding: 8,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+      }}
+    >
+      {running ? (
+        <div style={{ display: 'flex', gap: 8, fontSize: 11 }} className="text-muted">
+          <label>
+            <input
+              type="radio"
+              checked={sendMode === 'steer'}
+              onChange={() => setSendMode('steer')}
+            />{' '}
+            steer now
+          </label>
+          <label>
+            <input
+              type="radio"
+              checked={sendMode === 'followUp'}
+              onChange={() => setSendMode('followUp')}
+            />{' '}
+            queue for next turn
+          </label>
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <textarea
+          data-testid="agent-input"
+          placeholder={
+            running ? 'Send guidance to the running agent…' : 'Send a message (starts a new run)…'
+          }
+          value={input}
+          rows={2}
+          style={{
+            flex: 1,
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            padding: '6px 8px',
+            resize: 'none',
+            fontFamily: 'inherit',
+          }}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              if (input.trim()) {
+                void store.send(input.trim(), sendMode);
+                setInput('');
+              }
+            }
+          }}
+        />
+        <button
+          className="btn primary"
+          data-testid="agent-send"
+          disabled={input.trim().length === 0}
+          onClick={() => {
+            void store.send(input.trim(), sendMode);
+            setInput('');
+          }}
+        >
+          ↑
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function AgentPanel(): React.JSX.Element {
+  const store = useTaskStore();
+  const workspace = useWorkspaceStore((s) => s.workspace);
+  const task = activeTask(store);
+
+  useEffect(() => {
+    store.init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!workspace) {
     return (
@@ -1115,115 +1218,17 @@ export function AgentPanel(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div
-        ref={scrollRef}
-        style={{ flex: 1, overflow: 'auto', minHeight: 0 }}
-        data-testid="timeline"
-      >
-        {!task ? (
-          <div className="empty-state">
-            <div>Create a task to start working with the agent.</div>
-          </div>
-        ) : store.loadingTimeline ? (
-          <div className="text-muted" style={{ padding: 12 }}>
-            Loading timeline…
-          </div>
-        ) : (
-          <>
-            {store.timeline.map((event) => (
-              <TimelineCard
-                key={`${event.id}-${event.sequence}`}
-                event={event}
-                context={timelineContext}
-              />
-            ))}
-            {store.streaming ? (
-              <Card icon="bot" title="Agent (streaming…)" testid="tl-streaming">
-                <div style={{ whiteSpace: 'pre-wrap' }}>{store.streaming.text}</div>
-              </Card>
-            ) : null}
-          </>
-        )}
-      </div>
-
-      {task ? (
-        <div
-          style={{
-            borderTop: '1px solid var(--border)',
-            padding: 8,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-          }}
-        >
-          {running ? (
-            <div style={{ display: 'flex', gap: 8, fontSize: 11 }} className="text-muted">
-              <label>
-                <input
-                  type="radio"
-                  checked={sendMode === 'steer'}
-                  onChange={() => setSendMode('steer')}
-                />{' '}
-                steer now
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  checked={sendMode === 'followUp'}
-                  onChange={() => setSendMode('followUp')}
-                />{' '}
-                queue for next turn
-              </label>
-            </div>
-          ) : null}
-          <div style={{ display: 'flex', gap: 6 }}>
-            <textarea
-              data-testid="agent-input"
-              placeholder={
-                running
-                  ? 'Send guidance to the running agent…'
-                  : 'Send a message (starts a new run)…'
-              }
-              value={input}
-              rows={2}
-              style={{
-                flex: 1,
-                background: 'var(--bg-input)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                padding: '6px 8px',
-                resize: 'none',
-                fontFamily: 'inherit',
-              }}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  if (input.trim()) {
-                    void store.send(input.trim(), sendMode);
-                    setInput('');
-                  }
-                }
-              }}
-            />
-            <button
-              className="btn primary"
-              data-testid="agent-send"
-              disabled={input.trim().length === 0}
-              onClick={() => {
-                void store.send(input.trim(), sendMode);
-                setInput('');
-              }}
-            >
-              ↑
-            </button>
-          </div>
+      {!task ? (
+        <div className="empty-state" data-testid="timeline">
+          <div>Create a task to start working with the agent.</div>
         </div>
-      ) : null}
+      ) : (
+        <TimelineList taskState={task.state} />
+      )}
+
+      {task ? <TaskComposer running={running} /> : null}
 
       {store.newTaskOpen ? <NewTaskDialog /> : null}
-      <ReviewView />
-      <ReplayView />
     </div>
   );
 }

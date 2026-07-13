@@ -20,7 +20,7 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
 
       // Task B starts WHILE A is still running — with a single slot it would
       // queue forever (A only ends after its question is answered).
-      await page.getByTestId('surface-home').click();
+      await page.getByTestId('task-room-back').click();
       await expect(page.getByTestId('home-model')).toHaveValue(/mock/);
       await page.getByTestId('home-mode-auto').click();
       await page.getByTestId('home-intent').fill('[scenario:edit-hunks] task B in parallel');
@@ -30,7 +30,7 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
       });
 
       // Mission control: B needs review, A still running.
-      await page.getByTestId('surface-home').click();
+      await page.getByTestId('task-room-back').click();
       await expect(page.getByTestId('home-mc-needs')).toContainText('task B in parallel');
       await expect(page.getByTestId('home-mc-running')).toContainText('task A holds a slot');
 
