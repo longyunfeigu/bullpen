@@ -158,6 +158,7 @@ M7 交付物（新会话可直接复用）：
 3. **性能门槛**（PERF）：大仓库打开、搜索、编辑器响应、timeline 虚拟化（10k 事件）达标；用 `createLargeTreeFixture`。定门槛记 ADR。
 4. **隐私设置**：遥测/崩溃报告默认与开关；数据本地化说明。
 5. **可访问性**（A11Y）：核心流程纯键盘（新建任务/审批/审查/接受）；焦点管理；ARIA；对比度；屏幕阅读器 label。E2E 用键盘驱动全流程。
+6. **DB 锁竞争自愈（REL 加固，2026-07-13 真机发现）**：`openDatabase` 遇 `SQLITE_BUSY` 时先 `busy_timeout` 重试数秒再降级 APP_STARTUP_FAILED——两个实例同开默认 `~/Library/Application Support/pi-ide` 时第二个撞写锁会弹安全页（数据无损，属正确降级，但体验吓人）。根因是并发实例；single-instance lock 已在（`requestSingleInstanceLock`+`second-instance` 聚焦），但"第一个实例退出中已释放 lock 但 DB 连接未关"的窗口（M10 的异步 will-quit teardown 略微拉长了它）内启动新实例仍会撞锁。补 busy_timeout 重试 + 单测（并发打开）。
 
 ---
 
