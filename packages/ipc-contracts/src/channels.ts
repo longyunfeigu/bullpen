@@ -4,6 +4,14 @@ import { AppInfoSchema, RecentWorkspaceSchema, WorkspaceDtoSchema } from './dto.
 import { SettingsSchema } from './settings.js';
 import { LayoutStateSchema } from './layout.js';
 import { DirEntrySchema, DocumentDtoSchema, EolSchema, OpenTabsStateSchema } from './documents.js';
+import {
+  AgentModeSchema,
+  ModelDescriptorDtoSchema,
+  ModelRefSchema,
+  TaskDtoSchema,
+  TimelineEventDtoSchema,
+  VerificationCommandSchema,
+} from './agent-dto.js';
 
 const SettingsStateSchema = z.object({
   effective: SettingsSchema,
@@ -419,6 +427,98 @@ export const CHANNELS = {
     z.object({ ok: z.boolean() }),
   ),
   'git.init': ch('git.init', 1, z.object({}).strict(), z.object({ ok: z.boolean() })),
+  'task.create': ch(
+    'task.create',
+    1,
+    z
+      .object({
+        title: z.string().min(1).max(300),
+        goalMd: z.string().min(1).max(20000),
+        acceptance: z.array(z.string().max(1000)).max(20).default([]),
+        mode: AgentModeSchema,
+        model: ModelRefSchema,
+        verification: z.array(VerificationCommandSchema).max(10).default([]),
+      })
+      .strict(),
+    z.object({ task: TaskDtoSchema }),
+  ),
+  'task.start': ch(
+    'task.start',
+    1,
+    z.object({ taskId: z.string(), prompt: z.string().max(20000).optional() }).strict(),
+    z.object({ task: TaskDtoSchema, queued: z.boolean() }),
+  ),
+  'task.message': ch(
+    'task.message',
+    1,
+    z
+      .object({
+        taskId: z.string(),
+        text: z.string().min(1).max(20000),
+        during: z.enum(['steer', 'followUp']).default('steer'),
+      })
+      .strict(),
+    z.object({ delivered: z.enum(['started', 'steered', 'queued']) }),
+  ),
+  'task.stop': ch(
+    'task.stop',
+    1,
+    z.object({ taskId: z.string() }).strict(),
+    z.object({ task: TaskDtoSchema }),
+  ),
+  'task.list': ch(
+    'task.list',
+    1,
+    z
+      .object({
+        filter: z.enum(['all', 'active', 'review', 'done', 'failed']).default('all'),
+        includeArchived: z.boolean().default(false),
+      })
+      .strict(),
+    z.object({ tasks: z.array(TaskDtoSchema) }),
+  ),
+  'task.get': ch(
+    'task.get',
+    1,
+    z.object({ taskId: z.string(), eventsAfter: z.number().int().default(0) }).strict(),
+    z.object({ task: TaskDtoSchema, timeline: z.array(TimelineEventDtoSchema) }),
+  ),
+  'task.archive': ch(
+    'task.archive',
+    1,
+    z.object({ taskId: z.string() }).strict(),
+    z.object({ task: TaskDtoSchema }),
+  ),
+  'models.list': ch(
+    'models.list',
+    1,
+    z.object({}).strict(),
+    z.object({ models: z.array(ModelDescriptorDtoSchema), workerAlive: z.boolean() }),
+  ),
+  'secrets.set': ch(
+    'secrets.set',
+    1,
+    z
+      .object({ providerId: z.string().min(1).max(100), apiKey: z.string().min(1).max(4000) })
+      .strict(),
+    z.object({ configured: z.boolean() }),
+  ),
+  'secrets.delete': ch(
+    'secrets.delete',
+    1,
+    z.object({ providerId: z.string() }).strict(),
+    z.object({ deleted: z.boolean() }),
+  ),
+  'secrets.list': ch(
+    'secrets.list',
+    1,
+    z.object({}).strict(),
+    z.object({
+      items: z.array(
+        z.object({ providerId: z.string(), configured: z.boolean(), hint: z.string() }),
+      ),
+    }),
+  ),
   'lsp.status': ch(
     'lsp.status',
     1,

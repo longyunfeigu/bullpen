@@ -17,6 +17,11 @@ import { WorkspaceHost } from './services/workspace-host.js';
 import { registerWorkspaceHandlers } from './ipc/workspace-handlers.js';
 import { M4Services, registerM4Handlers } from './ipc/m4-handlers.js';
 import { M5Services, registerM5Handlers } from './ipc/m5-handlers.js';
+import { registerM6Handlers } from './ipc/m6-handlers.js';
+import { SecretService } from './services/secret-service.js';
+import { AgentHost } from './services/agent-host.js';
+import { TaskService } from './services/task-service.js';
+import { join as joinPath } from 'node:path';
 
 const DEV_SERVER_URL = process.env.PI_IDE_DEV_SERVER_URL;
 const isDev = Boolean(DEV_SERVER_URL);
@@ -40,6 +45,7 @@ let boot: Bootstrap | null = null;
 let mainWindow: BrowserWindow | null = null;
 let m4Ref: M4Services | null = null;
 let m5Ref: M5Services | null = null;
+let agentHostRef: AgentHost | null = null;
 export function getM5(): M5Services | null {
   return m5Ref;
 }
@@ -267,7 +273,13 @@ function registerCoreHandlers(bootstrap: Bootstrap): void {
             status: state ? ('ok' as const) : ('down' as const),
             detail: state ? paths.databaseFile : 'failed to open',
           },
-          { name: 'agent-worker', status: 'idle' as const, detail: 'starts with first task' },
+          {
+            name: 'agent-worker',
+            status: agentHostRef?.alive ? ('ok' as const) : ('idle' as const),
+            detail: agentHostRef?.alive
+              ? `pid ${agentHostRef.workerPid() ?? '?'} restarts ${agentHostRef.restartCount}`
+              : 'starts with first task',
+          },
         ],
         recentErrors: state?.recentErrors() ?? [],
       }),
@@ -359,6 +371,22 @@ if (!gotLock) {
       registerM4Handlers(m4, workspaceHost, logger.child('ipc'));
       m5Ref = new M5Services(workspaceHost, state, paths, logger.child('m5'));
       registerM5Handlers(m5Ref, workspaceHost, logger.child('ipc'));
+
+      const secretService = new SecretService(paths.secretsDir, logger.child('secrets'));
+      agentHostRef = new AgentHost(
+        joinPath(paths.runtimeDir, 'agent'),
+        secretService,
+        logger.child('agent-host'),
+      );
+      const taskService = new TaskService(
+        state.db,
+        agentHostRef,
+        workspaceHost,
+        settings,
+        logger.child('tasks'),
+      );
+      taskService.markOrphanedRunsInterrupted();
+      registerM6Handlers(taskService, agentHostRef, secretService, settings, logger.child('ipc'));
     }
 
     // E2E hook: open a workspace directly from the environment.
@@ -391,6 +419,7 @@ if (!gotLock) {
 
   app.on('quit', () => {
     m4Ref?.dispose();
+    void agentHostRef?.dispose();
     boot?.state?.close();
   });
 

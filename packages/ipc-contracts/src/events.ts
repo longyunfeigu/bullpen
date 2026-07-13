@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DocumentDtoSchema, FsChangeSchema } from './documents.js';
 import { WorkspaceDtoSchema } from './dto.js';
+import { TaskStateSchema, TimelineEventDtoSchema } from './agent-dto.js';
 
 export interface EventChannelDef<S extends z.ZodType = z.ZodType> {
   name: string;
@@ -65,6 +66,31 @@ export const EVENT_CHANNELS = {
   'terminal.data': ev('terminal.data', 1, z.object({ id: z.string(), data: z.string() })),
   'terminal.exit': ev('terminal.exit', 1, z.object({ id: z.string(), exitCode: z.number() })),
   'git.changed': ev('git.changed', 1, z.object({ reason: z.string() })),
+  'task.event': ev(
+    'task.event',
+    1,
+    z.object({ taskId: z.string(), event: TimelineEventDtoSchema }),
+  ),
+  'task.stream': ev(
+    'task.stream',
+    1,
+    z.object({
+      taskId: z.string(),
+      runId: z.string(),
+      messageId: z.string(),
+      delta: z.string(),
+    }),
+  ),
+  'task.stateChanged': ev(
+    'task.stateChanged',
+    1,
+    z.object({ taskId: z.string(), state: TaskStateSchema }),
+  ),
+  'agent.workerStatus': ev(
+    'agent.workerStatus',
+    1,
+    z.object({ alive: z.boolean(), restarts: z.number(), degraded: z.boolean() }),
+  ),
   'lsp.pythonDiagnostics': ev(
     'lsp.pythonDiagnostics',
     1,

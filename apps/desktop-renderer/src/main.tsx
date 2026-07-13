@@ -5,6 +5,7 @@ import { reportClientError } from './store/appStore.js';
 import { registerM3 } from './contrib/m3-editor.js';
 import { registerM4 } from './contrib/m4-search-terminal.js';
 import { registerM5 } from './contrib/m5-git.js';
+import { registerM6 } from './contrib/m6-agent.js';
 import { initRegistry } from './workbench/Workbench.js';
 import { useWorkspaceStore } from './store/workspaceStore.js';
 import { useEditorStore } from './store/editorStore.js';
@@ -12,6 +13,7 @@ import { useEditorStore } from './store/editorStore.js';
 registerM3();
 registerM4();
 registerM5();
+registerM6();
 initRegistry.push(() => {
   useEditorStore.getState().init();
   void useWorkspaceStore.getState().init();

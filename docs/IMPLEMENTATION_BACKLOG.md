@@ -67,13 +67,13 @@
 
 | 任务 | 交付 | 依赖 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| M6-01 | 安装并精确锁 Pi SDK，建立 Adapter | M1-06 | NOT_STARTED |  |
-| M6-02 | Agent utility process 生命周期与 IPC | M2-02 | NOT_STARTED |  |
-| M6-03 | Provider/model/Secret Store/认证测试 | M6-01,M2-04 | NOT_STARTED |  |
-| M6-04 | create/resume/prompt/steer/followUp/abort | M6-01,M6-02 | NOT_STARTED |  |
-| M6-05 | Pi event → AgentEvent mapper 与 contract tests | M6-04 | NOT_STARTED |  |
-| M6-06 | Task domain、Ask 模式与 Timeline | M2-03,M6-05 | NOT_STARTED |  |
-| M6-07 | Worker crash/restart 与中断投影 | M6-02,M6-06 | NOT_STARTED |  |
+| M6-01 | 安装并精确锁 Pi SDK，建立 Adapter | M1-06 | VERIFIED | pi 0.80.6 exact-pinned; adapter with tools allowlist (3 contract tests incl. no-builtin-tools SECURITY) |
+| M6-02 | Agent utility process 生命周期与 IPC | M2-02 | VERIFIED | utilityProcess worker + typed port protocol + ready handshake + supervisor |
+| M6-03 | Provider/model/Secret Store/认证测试 | M6-01,M2-04 | VERIFIED | SecretService (safeStorage, masked hints) + models.list merged w/ configured flags |
+| M6-04 | create/resume/prompt/steer/followUp/abort | M6-01,M6-02 | VERIFIED | createSession/startRun/steer/followUp/abort via worker protocol |
+| M6-05 | Pi event → AgentEvent mapper 与 contract tests | M6-04 | VERIFIED | pi AgentSessionEvent→AgentEvent mapper (text-only deltas, usage, retry diagnostics) |
+| M6-06 | Task domain、Ask 模式与 Timeline | M2-03,M6-05 | VERIFIED | TaskService state machine + event store + Ask flow + Timeline UI (E2E-009 a/b) |
+| M6-07 | Worker crash/restart 与中断投影 | M6-02,M6-06 | VERIFIED | worker SIGKILL → INTERRUPTED + crash card + restart-scan (E2E-019 core, HIST-002 restart test) |
 
 ## Milestone 7: Tool Gateway 与权限
 

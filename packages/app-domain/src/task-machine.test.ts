@@ -1,0 +1,59 @@
+import { describe, expect, it } from 'vitest';
+import { ProductFailure } from '@pi-ide/foundation';
+import { assertTransition, canTransition, TASK_STATES, isRunningState } from './task-machine.js';
+
+describe('task state machine (spec §6.1)', () => {
+  it('allows the documented happy path', () => {
+    const path = [
+      ['DRAFT', 'READY'],
+      ['READY', 'EXPLORING'],
+      ['EXPLORING', 'PLANNING'],
+      ['PLANNING', 'AWAITING_PLAN_APPROVAL'],
+      ['AWAITING_PLAN_APPROVAL', 'IN_PROGRESS'],
+      ['IN_PROGRESS', 'AWAITING_PERMISSION'],
+      ['AWAITING_PERMISSION', 'IN_PROGRESS'],
+      ['IN_PROGRESS', 'VERIFYING'],
+      ['VERIFYING', 'REVIEW_READY'],
+      ['REVIEW_READY', 'ACCEPTED'],
+      ['ACCEPTED', 'ARCHIVED'],
+    ] as const;
+    for (const [from, to] of path) {
+      expect(canTransition(from, to), `${from}→${to}`).toBe(true);
+    }
+  });
+
+  it('rejects forbidden transitions with a typed error', () => {
+    expect(canTransition('DRAFT', 'IN_PROGRESS')).toBe(false);
+    expect(canTransition('ACCEPTED', 'IN_PROGRESS')).toBe(false);
+    expect(canTransition('ARCHIVED', 'READY')).toBe(false);
+    expect(canTransition('REVIEW_READY', 'EXPLORING')).toBe(false);
+    expect(() => assertTransition('ARCHIVED', 'READY')).toThrowError(ProductFailure);
+  });
+
+  it('any running state can be interrupted and interrupted tasks can resume or be reviewed', () => {
+    for (const running of [
+      'EXPLORING',
+      'PLANNING',
+      'IN_PROGRESS',
+      'AWAITING_PERMISSION',
+      'VERIFYING',
+    ] as const) {
+      expect(canTransition(running, 'INTERRUPTED'), running).toBe(true);
+      expect(isRunningState(running)).toBe(true);
+    }
+    expect(canTransition('INTERRUPTED', 'READY')).toBe(true);
+    expect(canTransition('INTERRUPTED', 'IN_PROGRESS')).toBe(true);
+    expect(canTransition('INTERRUPTED', 'REVIEW_READY')).toBe(true);
+    expect(canTransition('INTERRUPTED', 'ROLLED_BACK')).toBe(true);
+  });
+
+  it('REVIEW_READY can return to IN_PROGRESS (continue) or ROLLED_BACK', () => {
+    expect(canTransition('REVIEW_READY', 'IN_PROGRESS')).toBe(true);
+    expect(canTransition('REVIEW_READY', 'ROLLED_BACK')).toBe(true);
+  });
+
+  it('exposes the complete state list', () => {
+    expect(TASK_STATES).toContain('AWAITING_PLAN_APPROVAL');
+    expect(TASK_STATES).toHaveLength(15);
+  });
+});

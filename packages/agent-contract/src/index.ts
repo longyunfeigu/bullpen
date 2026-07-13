@@ -198,3 +198,5 @@ export interface AgentRuntime {
   validateCredential(providerId: string): Promise<CredentialCheck>;
   dispose(): Promise<void>;
 }
+
+export * from './worker-protocol.js';
