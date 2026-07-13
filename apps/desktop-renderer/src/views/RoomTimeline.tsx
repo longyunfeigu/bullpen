@@ -371,6 +371,10 @@ function eventNode(
         </Bubble>
       );
     case 'tool.call': {
+      const toolName = String(payload.name ?? '');
+      // Plan-channel plumbing never renders as tool rows — the plan card and
+      // the decision/progress notes ARE its presentation (PIVOT-032).
+      if (toolName === 'propose_plan' || toolName === 'update_plan') return null;
       if (
         String(payload.state ?? '') === 'FAILED' &&
         String(payload.summary ?? '') === 'CHG_VERSION_CONFLICT'
@@ -385,7 +389,7 @@ function eventNode(
       const plan = payload.plan as TaskPlanDto;
       const open =
         event.sequence === context.openPlanSeq && context.taskState === 'AWAITING_PLAN_APPROVAL';
-      if (open) return <PlanCard key={`plan-${event.id}`} plan={plan} open />;
+      if (open) return <PlanCard key={`plan-${event.id}`} plan={plan} open variant="room" />;
       return <PlanStatic key={`plan-${event.id}`} plan={plan} />;
     }
     case 'user.planDecision': {

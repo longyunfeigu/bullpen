@@ -78,6 +78,29 @@ New acceptance:
 | PIVOT-027 | Home project tree: clicking the selected project row expands a lazy file tree in the sidebar (dirs expand in place, capped + ignored-filtered); clicking a file opens it in the Editor. Only the selected project expands (one open workspace at a time). |
 | PIVOT-012r | Composer Advanced is the canonical full form: it carries an optional **Title** field (defaults to the first intent line), boundaries, success criteria and verification — full parity with the Editor's New-Task dialog. |
 
+## Shell v4 — global mission control on a multi-mount engine (ADR-0009, PIVOT-028..032)
+
+Mockup: `docs/design/persistent-shell.html` (persistent shell + three presence
+layers, product-owner approved). Tasks are global citizens; a project is an
+attribute of a task, never a container the UI is trapped inside.
+
+Revisions to earlier acceptance (authoritative where they conflict):
+
+| ID | Revision |
+| --- | --- |
+| PIVOT-013r | Mission control (Needs You / Running), the Inbox badge and the sidebar task list are **global across projects**; cards and rows carry a project chip when tasks span projects. Zero-change REVIEW_READY tasks are excluded from Needs You (see PIVOT-031). |
+| PIVOT-025r | The Live Board keeps its per-task grouping and gains a third layer: launcher boards (fleet), the Task Room rail board (focus), and the sidebar action ticker (heartbeat). One animation budget: boards animate only while visible and focused; heartbeat rows pulse without layout shift; everything cools to static when idle. |
+
+New acceptance:
+
+| ID | Requirement |
+| --- | --- |
+| PIVOT-028 | Persistent shell: the Home sidebar never unmounts — Launcher and Task Room swap in the content area beside it. The current room's row is highlighted; every sidebar control (tasks, projects, New task, Inbox, Editor, Settings) works from inside a room. Settings opens as an overlay without switching surfaces. |
+| PIVOT-029 | Multi-mount engine: each task executes against its own mounted context (project root or task worktree) — tool gateway, permission engine, change tracking and verification are per-mount. Switching the focused project never cancels pending gates, never rebinds a running task's root, and tasks of non-focused projects remain fully operable (approve, review, accept, rollback) from their rooms. The restart recovery scan covers all projects. |
+| PIVOT-030 | Worktree isolation: git projects can dispatch a task into its own `git worktree` (Advanced toggle, default-on when the project already has an active task). The room header shows the isolation branch. Accept merges the net change set back file-by-file with baseline conflict preflight; conflicts stop the merge and can only be overridden by a second explicit confirmation. Rollback discards the worktree; the main tree is untouched throughout. |
+| PIVOT-031 | Light completion: a REVIEW_READY task with zero net changed files is presented as “Answered” — no Final-report card, no Review button, a quiet Done (plain accept), exclusion from Needs You / Inbox counts, and an “answered” notification. The machine state remains REVIEW_READY and stays test-visible via `data-state`. |
+| PIVOT-032 | Timeline v2 (Task Room): ✓ milestones with elapsed time, quiet YOU/AGENT bubbles, single-line tool rows (verb + target + diffstat/status) that expand to evidence on demand, numbered-chip plan presentation, compact final report. While a plan awaits approval the reply composer IS “Request changes”: sending feedback resolves propose_plan with PLAN_CHANGES_REQUESTED and the agent proposes a revised version. Plan card buttons stay Approve + Edit plan + Cancel task. |
+
 ## Notes
 
 - Fast path vs full form: the Home input is the primary path; the Workspace

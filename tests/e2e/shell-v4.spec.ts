@@ -101,11 +101,9 @@ test.describe('Shell v4 — global tasks on a multi-mount engine (ADR-0009)', ()
 
       // edit-plan-review writes nothing → light completion (PIVOT-031):
       // "Answered", no report ceremony, no review button — a quiet Done.
-      await expect(page.getByTestId('task-state')).toHaveAttribute(
-        'data-state',
-        'REVIEW_READY',
-        { timeout: 30000 },
-      );
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
       await expect(page.getByTestId('task-room-answered')).toBeVisible();
       await expect(page.getByTestId('tl-answered')).toBeVisible();
       await expect(page.getByTestId('tl-report')).toHaveCount(0);
@@ -142,11 +140,9 @@ test.describe('Shell v4 — worktree isolation and merge-back (ADR-0009)', () =>
       });
       await page.getByTestId('plan-approve').click();
       await page.getByTestId('perm-allow-task').click({ timeout: 20000 });
-      await expect(page.getByTestId('task-state')).toHaveAttribute(
-        'data-state',
-        'REVIEW_READY',
-        { timeout: 30000 },
-      );
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
 
       // The agent edited the file — but only inside the worktree.
       expect(readFileSync(join(fixture, 'src/index.ts'), 'utf8')).toContain('add(2, 3)');
@@ -204,11 +200,9 @@ test.describe('Shell v4 — the composer is "Request changes" (ADR-0009)', () =>
 
       await page.getByTestId('plan-approve').click();
       await page.getByTestId('perm-allow-task').click({ timeout: 20000 });
-      await expect(page.getByTestId('task-state')).toHaveAttribute(
-        'data-state',
-        'REVIEW_READY',
-        { timeout: 30000 },
-      );
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
       // One real change this time → full review weight, no "Answered" veneer.
       await expect(page.getByTestId('tl-report')).toBeVisible();
       await expect(page.getByTestId('task-room-answered')).toHaveCount(0);

@@ -56,7 +56,21 @@ test('real gateway: configure key+baseUrl, fetch models, run a real ask task', a
       timeout: 180000,
     });
     await expect(page.getByTestId('tl-agent').last()).toContainText('PONG');
+    // Zero-change ask task → light completion (PIVOT-031).
+    await expect(page.getByTestId('tl-answered')).toBeVisible();
     await page.screenshot({ path: '/tmp/ui-shots/real-2-task-room.png' });
+
+    // 5) Identity (PIVOT-008/ADR-0009): the preamble now reaches the model —
+    // the agent introduces itself as Charter's agent, not as internal tooling.
+    await page.getByTestId('agent-input').fill('Who are you? One sentence.');
+    await page.getByTestId('agent-send').click();
+    const reply = page.getByTestId('tl-agent').last();
+    await expect(reply).toContainText(/Charter/i, { timeout: 180000 });
+    await expect(reply).not.toContainText(/Claude Code/i);
+    await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+      timeout: 60000,
+    });
+    await page.screenshot({ path: '/tmp/ui-shots/real-3-identity.png' });
   } finally {
     await app.close();
   }

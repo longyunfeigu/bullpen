@@ -92,7 +92,11 @@ export function TaskRoomView(): React.JSX.Element {
         <span className="tr-title" title={task.title}>
           {task.title}
         </span>
-        <StateBadge state={task.state} />
+        {/* PIVOT-031: an answered task presents as such; data-state stays honest. */}
+        <StateBadge
+          state={task.state}
+          {...(answered ? { label: 'Answered', tone: 'ok' as const } : {})}
+        />
         <span className="tr-proj" data-testid="task-room-project" title={task.projectPath}>
           <Ic name="folder" size={11} />
           {task.projectName}

@@ -180,6 +180,13 @@
   background: var(--info);
   animation: rt-pulse 1.6s ease-in-out infinite;
 }
+.rt-milestone.warn .rt-ms-dot {
+  background: var(--warning);
+}
+.rt-milestone.err .rt-ms-dot {
+  background: var(--danger);
+  animation: none;
+}
 @keyframes rt-pulse {
   0%,
   100% {
@@ -440,6 +447,17 @@
 .rt-plan-steps li.st-in_progress .rt-step-n {
   background: color-mix(in srgb, var(--info) 15%, transparent);
   color: var(--info);
+}
+.rt-plan-open {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+}
+.rt-plan-open .btn {
+  font-family: inherit;
+}
+.rt-plan-hint {
+  margin-top: 9px;
+  font-size: 10.5px;
+  color: var(--fg-faint);
 }
 .rt-report-row {
   font-size: 12px;

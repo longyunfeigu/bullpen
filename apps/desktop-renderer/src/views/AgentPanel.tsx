@@ -194,8 +194,13 @@ const STEP_ICON: Record<string, string> = {
   blocked: '⊘',
 };
 
-/** Plan card (§13.2, AG-007/008): view, edit (text/order/remove), approve or reject. */
-export function PlanCard(props: { plan: TaskPlanDto; open: boolean }): React.JSX.Element {
+/** Plan card (§13.2, AG-007/008): view, edit (text/order/remove), approve or reject.
+ * variant 'room' renders the timeline-v2 presentation with identical testids/logic. */
+export function PlanCard(props: {
+  plan: TaskPlanDto;
+  open: boolean;
+  variant?: 'panel' | 'room';
+}): React.JSX.Element {
   const store = useTaskStore();
   const { plan, open } = props;
   const [editing, setEditing] = useState(false);
@@ -262,14 +267,9 @@ export function PlanCard(props: { plan: TaskPlanDto; open: boolean }): React.JSX
     setSteps(next);
   };
 
-  return (
-    <Card
-      key="plan-interactive"
-      icon="map"
-      title={`Plan proposed (v${plan.version}) — approval needed`}
-      tone="warning"
-      testid="plan-card"
-    >
+  const room = props.variant === 'room';
+  const body = (
+    <>
       {editing ? (
         <input
           data-testid="plan-summary-input"
@@ -286,11 +286,20 @@ export function PlanCard(props: { plan: TaskPlanDto; open: boolean }): React.JSX
           }}
         />
       ) : (
-        <div style={{ marginBottom: 6 }}>{summary}</div>
+        <div style={{ marginBottom: 6 }} className={room ? 'rt-plan-sum' : ''}>
+          {summary}
+        </div>
       )}
-      <ol style={{ margin: '0 0 6px 18px', padding: 0 }}>
+      <ol
+        className={room && !editing ? 'rt-plan-steps' : ''}
+        style={room && !editing ? {} : { margin: '0 0 6px 18px', padding: 0 }}
+      >
         {steps.map((step, i) => (
-          <li key={step.id ?? `new-${i}`} style={{ fontSize: 12, marginBottom: 3 }}>
+          <li
+            key={step.id ?? `new-${i}`}
+            className={room && !editing ? `st-${step.status}` : ''}
+            style={room && !editing ? {} : { fontSize: 12, marginBottom: 3 }}
+          >
             {editing ? (
               <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                 <input
@@ -331,6 +340,11 @@ export function PlanCard(props: { plan: TaskPlanDto; open: boolean }): React.JSX
                   ✕
                 </button>
               </span>
+            ) : room ? (
+              <>
+                <span className="rt-step-n">{step.status === 'done' ? '✓' : i + 1}</span>
+                <span className="rt-step-t">{step.title}</span>
+              </>
             ) : (
               <>
                 <span aria-hidden>{STEP_ICON[step.status] ?? '○'}</span> {step.title}
@@ -373,6 +387,33 @@ export function PlanCard(props: { plan: TaskPlanDto; open: boolean }): React.JSX
           Cancel task…
         </button>
       </div>
+    </>
+  );
+
+  if (room) {
+    return (
+      <div className="rt-plan rt-plan-open" data-testid="plan-card">
+        <div className="rt-plan-head">
+          <b>Plan</b>
+          <span className="rt-plan-v">v{plan.version}</span>
+          <span className="rt-plan-meta">waiting for your approval</span>
+        </div>
+        {body}
+        <div className="rt-plan-hint">
+          Prefer different steps? Reply below — the agent will revise the plan.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <Card
+      key="plan-interactive"
+      icon="map"
+      title={`Plan proposed (v${plan.version}) — approval needed`}
+      tone="warning"
+      testid="plan-card"
+    >
+      {body}
     </Card>
   );
 }
@@ -475,14 +516,24 @@ export function QuestionCard(props: {
   );
 }
 
-/** Human state chip (PIVOT-023). Tests assert the machine state via data-state. */
-export function StateBadge({ state }: { state: string }): React.JSX.Element {
-  const color = TONE_COLOR[stateTone(state)];
+/** Human state chip (PIVOT-023). Tests assert the machine state via data-state.
+ * `label`/`tone` overrides let the room present "Answered" (PIVOT-031) while
+ * the machine state stays REVIEW_READY. */
+export function StateBadge({
+  state,
+  label,
+  tone,
+}: {
+  state: string;
+  label?: string;
+  tone?: keyof typeof TONE_COLOR;
+}): React.JSX.Element {
+  const color = TONE_COLOR[tone ?? stateTone(state)];
   return (
     <span
       data-testid="task-state"
       data-state={state}
-      title={stateLabel(state)}
+      title={label ?? stateLabel(state)}
       style={{
         border: `1px solid ${color}`,
         color,
@@ -493,7 +544,7 @@ export function StateBadge({ state }: { state: string }): React.JSX.Element {
         whiteSpace: 'nowrap',
       }}
     >
-      {stateLabel(state)}
+      {label ?? stateLabel(state)}
     </span>
   );
 }

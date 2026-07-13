@@ -1,7 +1,7 @@
 # IMPLEMENTATION_STATUS.md
 
 Overall status: IN_PROGRESS  
-Current milestone: 11 (M10 + Home v2 P1–P3 verified)  
+Current milestone: 11 (M10 + Shell v4 verified)  
 Last verified commit: (see git log)
 
 ## Status legend
@@ -16,6 +16,7 @@ Last verified commit: (see git log)
 
 | Milestone | Status | Exit evidence | Notes |
 | --- | --- | --- | --- |
+| SHELL-V4. Global tasks, multi-mount, worktrees (ADR-0009, PIVOT-028..032) | VERIFIED | shell-v4.spec 5 E2E (persistent shell; cross-project approve/finish while another project is focused; worktree isolation + merge-back with main-tree byte checks; composer request-changes → plan v2; heartbeat ticker + rail focus board); full suite 53/53 (soak/real-gateway skipped); 265 unit tests (light-completion presentation, answered notification copy) | Engine: per-root ProjectContexts (gateway/permissions/changes/verification per mount — closes the cross-project gateway-rebind hazard), WorktreeService (create/discard/merge-back with baseline conflict preflight), task.create{projectPath,isolation}, task.list scope=all, TaskDto{project,changedFiles,worktree}, migration v2, plan request_changes channel (works for real runtimes via PLAN_CHANGES_REQUESTED tool result), pi adapter now delivers the system preamble (identity + mode rules were silently dropped before). Shell: persistent sidebar (grouped global tasks, action ticker heartbeat, Inbox, project badges), Task Room v2 (project·branch chip, rail THIS-TASK LIVE board, timeline v2 mockup language, plan-aware composer), light completion (Answered/Done, excluded from Needs You) |
 | 1. Engineering baseline | VERIFIED | E2E m1-baseline (isolation+IPC), 28 unit tests, packaged .app launch smoke, boundary lint | node:sqlite/node-pty/rg strategies in ADR-0003 |
 | 2. Shell and persistence | VERIFIED | E2E m2-shell (restart restore), m2-db-failure (safe mode), 10 unit tests (db+settings) | |
 | 3. Workspace and editor | VERIFIED | E2E-002/003 pass (m3-editor.spec), 31 unit tests (doc store/workspace/path boundary), 10k-file lazy tree integration test | Data-loss race renderer-guard documented in editorStore |
