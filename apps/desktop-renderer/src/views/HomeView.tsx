@@ -11,6 +11,7 @@ import { Ic } from './home-icons.js';
 import { MODE_META, stateShort, stateTone } from './labels.js';
 import { LiveBoard } from './LiveBoard.js';
 import { FileLens } from './FileLens.js';
+import { HomeProjectTree } from './HomeProjectTree.js';
 import '../styles/home.css';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
@@ -67,6 +68,7 @@ export function HomeView(): React.JSX.Element {
   const [refs, setRefs] = useState<string[]>([]);
   // Advanced charter (PIVOT-012)
   const [advanced, setAdvanced] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
   const [boundaries, setBoundaries] = useState('');
   const [criteria, setCriteria] = useState('');
   const [suggestions, setSuggestions] = useState<VerificationCommand[]>([]);
@@ -80,6 +82,8 @@ export function HomeView(): React.JSX.Element {
   const [pickerIndex, setPickerIndex] = useState(0);
   // Live Board lens (PIVOT-025): read-only diff-so-far for one file.
   const [lens, setLens] = useState<{ taskId: string; path: string } | null>(null);
+  // Sidebar file tree for the active project (click the active row to toggle).
+  const [treeOpen, setTreeOpen] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const pickerInputRef = useRef<HTMLInputElement>(null);
@@ -216,7 +220,7 @@ export function HomeView(): React.JSX.Element {
 
     setSubmitting(true);
     const ok = await taskStore.createAndStart({
-      title: titleFromIntent(intent),
+      title: (advanced && titleDraft.trim()) || titleFromIntent(intent),
       goalMd: goal,
       acceptance,
       mode,
@@ -227,6 +231,7 @@ export function HomeView(): React.JSX.Element {
     if (ok) {
       setIntent('');
       setRefs([]);
+      setTitleDraft('');
       setBoundaries('');
       setCriteria('');
       setSelectedVerif(new Set());
@@ -411,26 +416,33 @@ export function HomeView(): React.JSX.Element {
         {recent.slice(0, 6).map((r) => {
           const active = workspace?.path === r.path;
           return (
-            <button
-              key={r.path}
-              className={`hm-row ${active ? 'active' : ''} ${active && glowTasks.size > 0 ? 'glow-pulse' : ''}`}
-              data-testid={`home-recent-${r.path}`}
-              title={r.path}
-              onClick={() => {
-                if (active) return;
-                app.setHomePick(true);
-                void workspaceStore.openPath(r.path);
-              }}
-            >
-              <Ic name="folder" />
-              <span className="hm-tt">{r.displayName}</span>
-              {r.kind ? <span className="hm-kind">{r.kind}</span> : null}
-              {active ? (
-                <span className="hm-check">
-                  <Ic name="check" size={14} strokeWidth={2} />
-                </span>
-              ) : null}
-            </button>
+            <React.Fragment key={r.path}>
+              <button
+                className={`hm-row ${active ? 'active' : ''} ${active && glowTasks.size > 0 ? 'glow-pulse' : ''}`}
+                data-testid={`home-recent-${r.path}`}
+                title={active ? `${r.path} — click to browse files` : r.path}
+                onClick={() => {
+                  if (active) {
+                    // The selected project expands into its file tree in place.
+                    setTreeOpen(!treeOpen);
+                    return;
+                  }
+                  setTreeOpen(false);
+                  app.setHomePick(true);
+                  void workspaceStore.openPath(r.path);
+                }}
+              >
+                <Ic name="folder" />
+                <span className="hm-tt">{r.displayName}</span>
+                {r.kind ? <span className="hm-kind">{r.kind}</span> : null}
+                {active ? (
+                  <span className={`hm-check hm-caret ${treeOpen ? 'open' : ''}`}>
+                    <Ic name="chevron" size={13} strokeWidth={2} />
+                  </span>
+                ) : null}
+              </button>
+              {active && treeOpen ? <HomeProjectTree /> : null}
+            </React.Fragment>
           );
         })}
         <button
@@ -638,6 +650,15 @@ export function HomeView(): React.JSX.Element {
 
             {advanced ? (
               <div className="hm-adv" data-testid="home-advanced">
+                <div className="hm-field">
+                  <label>Title (optional — defaults to the first line)</label>
+                  <input
+                    data-testid="home-adv-title"
+                    placeholder="e.g. Add rate limiting to the login API"
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                  />
+                </div>
                 <div className="hm-field">
                   <label>Boundaries</label>
                   <input

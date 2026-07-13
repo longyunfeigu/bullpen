@@ -2,15 +2,18 @@ import React, { useEffect, useState } from 'react';
 import { rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { useTaskStore } from '../store/taskStore.js';
+import { Ic } from './home-icons.js';
+import '../styles/settings.css';
 
-/** Provider credentials + live model fetch (PIVOT-009, ONB-004/008). */
+/** Provider credentials + live model fetch (PIVOT-009/026, ONB-004/008). */
 function ProvidersBlock(): React.JSX.Element {
   const pushToast = useAppStore((s) => s.pushToast);
   const [items, setItems] = useState<
-    Array<{ providerId: string; configured: boolean; hint: string }>
+    Array<{ providerId: string; configured: boolean; hint: string; baseUrl: string | null }>
   >([]);
   const [providerId, setProviderId] = useState('anthropic');
   const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
 
   const refresh = async (): Promise<void> => {
@@ -24,8 +27,17 @@ function ProvidersBlock(): React.JSX.Element {
 
   const save = async (): Promise<void> => {
     if (!apiKey.trim()) return;
+    const url = baseUrl.trim();
+    if (url && !/^https?:\/\/\S+$/.test(url)) {
+      pushToast('warning', 'Base URL must start with http:// or https://');
+      return;
+    }
     setBusy('save');
-    const res = await rpcResult('secrets.set', { providerId, apiKey: apiKey.trim() });
+    const res = await rpcResult('secrets.set', {
+      providerId,
+      apiKey: apiKey.trim(),
+      ...(url ? { baseUrl: url } : {}),
+    });
     setBusy(null);
     setApiKey('');
     if (res.ok) {
@@ -64,31 +76,44 @@ function ProvidersBlock(): React.JSX.Element {
   };
 
   return (
-    <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontWeight: 600 }}>Providers</div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div className="st-card">
+      <div className="st-card-head">
+        <Ic name="shield" size={14} />
+        <div>
+          <div className="st-card-title">Providers</div>
+          <div className="st-card-sub">
+            Keys live in the encrypted OS keychain scope — never in files, the renderer or logs.
+          </div>
+        </div>
+      </div>
+
+      <div className="st-provider-form">
         <select
+          className="st-input"
           data-testid="provider-select"
           value={providerId}
           onChange={(e) => setProviderId(e.target.value)}
+          style={{ width: 130, flex: 'none' }}
         >
           <option value="anthropic">Anthropic</option>
           <option value="openai">OpenAI</option>
         </select>
         <input
+          className="st-input"
           data-testid="provider-key-input"
           type="password"
-          placeholder="API key (stored encrypted, never shown again)"
+          placeholder="API key"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          style={{
-            flex: 1,
-            minWidth: 220,
-            background: 'var(--bg-input)',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            padding: '6px 8px',
-          }}
+          style={{ flex: 1, minWidth: 180 }}
+        />
+        <input
+          className="st-input mono"
+          data-testid="provider-baseurl-input"
+          placeholder="Base URL (optional) — e.g. http://gateway:3000/api"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          style={{ flex: 1.2, minWidth: 220 }}
         />
         <button
           className="btn primary"
@@ -96,43 +121,49 @@ function ProvidersBlock(): React.JSX.Element {
           disabled={!apiKey.trim() || busy === 'save'}
           onClick={() => void save()}
         >
-          Save key
+          Save
         </button>
       </div>
+      <div className="st-hint">
+        Base URL points this provider at a gateway/proxy (Anthropic-compatible or OpenAI-compatible
+        endpoint). Leave empty for the official API.
+      </div>
+
       {items.length === 0 ? (
-        <div className="text-muted" style={{ fontSize: 12 }} data-testid="providers-empty">
-          No provider credentials yet. Keys are stored in the encrypted OS keychain scope — never in
-          files, the renderer or logs.
+        <div className="st-empty" data-testid="providers-empty">
+          No provider credentials yet. Add a key above, then fetch its live model list.
         </div>
       ) : (
         items.map((item) => (
           <div
             key={item.providerId}
+            className="st-provider-row"
             data-testid={`provider-row-${item.providerId}`}
-            style={{
-              display: 'flex',
-              gap: 8,
-              alignItems: 'center',
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              padding: '8px 10px',
-            }}
           >
-            <span style={{ fontWeight: 600, minWidth: 90 }}>{item.providerId}</span>
-            <span className="mono text-muted" style={{ flex: 1, fontSize: 12 }}>
-              {item.hint}
-            </span>
+            <span className="st-provider-name">{item.providerId}</span>
+            <span className="mono st-provider-hint">{item.hint}</span>
+            {item.baseUrl ? (
+              <span
+                className="mono st-provider-url"
+                data-testid={`provider-baseurl-${item.providerId}`}
+                title={item.baseUrl}
+              >
+                {item.baseUrl}
+              </span>
+            ) : (
+              <span className="st-provider-url official">official API</span>
+            )}
             <button
               className="btn"
               data-testid={`provider-fetch-${item.providerId}`}
               disabled={busy === `fetch-${item.providerId}`}
               onClick={() => void fetchModels(item.providerId)}
-              title="Pull the live model list from the provider with this key"
+              title="Pull the live model list from this endpoint"
             >
               {busy === `fetch-${item.providerId}` ? 'Fetching…' : 'Fetch models'}
             </button>
             <button
-              className="btn danger"
+              className="btn quiet-danger"
               data-testid={`provider-delete-${item.providerId}`}
               onClick={() => void remove(item.providerId)}
             >
@@ -156,16 +187,16 @@ type Section =
   | 'updates'
   | 'about';
 
-const SECTIONS: Array<{ id: Section; label: string }> = [
-  { id: 'general', label: 'General' },
-  { id: 'editor', label: 'Editor' },
-  { id: 'terminal', label: 'Terminal' },
-  { id: 'agent', label: 'Agent' },
-  { id: 'models', label: 'Models' },
-  { id: 'permissions', label: 'Permissions' },
-  { id: 'privacy', label: 'Privacy' },
-  { id: 'updates', label: 'Updates' },
-  { id: 'about', label: 'About' },
+const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
+  { id: 'general', label: 'General', icon: 'sliders' },
+  { id: 'editor', label: 'Editor', icon: 'pencil' },
+  { id: 'terminal', label: 'Terminal', icon: 'terminal' },
+  { id: 'agent', label: 'Agent', icon: 'bot' },
+  { id: 'models', label: 'Models', icon: 'zap' },
+  { id: 'permissions', label: 'Permissions', icon: 'shield' },
+  { id: 'privacy', label: 'Privacy', icon: 'eye' },
+  { id: 'updates', label: 'Updates', icon: 'refresh' },
+  { id: 'about', label: 'About', icon: 'info' },
 ];
 
 function Row(props: {
@@ -174,26 +205,32 @@ function Row(props: {
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <label
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '240px 1fr',
-        gap: 12,
-        padding: '10px 16px',
-        alignItems: 'center',
-        borderBottom: '1px solid var(--border)',
-      }}
-    >
-      <span>
+    <label className="st-row">
+      <span className="st-row-label">
         {props.label}
-        {props.hint ? (
-          <span className="text-muted" style={{ display: 'block', fontSize: 11 }}>
-            {props.hint}
-          </span>
-        ) : null}
+        {props.hint ? <span className="st-row-hint">{props.hint}</span> : null}
       </span>
-      <span>{props.children}</span>
+      <span className="st-row-control">{props.children}</span>
     </label>
+  );
+}
+
+/** iOS-style switch on top of a real checkbox (keyboard/AT semantics intact). */
+function Toggle(props: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  testid?: string;
+}): React.JSX.Element {
+  return (
+    <span className={`st-toggle ${props.checked ? 'on' : ''}`}>
+      <input
+        type="checkbox"
+        {...(props.testid ? { 'data-testid': props.testid } : {})}
+        checked={props.checked}
+        onChange={(e) => props.onChange(e.target.checked)}
+      />
+      <i />
+    </span>
   );
 }
 
@@ -209,41 +246,31 @@ export function SettingsView(): React.JSX.Element {
   const set = (patch: Record<string, unknown>) => void updateSettings('global', patch);
 
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
-      <nav
-        aria-label="Settings sections"
-        style={{
-          width: 180,
-          borderRight: '1px solid var(--border)',
-          padding: '8px 0',
-          overflow: 'auto',
-        }}
-      >
+    <div className="st-root">
+      <nav aria-label="Settings sections" className="st-nav">
         {SECTIONS.map((s) => (
           <button
             key={s.id}
-            className="quickpick-item"
-            style={{
-              background: s.id === section ? 'var(--bg-selected)' : 'transparent',
-              padding: '8px 16px',
-            }}
+            className={`st-nav-item ${s.id === section ? 'active' : ''}`}
             onClick={() => setSection(s.id)}
           >
+            <Ic name={s.icon} size={14} />
             {s.label}
           </button>
         ))}
       </nav>
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div className="st-body">
         {issues.length > 0 ? (
-          <div className="text-warning" style={{ padding: '8px 16px', fontSize: 12 }}>
+          <div className="st-issues">
             {issues.length} setting value(s) were invalid and fell back to defaults.
           </div>
         ) : null}
 
         {section === 'general' ? (
-          <>
+          <div className="st-card">
             <Row label="Theme">
               <select
+                className="st-input"
                 value={settings.general.theme}
                 onChange={(e) => set({ general: { theme: e.target.value } })}
               >
@@ -254,6 +281,7 @@ export function SettingsView(): React.JSX.Element {
             </Row>
             <Row label="UI scale" hint="0.8 – 2.0">
               <input
+                className="st-input"
                 type="number"
                 step="0.05"
                 min={0.8}
@@ -266,31 +294,30 @@ export function SettingsView(): React.JSX.Element {
               label="Rich Markdown by default"
               hint="Open .md files in the Notion-style editor (toggle per file on the tab)"
             >
-              <input
-                type="checkbox"
-                data-testid="settings-md-rich"
+              <Toggle
+                testid="settings-md-rich"
                 checked={settings.editor.markdownRichDefault}
-                onChange={(e) => set({ editor: { markdownRichDefault: e.target.checked } })}
+                onChange={(v) => set({ editor: { markdownRichDefault: v } })}
               />
             </Row>
             <Row
               label="System notifications"
-              hint="Plan approval · permission · review ready · failed (silent while a window is focused)"
+              hint="Plan approval · permission · review ready · failed (silent while focused)"
             >
-              <input
-                type="checkbox"
-                data-testid="settings-notifications"
+              <Toggle
+                testid="settings-notifications"
                 checked={settings.notifications.enabled}
-                onChange={(e) => set({ notifications: { enabled: e.target.checked } })}
+                onChange={(v) => set({ notifications: { enabled: v } })}
               />
             </Row>
-          </>
+          </div>
         ) : null}
 
         {section === 'editor' ? (
-          <>
+          <div className="st-card">
             <Row label="Font size">
               <input
+                className="st-input"
                 type="number"
                 min={8}
                 max={40}
@@ -300,13 +327,14 @@ export function SettingsView(): React.JSX.Element {
             </Row>
             <Row label="Font family">
               <input
-                style={{ width: '100%' }}
+                className="st-input wide"
                 value={settings.editor.fontFamily}
                 onChange={(e) => set({ editor: { fontFamily: e.target.value } })}
               />
             </Row>
             <Row label="Tab size">
               <input
+                className="st-input"
                 type="number"
                 min={1}
                 max={8}
@@ -316,6 +344,7 @@ export function SettingsView(): React.JSX.Element {
             </Row>
             <Row label="Word wrap">
               <select
+                className="st-input"
                 value={settings.editor.wordWrap}
                 onChange={(e) => set({ editor: { wordWrap: e.target.value } })}
               >
@@ -324,14 +353,14 @@ export function SettingsView(): React.JSX.Element {
               </select>
             </Row>
             <Row label="Minimap">
-              <input
-                type="checkbox"
+              <Toggle
                 checked={settings.editor.minimap}
-                onChange={(e) => set({ editor: { minimap: e.target.checked } })}
+                onChange={(v) => set({ editor: { minimap: v } })}
               />
             </Row>
             <Row label="Auto save">
               <select
+                className="st-input"
                 value={settings.editor.autoSave}
                 onChange={(e) => set({ editor: { autoSave: e.target.value } })}
               >
@@ -342,6 +371,7 @@ export function SettingsView(): React.JSX.Element {
             </Row>
             <Row label="Auto save delay (ms)">
               <input
+                className="st-input"
                 type="number"
                 min={200}
                 max={60000}
@@ -354,6 +384,7 @@ export function SettingsView(): React.JSX.Element {
               hint="Beyond this size semantic features degrade"
             >
               <input
+                className="st-input"
                 type="number"
                 min={1}
                 max={512}
@@ -361,13 +392,14 @@ export function SettingsView(): React.JSX.Element {
                 onChange={(e) => set({ editor: { largeFileSizeMb: Number(e.target.value) } })}
               />
             </Row>
-          </>
+          </div>
         ) : null}
 
         {section === 'terminal' ? (
-          <>
+          <div className="st-card">
             <Row label="Font size">
               <input
+                className="st-input"
                 type="number"
                 min={8}
                 max={32}
@@ -377,7 +409,7 @@ export function SettingsView(): React.JSX.Element {
             </Row>
             <Row label="Shell path" hint="Empty = system default shell">
               <input
-                style={{ width: '100%' }}
+                className="st-input wide mono"
                 placeholder="/bin/zsh"
                 value={settings.terminal.shellPath ?? ''}
                 onChange={(e) => set({ terminal: { shellPath: e.target.value || null } })}
@@ -385,6 +417,7 @@ export function SettingsView(): React.JSX.Element {
             </Row>
             <Row label="Scrollback lines">
               <input
+                className="st-input"
                 type="number"
                 min={100}
                 max={200000}
@@ -392,113 +425,127 @@ export function SettingsView(): React.JSX.Element {
                 onChange={(e) => set({ terminal: { scrollback: Number(e.target.value) } })}
               />
             </Row>
-          </>
+          </div>
         ) : null}
 
         {section === 'agent' ? (
-          <>
+          <div className="st-card">
             <Row label="Default mode">
               <select
+                className="st-input"
                 value={settings.agent.defaultMode}
                 onChange={(e) => set({ agent: { defaultMode: e.target.value } })}
               >
-                <option value="ask">Ask (read-only)</option>
-                <option value="edit">Edit (approvals)</option>
-                <option value="auto">Auto (bounded)</option>
+                <option value="ask">Read-only</option>
+                <option value="edit">Approve changes</option>
+                <option value="auto">Auto · pause on risk</option>
               </select>
             </Row>
             <Row
               label="Auto mode: auto-approve workspace edits (R1)"
               hint="Off = Auto only auto-approves read-only tools"
             >
-              <input
-                type="checkbox"
+              <Toggle
                 checked={settings.agent.autoApproveR1}
-                onChange={(e) => set({ agent: { autoApproveR1: e.target.checked } })}
+                onChange={(v) => set({ agent: { autoApproveR1: v } })}
               />
             </Row>
             <Row
               label="Auto mode: auto-approve recognized verification commands (R2)"
               hint="npm test / lint / typecheck detected from the project"
             >
-              <input
-                type="checkbox"
+              <Toggle
                 checked={settings.agent.autoApproveKnownR2}
-                onChange={(e) => set({ agent: { autoApproveKnownR2: e.target.checked } })}
+                onChange={(v) => set({ agent: { autoApproveKnownR2: v } })}
               />
             </Row>
-          </>
+          </div>
         ) : null}
 
         {section === 'models' ? (
           <>
-            <Row label="Default thinking level">
-              <select
-                value={settings.models.defaultThinkingLevel}
-                onChange={(e) => set({ models: { defaultThinkingLevel: e.target.value } })}
-              >
-                {['off', 'minimal', 'low', 'medium', 'high', 'max'].map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </Row>
-            <Row label="Use deterministic mock runtime" hint="For demos/tests without a provider">
-              <input
-                type="checkbox"
-                checked={settings.models.useMockRuntime}
-                onChange={(e) => set({ models: { useMockRuntime: e.target.checked } })}
-              />
-            </Row>
+            <div className="st-card">
+              <Row label="Default thinking level">
+                <select
+                  className="st-input"
+                  value={settings.models.defaultThinkingLevel}
+                  onChange={(e) => set({ models: { defaultThinkingLevel: e.target.value } })}
+                >
+                  {['off', 'minimal', 'low', 'medium', 'high', 'max'].map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+              <Row label="Deterministic mock runtime" hint="For demos/tests without a provider">
+                <Toggle
+                  checked={settings.models.useMockRuntime}
+                  onChange={(v) => set({ models: { useMockRuntime: v } })}
+                />
+              </Row>
+            </div>
             <ProvidersBlock />
           </>
         ) : null}
 
         {section === 'permissions' ? (
-          <div style={{ padding: 16 }} className="text-muted">
-            <p>Risk policy defaults (spec §10.2):</p>
-            <ul style={{ lineHeight: 1.9 }}>
-              <li>R0 read-only — allowed automatically in every mode.</li>
-              <li>R1 reversible workspace writes — Edit asks / plan approval; Auto per setting.</li>
-              <li>R2 local execution — recognized verification commands may run; unknown ask.</li>
-              <li>R3 external / hard-to-reverse — always asks, cannot be permanently allowed.</li>
-              <li>R4 forbidden — sudo, git push, writes outside the workspace: always blocked.</li>
+          <div className="st-card st-prose">
+            <div className="st-card-title" style={{ marginBottom: 8 }}>
+              Risk policy defaults (spec §10.2)
+            </div>
+            <ul>
+              <li>
+                <b>R0</b> read-only — allowed automatically in every mode.
+              </li>
+              <li>
+                <b>R1</b> reversible workspace writes — Edit asks / plan approval; Auto per setting.
+              </li>
+              <li>
+                <b>R2</b> local execution — recognized verification commands may run; unknown ask.
+              </li>
+              <li>
+                <b>R3</b> external / hard-to-reverse — always asks, never permanently allowed.
+              </li>
+              <li>
+                <b>R4</b> forbidden — sudo, git push, writes outside the workspace: always blocked.
+              </li>
             </ul>
-            <p>Per-workspace grants appear here once made from permission cards.</p>
+            <p className="st-hint">
+              Per-workspace grants appear here once made from permission cards.
+            </p>
           </div>
         ) : null}
 
         {section === 'privacy' ? (
-          <>
+          <div className="st-card">
             <Row
               label="Product analytics"
               hint="Default off. Never includes code, prompts or paths."
             >
-              <input
-                type="checkbox"
+              <Toggle
                 checked={settings.privacy.telemetryEnabled}
-                onChange={(e) => set({ privacy: { telemetryEnabled: e.target.checked } })}
+                onChange={(v) => set({ privacy: { telemetryEnabled: v } })}
               />
             </Row>
             <Row label="Crash reports" hint="Separate opt-in with redacted preview">
-              <input
-                type="checkbox"
+              <Toggle
                 checked={settings.privacy.crashReportsEnabled}
-                onChange={(e) => set({ privacy: { crashReportsEnabled: e.target.checked } })}
+                onChange={(v) => set({ privacy: { crashReportsEnabled: v } })}
               />
             </Row>
-            <div className="text-muted" style={{ padding: '10px 16px', fontSize: 12 }}>
+            <div className="st-hint" style={{ padding: '10px 2px 2px' }}>
               All code, tasks, timelines and diffs stay on this machine. Model requests go directly
               to your configured provider.
             </div>
-          </>
+          </div>
         ) : null}
 
         {section === 'updates' ? (
-          <>
+          <div className="st-card">
             <Row label="Channel">
               <select
+                className="st-input"
                 value={settings.updates.channel}
                 onChange={(e) => set({ updates: { channel: e.target.value } })}
               >
@@ -507,21 +554,21 @@ export function SettingsView(): React.JSX.Element {
               </select>
             </Row>
             <Row label="Check automatically">
-              <input
-                type="checkbox"
+              <Toggle
                 checked={settings.updates.autoCheck}
-                onChange={(e) => set({ updates: { autoCheck: e.target.checked } })}
+                onChange={(v) => set({ updates: { autoCheck: v } })}
               />
             </Row>
-          </>
+          </div>
         ) : null}
 
         {section === 'about' && appInfo ? (
-          <div style={{ padding: 16, lineHeight: 2 }}>
-            <div>
-              <strong>Charter</strong> {appInfo.appVersion}
+          <div className="st-card st-prose">
+            <div className="st-about-name">
+              <Ic name="flag" size={18} />
+              <b>Charter</b> <span className="text-muted">{appInfo.appVersion}</span>
             </div>
-            <div className="mono text-muted" style={{ fontSize: 12 }}>
+            <div className="mono st-about-meta">
               Electron {appInfo.electron} · Node {appInfo.node} · Chrome {appInfo.chrome}
               <br />
               Agent engine {appInfo.piSdkVersion ?? 'not installed'}
@@ -530,9 +577,9 @@ export function SettingsView(): React.JSX.Element {
               <br />
               Data: {appInfo.userDataDir}
             </div>
-            <div className="text-muted" style={{ fontSize: 12 }}>
-              License: MIT. Third-party notices ship with the installer.
-            </div>
+            <p className="st-hint">
+              Local-first: your code and tasks stay on this machine. License: MIT.
+            </p>
           </div>
         ) : null}
       </div>

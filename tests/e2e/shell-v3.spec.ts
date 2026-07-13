@@ -134,6 +134,51 @@ test.describe('Shell v3 — Live Board (PIVOT-025)', () => {
   });
 });
 
+test.describe('Shell v3 — Home refinements (PIVOT-027, PIVOT-012 title)', () => {
+  test('the active project row expands into a file tree; files open in the Editor', async () => {
+    const fixture = createTsSmallFixture();
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
+    });
+    try {
+      await page.getByTestId('surface-home').click();
+      // The active row toggles its lazy tree in place.
+      await page.locator('[data-testid^="home-recent-"].active').click();
+      await expect(page.getByTestId('home-project-tree')).toBeVisible();
+      await page.getByTestId('home-tree-src').click();
+      await expect(page.getByTestId('home-tree-src/index.ts')).toBeVisible();
+      await page.getByTestId('home-tree-src/index.ts').click();
+      await expect(page.getByTestId('workbench')).toBeVisible();
+      await expect(page.getByTestId('home-view')).toHaveCount(0);
+      await expect(page.getByTestId('tab-src/index.ts')).toBeVisible();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('Advanced title overrides the derived task title (full-form parity)', async () => {
+    const fixture = createTsSmallFixture();
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
+    });
+    try {
+      await page.getByTestId('surface-home').click();
+      await expect(page.getByTestId('home-model')).toHaveValue(/mock/);
+      await page.getByTestId('home-mode-auto').click();
+      await page.getByTestId('home-advanced-toggle').click();
+      await page.getByTestId('home-adv-title').fill('Custom charter title');
+      await page
+        .getByTestId('home-intent')
+        .fill('[scenario:edit-basic] something long and derived');
+      await page.getByTestId('home-submit').click();
+      await expect(page.getByTestId('task-room')).toBeVisible();
+      await expect(page.locator('.tr-title')).toHaveText('Custom charter title');
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 /** First (most recent) task id from the sidebar rows. */
 async function taskIdOf(page: import('@playwright/test').Page): Promise<string> {
   const el = page.locator('[data-testid^="home-task-"]').first();

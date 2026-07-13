@@ -5,9 +5,16 @@ export interface ProviderEndpoint {
   providerId: string;
   providerName: string;
   url: string;
+  /** Model-list path appended to a custom base URL (gateways/proxies). */
+  listPath: string;
   headers(apiKey: string): Record<string, string>;
   /** Map the provider's response body to model descriptors. */
   map(body: unknown): Array<{ modelId: string; displayName: string; contextWindow?: number }>;
+}
+
+export interface ProviderCredential {
+  apiKey: string;
+  baseUrl: string | null;
 }
 
 /** Public model-list endpoints for providers the runtime can execute against. */
@@ -16,7 +23,13 @@ export const PROVIDER_ENDPOINTS: ProviderEndpoint[] = [
     providerId: 'anthropic',
     providerName: 'Anthropic',
     url: 'https://api.anthropic.com/v1/models?limit=100',
-    headers: (apiKey) => ({ 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }),
+    listPath: '/v1/models',
+    // Gateways commonly accept either header scheme; send both.
+    headers: (apiKey) => ({
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      Authorization: `Bearer ${apiKey}`,
+    }),
     map: (body) => {
       const data = (body as { data?: Array<{ id: string; display_name?: string }> }).data ?? [];
       return data.map((m) => ({ modelId: m.id, displayName: m.display_name ?? m.id }));
@@ -26,6 +39,7 @@ export const PROVIDER_ENDPOINTS: ProviderEndpoint[] = [
     providerId: 'openai',
     providerName: 'OpenAI',
     url: 'https://api.openai.com/v1/models',
+    listPath: '/v1/models',
     headers: (apiKey) => ({ Authorization: `Bearer ${apiKey}` }),
     map: (body) => {
       const data = (body as { data?: Array<{ id: string }> }).data ?? [];
@@ -51,7 +65,7 @@ export class ModelCatalogService {
   private readonly cache = new Map<string, ModelDescriptor[]>();
 
   constructor(
-    private readonly getApiKey: (providerId: string) => string | null,
+    private readonly getCredential: (providerId: string) => ProviderCredential | null,
     private readonly logger: Logger,
     private readonly fetchImpl: FetchLike = (url, init) => fetch(url, init),
     private readonly timeoutMs = 12_000,
@@ -88,19 +102,23 @@ export class ModelCatalogService {
         }),
       );
     }
-    const apiKey = this.getApiKey(providerId);
-    if (!apiKey) {
+    const credential = this.getCredential(providerId);
+    if (!credential) {
       throw new ProductFailure(
         productError('MODELS_NO_CREDENTIAL', {
           userMessage: `Add an API key for ${endpoint.providerName} first, then fetch models.`,
         }),
       );
     }
+    // Custom gateways list models under the same path relative to their base.
+    const url = credential.baseUrl
+      ? `${credential.baseUrl.replace(/\/+$/, '')}${endpoint.listPath}`
+      : endpoint.url;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await this.fetchImpl(endpoint.url, {
-        headers: endpoint.headers(apiKey),
+      const response = await this.fetchImpl(url, {
+        headers: endpoint.headers(credential.apiKey),
         signal: controller.signal,
       });
       if (!response.ok) {

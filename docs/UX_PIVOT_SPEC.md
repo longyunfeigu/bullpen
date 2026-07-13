@@ -74,6 +74,9 @@ New acceptance:
 | PIVOT-023 | Humane language: no raw state enums, transition rows, or tool-status strings user-visible anywhere; one shared state-label dictionary; no emoji iconography in chrome/cards. |
 | PIVOT-024 | Studio theme (light + dark, system-following) from shared tokens on both surfaces; review overlay renders without chrome collisions. |
 | PIVOT-025 | Live Board: while tasks run, per-project boards show per-file tiles with write ripples, 60s-decay heat, rhythm bars and a "writing" beacon; tiles open a read-only diff-so-far lens; driven by change events only (no fs polling); pauses on unfocus/reduced-motion; collapses when idle. |
+| PIVOT-026 | Provider endpoints: Settings → Models stores per-provider API key **plus optional Base URL** (gateway/proxy). The live model fetch honors the base URL; the pi runtime re-points that provider at the endpoint and synthesizes gateway-only model ids so real runs execute through it. Keys stay in the OS keychain scope; the base URL is non-secret meta. |
+| PIVOT-027 | Home project tree: clicking the selected project row expands a lazy file tree in the sidebar (dirs expand in place, capped + ignored-filtered); clicking a file opens it in the Editor. Only the selected project expands (one open workspace at a time). |
+| PIVOT-012r | Composer Advanced is the canonical full form: it carries an optional **Title** field (defaults to the first intent line), boundaries, success criteria and verification — full parity with the Editor's New-Task dialog. |
 
 ## Notes
 

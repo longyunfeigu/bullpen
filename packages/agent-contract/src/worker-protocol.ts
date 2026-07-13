@@ -14,6 +14,8 @@ export interface WorkerCredential {
   providerId: string;
   kind: 'api-key';
   value: string;
+  /** Optional API endpoint override (gateways/proxies); null = provider default. */
+  baseUrl?: string | null;
 }
 
 export type WorkerInbound =

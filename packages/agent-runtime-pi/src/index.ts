@@ -111,10 +111,83 @@ export class PiAgentRuntime implements AgentRuntime {
     }
     this.auth = AuthStorage.inMemory(data);
     this.registry = ModelRegistry.inMemory(this.auth);
+    // Gateway/proxy support: a credential base URL re-points every model of
+    // that provider at the custom endpoint (pi keeps the provider's API shape).
+    for (const credential of this.credentials) {
+      if (credential.baseUrl) {
+        this.registry.registerProvider(credential.providerId, { baseUrl: credential.baseUrl });
+      }
+    }
     return { runtimeId: 'pi', runtimeVersion: PI_VERSION };
   }
 
+  /** API shape for a provider when synthesizing gateway-listed models. */
+  private apiFor(providerId: string): 'anthropic-messages' | 'openai-completions' {
+    return providerId === 'openai' ? 'openai-completions' : 'anthropic-messages';
+  }
+
+  /**
+   * A custom gateway may list model ids pi's registry does not know built-in.
+   * Synthesize a registration for the missing id (keeping every existing model
+   * of that provider) so the user can run exactly what their gateway offers.
+   */
+  private ensureModel(providerId: string, modelId: string): void {
+    if (this.registry.find(providerId, modelId)) return;
+    const credential = this.credentials.find((c) => c.providerId === providerId);
+    if (!credential?.baseUrl) return; // only synthesize for custom endpoints
+    type RegisteredModel = {
+      id: string;
+      name: string;
+      reasoning: boolean;
+      input: Array<'text' | 'image'>;
+      cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+      contextWindow: number;
+      maxTokens: number;
+    };
+    const existing = (
+      this.registry.getAll() as Array<{
+        provider: string;
+        id: string;
+        name?: string;
+        reasoning?: boolean;
+        input?: Array<'text' | 'image'>;
+        cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+        contextWindow?: number;
+        maxTokens?: number;
+      }>
+    ).filter((m) => m.provider === providerId);
+    const models: RegisteredModel[] = existing.map((m) => ({
+      id: m.id,
+      name: m.name ?? m.id,
+      reasoning: Boolean(m.reasoning),
+      input: m.input ?? ['text'],
+      cost: {
+        input: m.cost?.input ?? 0,
+        output: m.cost?.output ?? 0,
+        cacheRead: m.cost?.cacheRead ?? 0,
+        cacheWrite: m.cost?.cacheWrite ?? 0,
+      },
+      contextWindow: m.contextWindow ?? 200000,
+      maxTokens: m.maxTokens ?? 8192,
+    }));
+    models.push({
+      id: modelId,
+      name: modelId,
+      reasoning: false,
+      input: ['text'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 200000,
+      maxTokens: 8192,
+    });
+    this.registry.registerProvider(providerId, {
+      baseUrl: credential.baseUrl,
+      api: this.apiFor(providerId),
+      models,
+    });
+  }
+
   async createSession(input: CreateSessionInput): Promise<RuntimeSessionRef> {
+    this.ensureModel(input.model.providerId, input.model.modelId);
     const model = this.registry.find(input.model.providerId, input.model.modelId);
     if (!model) {
       throw toProductError(

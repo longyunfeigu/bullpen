@@ -74,8 +74,8 @@ export function registerM6Handlers(
       'models.fetchRemote': async ({ providerId }) => ({
         models: await catalog.fetchRemote(providerId),
       }),
-      'secrets.set': async ({ providerId, apiKey }) => {
-        secrets.setApiKey(providerId, apiKey);
+      'secrets.set': async ({ providerId, apiKey, baseUrl }) => {
+        secrets.setApiKey(providerId, apiKey, baseUrl ?? null);
         // Worker must be restarted to pick up new credentials.
         await host.stopWorker();
         return { configured: true };

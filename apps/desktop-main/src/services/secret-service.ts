@@ -22,7 +22,7 @@ export class SecretService {
     return join(this.dir, `${safe}.bin`);
   }
 
-  setApiKey(providerId: string, apiKey: string): void {
+  setApiKey(providerId: string, apiKey: string, baseUrl?: string | null): void {
     if (!safeStorage.isEncryptionAvailable()) {
       throw new ProductFailure(
         productError('SEC_ENCRYPTION_UNAVAILABLE', {
@@ -31,15 +31,22 @@ export class SecretService {
         }),
       );
     }
-    const payload = JSON.stringify({ kind: 'api-key', value: apiKey });
+    const normalizedBaseUrl = baseUrl?.trim().replace(/\/+$/, '') || null;
+    const payload = JSON.stringify({ kind: 'api-key', value: apiKey, baseUrl: normalizedBaseUrl });
     const encrypted = safeStorage.encryptString(payload);
     const hint = apiKey.length > 4 ? `…${apiKey.slice(-4)}` : '…';
     writeFileSync(this.fileFor(providerId), encrypted);
     writeFileSync(
       `${this.fileFor(providerId)}.meta`,
-      JSON.stringify({ providerId, hint, updatedAt: new Date().toISOString() }),
+      JSON.stringify({
+        providerId,
+        hint,
+        // The base URL is not a secret — kept in meta for UI display.
+        baseUrl: normalizedBaseUrl,
+        updatedAt: new Date().toISOString(),
+      }),
     );
-    this.logger.info('credential stored', { providerId });
+    this.logger.info('credential stored', { providerId, hasBaseUrl: normalizedBaseUrl !== null });
   }
 
   delete(providerId: string): boolean {
@@ -51,8 +58,13 @@ export class SecretService {
     return existed;
   }
 
-  list(): Array<{ providerId: string; configured: boolean; hint: string }> {
-    const items: Array<{ providerId: string; configured: boolean; hint: string }> = [];
+  list(): Array<{ providerId: string; configured: boolean; hint: string; baseUrl: string | null }> {
+    const items: Array<{
+      providerId: string;
+      configured: boolean;
+      hint: string;
+      baseUrl: string | null;
+    }> = [];
     try {
       for (const name of readdirSync(this.dir)) {
         if (!name.endsWith('.meta')) continue;
@@ -60,8 +72,14 @@ export class SecretService {
           const meta = JSON.parse(readFileSync(join(this.dir, name), 'utf8')) as {
             providerId: string;
             hint: string;
+            baseUrl?: string | null;
           };
-          items.push({ providerId: meta.providerId, configured: true, hint: meta.hint });
+          items.push({
+            providerId: meta.providerId,
+            configured: true,
+            hint: meta.hint,
+            baseUrl: meta.baseUrl ?? null,
+          });
         } catch {
           // skip broken meta
         }
@@ -85,9 +103,15 @@ export class SecretService {
         const payload = JSON.parse(safeStorage.decryptString(encrypted)) as {
           kind: string;
           value: string;
+          baseUrl?: string | null;
         };
         if (payload.kind === 'api-key') {
-          credentials.push({ providerId: item.providerId, kind: 'api-key', value: payload.value });
+          credentials.push({
+            providerId: item.providerId,
+            kind: 'api-key',
+            value: payload.value,
+            baseUrl: payload.baseUrl ?? null,
+          });
         }
       } catch (e) {
         this.logger.warn('credential unreadable', {

@@ -23,7 +23,11 @@ describe('ModelCatalogService (PIVOT-009)', () => {
       seenHeaders = init.headers;
       return { ok: true, status: 200, json: async () => anthropicBody };
     };
-    const catalog = new ModelCatalogService(() => 'sk-test-123', logger, fetchImpl);
+    const catalog = new ModelCatalogService(
+      () => ({ apiKey: 'sk-test-123', baseUrl: null }),
+      logger,
+      fetchImpl,
+    );
     const models = await catalog.fetchRemote('anthropic');
     expect(models.map((m) => m.modelId)).toEqual(['claude-opus-4-8', 'claude-haiku-4-5']);
     expect(models[0]!.displayName).toBe('Claude Opus 4.8');
@@ -34,7 +38,7 @@ describe('ModelCatalogService (PIVOT-009)', () => {
 
   it('merges fetched models into the registry without duplicating ids', async () => {
     const catalog = new ModelCatalogService(
-      () => 'sk-x',
+      () => ({ apiKey: 'sk-x', baseUrl: null }),
       logger,
       fetchReturning(200, anthropicBody),
     );
@@ -64,20 +68,47 @@ describe('ModelCatalogService (PIVOT-009)', () => {
       (e: unknown) => e instanceof ProductFailure && e.error.code === 'MODELS_NO_CREDENTIAL',
     );
 
-    const badKey = new ModelCatalogService(() => 'sk-bad', logger, fetchReturning(401, {}));
+    const badKey = new ModelCatalogService(
+      () => ({ apiKey: 'sk-bad', baseUrl: null }),
+      logger,
+      fetchReturning(401, {}),
+    );
     await expect(badKey.fetchRemote('anthropic')).rejects.toSatisfy(
       (e: unknown) => e instanceof ProductFailure && e.error.code === 'MODELS_BAD_CREDENTIAL',
     );
 
-    const catalog = new ModelCatalogService(() => 'sk-x', logger, fetchReturning(200, {}));
+    const catalog = new ModelCatalogService(
+      () => ({ apiKey: 'sk-x', baseUrl: null }),
+      logger,
+      fetchReturning(200, {}),
+    );
     await expect(catalog.fetchRemote('nope')).rejects.toSatisfy(
       (e: unknown) => e instanceof ProductFailure && e.error.code === 'MODELS_PROVIDER_UNSUPPORTED',
     );
   });
 
+  it('uses the credential base URL for gateways and keeps both auth headers', async () => {
+    let seenUrl = '';
+    let seenHeaders: Record<string, string> = {};
+    const fetchImpl: FetchLike = async (url, init) => {
+      seenUrl = url;
+      seenHeaders = init.headers;
+      return { ok: true, status: 200, json: async () => anthropicBody };
+    };
+    const catalog = new ModelCatalogService(
+      () => ({ apiKey: 'cr-gw-1', baseUrl: 'http://10.0.0.9:3000/api/' }),
+      logger,
+      fetchImpl,
+    );
+    await catalog.fetchRemote('anthropic');
+    expect(seenUrl).toBe('http://10.0.0.9:3000/api/v1/models');
+    expect(seenHeaders['x-api-key']).toBe('cr-gw-1');
+    expect(seenHeaders['Authorization']).toBe('Bearer cr-gw-1');
+  });
+
   it('filters OpenAI ids down to chat-capable models', async () => {
     const catalog = new ModelCatalogService(
-      () => 'sk-x',
+      () => ({ apiKey: 'sk-x', baseUrl: null }),
       logger,
       fetchReturning(200, {
         data: [{ id: 'gpt-5.2' }, { id: 'o4-mini' }, { id: 'whisper-1' }, { id: 'dall-e-3' }],

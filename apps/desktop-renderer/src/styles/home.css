@@ -1113,3 +1113,65 @@
 .minus {
   color: var(--danger);
 }
+
+/* ---------- sidebar project file tree ---------- */
+
+.hm-tree {
+  margin: 1px 0 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.hm-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+.hm-tree-row:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.hm-tree-row svg {
+  color: var(--fg-faint);
+  flex: none;
+}
+.hm-tree-caret {
+  width: 12px;
+  flex: none;
+  display: flex;
+  transition: transform 0.12s;
+  transform: rotate(-90deg);
+}
+.hm-tree-caret.open {
+  transform: rotate(0deg);
+}
+.hm-tree-caret.none {
+  visibility: hidden;
+}
+.hm-tree-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.hm-tree-loading {
+  font-size: 11px;
+  color: var(--fg-faint);
+  padding: 3px 8px;
+}
+.hm-caret svg {
+  transition: transform 0.12s;
+  transform: rotate(-90deg);
+}
+.hm-caret.open svg {
+  transform: rotate(0deg);
+}

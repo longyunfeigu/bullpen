@@ -679,9 +679,18 @@ export const CHANNELS = {
   ),
   'secrets.set': ch(
     'secrets.set',
-    1,
+    2,
     z
-      .object({ providerId: z.string().min(1).max(100), apiKey: z.string().min(1).max(4000) })
+      .object({
+        providerId: z.string().min(1).max(100),
+        apiKey: z.string().min(1).max(4000),
+        // Optional endpoint override for gateways/proxies (http(s) only).
+        baseUrl: z
+          .string()
+          .regex(/^https?:\/\/\S+$/)
+          .max(2000)
+          .optional(),
+      })
       .strict(),
     z.object({ configured: z.boolean() }),
   ),
@@ -693,11 +702,16 @@ export const CHANNELS = {
   ),
   'secrets.list': ch(
     'secrets.list',
-    1,
+    2,
     z.object({}).strict(),
     z.object({
       items: z.array(
-        z.object({ providerId: z.string(), configured: z.boolean(), hint: z.string() }),
+        z.object({
+          providerId: z.string(),
+          configured: z.boolean(),
+          hint: z.string(),
+          baseUrl: z.string().nullable(),
+        }),
       ),
     }),
   ),

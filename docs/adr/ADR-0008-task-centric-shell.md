@@ -159,6 +159,24 @@ New:
    Review/Replay render from the global overlay registry and work on both
    surfaces.
 
+4. **Provider base URLs (PIVOT-026).** Credentials gained an optional endpoint
+   override for gateways/proxies. Storage: the key stays encrypted in the OS
+   keychain scope; the base URL is non-secret display meta. The model catalog
+   fetches `<base>/v1/models` with both auth header styles (gateways accept
+   either). The pi adapter re-points the provider via
+   `ModelRegistry.registerProvider({ baseUrl })` and, for model ids the
+   registry doesn't know built-in, synthesizes a registration (keeping every
+   existing model) so users can run exactly what their gateway lists. Verified
+   live against a real Anthropic-compatible gateway (25 models fetched, real
+   ask task answered, usage/cost reported by the pi runtime).
+5. **Settings restyle + Home tree + Advanced title.** Settings moved to the
+   Studio card language (nav rail with icons, toggle switches, provider rows
+   showing endpoint). The selected Home project row expands into a lazy file
+   tree (`fs.listDir`, ignored-filtered, capped) whose files open in the
+   Editor. The composer's Advanced form gained the optional Title field,
+   closing the parity gap with the Editor's New-Task dialog — the composer
+   remains the canonical full form (per ADR-0004 note).
+
 ## Alternatives considered
 
 - **A — keep co-equal dual surfaces, restyle only.** Cheapest; rejected: keeps
