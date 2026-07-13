@@ -1,0 +1,36 @@
+import type { Logger } from '@pi-ide/foundation';
+import { registerHandlers } from './router.js';
+import type { TaskService } from '../services/task-service.js';
+
+/** M8: plan approval, review change set, per-file/hunk decisions, accept (§13.2, CHG-005/007/008). */
+export function registerM8Handlers(tasks: TaskService, logger: Logger): void {
+  registerHandlers(
+    {
+      'task.planDecision': async (payload) => ({
+        task: tasks.decidePlan({
+          taskId: payload.taskId,
+          decision: payload.decision,
+          ...(payload.editedPlan !== undefined ? { editedPlan: payload.editedPlan } : {}),
+          ...(payload.reason !== undefined ? { reason: payload.reason } : {}),
+          confirmRemovedDone: payload.confirmRemovedDone,
+        }),
+      }),
+      'task.changeSet': async ({ taskId }) => ({
+        changeSet: await tasks.changeSetForReview(taskId),
+      }),
+      'task.reviewDecision': async (payload) =>
+        tasks.applyReviewDecision({
+          taskId: payload.taskId,
+          path: payload.path,
+          scope: payload.scope,
+          decision: payload.decision,
+          ...(payload.hunkKey !== undefined ? { hunkKey: payload.hunkKey } : {}),
+          ...(payload.expectedCurrentHash !== undefined
+            ? { expectedCurrentHash: payload.expectedCurrentHash }
+            : {}),
+        }),
+      'task.accept': async ({ taskId }) => ({ task: tasks.acceptTask(taskId) }),
+    },
+    logger,
+  );
+}

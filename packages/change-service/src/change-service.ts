@@ -6,6 +6,7 @@ import { detectBinary, newId, productError, ProductFailure } from '@pi-ide/found
 import { resolveInsideRoot } from '@pi-ide/workspace-service';
 import type { DocumentStore } from '@pi-ide/document-service';
 import { BlobStore } from './blob-store.js';
+import { parseHunks, reverseHunkPatchText } from './review.js';
 
 export interface FileBaseline {
   taskId: string;
@@ -110,8 +111,11 @@ function chgError(
   code: string,
   userMessage: string,
   context?: Record<string, unknown>,
+  retryable?: boolean,
 ): ProductFailure {
-  return new ProductFailure(productError(code, { userMessage, context }));
+  return new ProductFailure(
+    productError(code, { userMessage, context, ...(retryable !== undefined ? { retryable } : {}) }),
+  );
 }
 
 /**
@@ -231,16 +235,20 @@ export class ChangeService {
     if (input.baseHash !== current.hash) {
       throw chgError(
         'CHG_VERSION_CONFLICT',
-        'The file changed since it was read; the patch was rejected to protect newer edits.',
+        'The file changed since it was read; the patch was rejected to protect newer edits. Re-read the file to get its current hash before patching again.',
         { path: input.path, expected: input.baseHash, actual: current.hash },
+        true,
       );
     }
 
     const next = applyUnifiedPatch(current.content, input.patch);
     if (next === false) {
-      throw chgError('CHG_PATCH_FAILED', 'The patch does not apply to the current content.', {
-        path: input.path,
-      });
+      throw chgError(
+        'CHG_PATCH_FAILED',
+        'The patch does not apply to the current content.',
+        { path: input.path },
+        true,
+      );
     }
 
     await this.writeThrough(input.path, next);
@@ -601,6 +609,153 @@ export class ChangeService {
       };
     }
     return { ok, restored, verified, conflictsOverridden: preflight.conflicts.map((c) => c.path) };
+  }
+
+  /** CHG-008: reverse-apply exactly one hunk of a file's net diff. Fails closed on staleness. */
+  async rejectHunk(
+    taskId: string,
+    toolCallId: string | null,
+    input: { path: string; hunkKey: string; expectedCurrentHash: string },
+  ): Promise<{ afterHash: string }> {
+    const current = await this.documents.readLogical(input.path).catch(() => null);
+    if (!current) {
+      throw chgError('CHG_TARGET_MISSING', 'The file under review no longer exists.', {
+        path: input.path,
+      });
+    }
+    if (current.binary) {
+      throw chgError('CHG_BINARY', 'Binary files cannot be reviewed per hunk.', {
+        path: input.path,
+      });
+    }
+    if (current.hash !== input.expectedCurrentHash) {
+      throw chgError(
+        'CHG_REVIEW_STALE',
+        'The file changed since the review was rendered. Nothing was overwritten — refresh the review.',
+        { path: input.path },
+        true,
+      );
+    }
+    const baseline = this.repo.getBaseline(taskId, input.path);
+    if (!baseline) {
+      throw chgError('CHG_NO_BASELINE', 'This file was not changed by the task.', {
+        path: input.path,
+      });
+    }
+    const baselineBytes = baseline.blobHash ? await this.blobs.get(baseline.blobHash) : null;
+    const baselineText =
+      baseline.existed && baselineBytes ? stripBom(baselineBytes.toString('utf8')) : '';
+    const diff = createTwoFilesPatch(input.path, input.path, baselineText, current.content, '', '');
+    const hunk = parseHunks(diff).find((h) => h.key === input.hunkKey);
+    if (!hunk) {
+      throw chgError(
+        'CHG_REVIEW_STALE',
+        'That change block no longer exists in the current diff. Refresh the review.',
+        { path: input.path, hunkKey: input.hunkKey },
+        true,
+      );
+    }
+    const next = applyUnifiedPatch(current.content, reverseHunkPatchText(input.path, hunk));
+    if (next === false) {
+      throw chgError(
+        'CHG_REVIEW_STALE',
+        'The change block could not be undone cleanly against the current content.',
+        { path: input.path, hunkKey: input.hunkKey },
+        true,
+      );
+    }
+    return this.writeFileDirect(taskId, toolCallId, {
+      path: input.path,
+      content: Buffer.from(next, 'utf8'),
+      author: 'user',
+    });
+  }
+
+  /** Restore one file to its task baseline (file-level review reject). */
+  async revertFile(
+    taskId: string,
+    toolCallId: string | null,
+    input: { path: string; expectedCurrentHash?: string },
+  ): Promise<{ kind: 'restored' | 'removed' | 'noop' }> {
+    const baseline = this.repo.getBaseline(taskId, input.path);
+    if (!baseline) {
+      throw chgError('CHG_NO_BASELINE', 'This file was not changed by the task.', {
+        path: input.path,
+      });
+    }
+    const abs = await resolveInsideRoot(this.root, input.path);
+    const logical = await this.documents.readLogical(input.path).catch(() => null);
+    if (input.expectedCurrentHash !== undefined && logical?.hash !== input.expectedCurrentHash) {
+      throw chgError(
+        'CHG_REVIEW_STALE',
+        'The file changed since the review was rendered. Nothing was overwritten — refresh the review.',
+        { path: input.path },
+        true,
+      );
+    }
+
+    if (baseline.existed) {
+      const bytes = await this.blobs.get(baseline.blobHash!);
+      if (!bytes) {
+        throw chgError('CHG_BLOB_MISSING', 'The baseline snapshot is missing for this file.', {
+          path: input.path,
+        });
+      }
+      let beforeHash: string | null = null;
+      try {
+        beforeHash = sha(await fs.readFile(abs));
+      } catch {
+        beforeHash = null;
+      }
+      if (beforeHash === baseline.blobHash) return { kind: 'noop' };
+      await this.writeBytes(input.path, bytes, baseline.mode);
+      if (this.documents.isOpen(input.path)) {
+        await this.documents.handleExternalChange(input.path);
+      }
+      this.repo.recordChange({
+        id: newId('chg'),
+        taskId,
+        toolCallId,
+        relativePath: input.path,
+        kind: beforeHash === null ? 'created' : 'modified',
+        beforeHash,
+        afterHash: baseline.blobHash,
+        patch: null,
+        renameTo: null,
+        author: 'user',
+        createdAt: new Date().toISOString(),
+      });
+      return { kind: 'restored' };
+    }
+
+    // Baseline did not exist: reverting means removing what the task created.
+    let existingBytes: Buffer | null = null;
+    try {
+      existingBytes = await fs.readFile(abs);
+    } catch {
+      existingBytes = null;
+    }
+    if (existingBytes !== null) {
+      await this.blobs.put(existingBytes); // keep a recovery snapshot
+      await fs.rm(abs);
+      if (this.documents.isOpen(input.path)) {
+        await this.documents.handleExternalChange(input.path);
+      }
+      this.repo.recordChange({
+        id: newId('chg'),
+        taskId,
+        toolCallId,
+        relativePath: input.path,
+        kind: 'deleted',
+        beforeHash: sha(existingBytes),
+        afterHash: null,
+        patch: null,
+        renameTo: null,
+        author: 'user',
+        createdAt: new Date().toISOString(),
+      });
+    }
+    return { kind: 'removed' };
   }
 }
 

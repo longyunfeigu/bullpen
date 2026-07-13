@@ -110,6 +110,68 @@ export const AskUserPromptDtoSchema = z.object({
 });
 export type AskUserPromptDto = z.infer<typeof AskUserPromptDtoSchema>;
 
+/** Structured task plan (§13.2). */
+export const PlanStepDtoSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string().optional(),
+  status: z.enum(['pending', 'in_progress', 'done', 'skipped', 'blocked']),
+  expectedFiles: z.array(z.string()).optional(),
+  verification: z.string().optional(),
+});
+export const TaskPlanDtoSchema = z.object({
+  version: z.number().int(),
+  summary: z.string(),
+  steps: z.array(PlanStepDtoSchema),
+});
+export type TaskPlanDto = z.infer<typeof TaskPlanDtoSchema>;
+
+/** User edit of a proposed plan: text/order only; status is preserved server-side. */
+export const PlanEditDtoSchema = z.object({
+  summary: z.string().min(1).max(2000).optional(),
+  steps: z
+    .array(
+      z.object({
+        id: z.string().max(100).optional(),
+        title: z.string().min(1).max(300),
+        description: z.string().max(2000).optional(),
+      }),
+    )
+    .min(1)
+    .max(30),
+});
+export type PlanEditDto = z.infer<typeof PlanEditDtoSchema>;
+
+/** One reviewable hunk of a file's net diff (CHG-007/008). */
+export const ReviewHunkDtoSchema = z.object({
+  key: z.string(),
+  header: z.string(),
+  lines: z.array(z.string()),
+  state: z.enum(['pending', 'accepted', 'rejected']),
+});
+export type ReviewHunkDto = z.infer<typeof ReviewHunkDtoSchema>;
+
+export const ChangeSetFileDtoSchema = z.object({
+  path: z.string(),
+  status: z.enum(['created', 'modified', 'deleted', 'renamed']),
+  renamedFrom: z.string().nullable(),
+  binary: z.boolean(),
+  additions: z.number().int(),
+  deletions: z.number().int(),
+  currentHash: z.string().nullable(),
+  reviewState: z.enum(['pending', 'accepted', 'rejected', 'partial']),
+  hunks: z.array(ReviewHunkDtoSchema),
+});
+export type ChangeSetFileDto = z.infer<typeof ChangeSetFileDtoSchema>;
+
+export const ChangeSetDtoSchema = z.object({
+  taskId: z.string(),
+  files: z.array(ChangeSetFileDtoSchema),
+  totalAdditions: z.number().int(),
+  totalDeletions: z.number().int(),
+});
+export type ChangeSetDto = z.infer<typeof ChangeSetDtoSchema>;
+
 export const ModelDescriptorDtoSchema = z.object({
   providerId: z.string(),
   providerName: z.string(),

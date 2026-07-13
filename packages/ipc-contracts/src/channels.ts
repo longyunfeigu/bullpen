@@ -7,9 +7,11 @@ import { DirEntrySchema, DocumentDtoSchema, EolSchema, OpenTabsStateSchema } fro
 import {
   AgentModeSchema,
   AskUserPromptDtoSchema,
+  ChangeSetDtoSchema,
   ModelDescriptorDtoSchema,
   ModelRefSchema,
   PermissionCardDtoSchema,
+  PlanEditDtoSchema,
   TaskDtoSchema,
   TimelineEventDtoSchema,
   VerificationCommandSchema,
@@ -520,6 +522,47 @@ export const CHANNELS = {
     1,
     z.object({ callId: z.string(), answer: z.string().max(20000) }).strict(),
     z.object({ ok: z.boolean() }),
+  ),
+  'task.planDecision': ch(
+    'task.planDecision',
+    1,
+    z
+      .object({
+        taskId: z.string(),
+        decision: z.enum(['approve', 'reject']),
+        editedPlan: PlanEditDtoSchema.optional(),
+        reason: z.string().max(2000).optional(),
+        confirmRemovedDone: z.boolean().default(false),
+      })
+      .strict(),
+    z.object({ task: TaskDtoSchema }),
+  ),
+  'task.changeSet': ch(
+    'task.changeSet',
+    1,
+    z.object({ taskId: z.string() }).strict(),
+    z.object({ changeSet: ChangeSetDtoSchema }),
+  ),
+  'task.reviewDecision': ch(
+    'task.reviewDecision',
+    1,
+    z
+      .object({
+        taskId: z.string(),
+        path: z.string().min(1),
+        scope: z.enum(['file', 'hunk']),
+        decision: z.enum(['accept', 'reject']),
+        hunkKey: z.string().max(100).optional(),
+        expectedCurrentHash: z.string().max(128).optional(),
+      })
+      .strict(),
+    z.object({ status: z.enum(['applied', 'stale']), changeSet: ChangeSetDtoSchema }),
+  ),
+  'task.accept': ch(
+    'task.accept',
+    1,
+    z.object({ taskId: z.string() }).strict(),
+    z.object({ task: TaskDtoSchema }),
   ),
   'models.list': ch(
     'models.list',

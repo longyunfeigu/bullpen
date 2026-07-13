@@ -13,11 +13,15 @@ import type {
   CreateSessionInput,
   ModelRef,
   RuntimeSessionRef,
+  TaskPlan,
   ToolCallRequest,
 } from '@pi-ide/agent-contract';
 import type {
   AskUserPromptDto,
+  ChangeSetDto,
+  ChangeSetFileDto,
   PermissionCardDto,
+  PlanEditDto,
   TaskDto,
   TimelineEventDto,
   VerificationCommandSchema,
@@ -28,16 +32,26 @@ import {
   ToolGateway,
   registerReadOnlyTools,
   registerCommandTools,
+  registerWriteTools,
+  createPlanAwarePermission,
+  normalizeProposedPlan,
+  applyPlanEdit,
+  applyStatusUpdates,
   PermissionEngine,
   type AskUserPrompt,
   type PermissionRequestCard,
+  type PlanGate,
+  type PlanStepUpdate,
+  type ProposedPlanInput,
   type ToolAuditRecord,
 } from '@pi-ide/tool-gateway';
+import { parseHunks } from '@pi-ide/change-service';
 import { SearchService } from '@pi-ide/search-service';
 import { GitService } from '@pi-ide/git-service';
 import type { AgentHost, RuntimeKind } from './agent-host.js';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { SettingsService } from './settings-service.js';
+import type { M5Services } from '../ipc/m5-handlers.js';
 import { SqlPermissionStore } from './permission-store.js';
 import { broadcast } from '../broadcast.js';
 
@@ -84,12 +98,31 @@ export class TaskService {
     string,
     { prompt: AskUserPromptDto; resolve: (answer: string) => void; cleanup: () => void }
   >();
+  /** Plan projection per task (rebuilt from task_events on demand). */
+  private readonly planRecords = new Map<
+    string,
+    {
+      plan: TaskPlan | null;
+      status: 'none' | 'awaiting' | 'approved' | 'rejected';
+      version: number;
+    }
+  >();
+  /** propose_plan calls blocked on a user decision, keyed by taskId. */
+  private readonly planWaiters = new Map<
+    string,
+    {
+      resolve: (outcome: { decision: 'approved' | 'edited'; plan: TaskPlan }) => void;
+      reject: (error: unknown) => void;
+      cleanup: () => void;
+    }
+  >();
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly host: AgentHost,
     private readonly workspace: WorkspaceHost,
     private readonly settings: SettingsService,
+    private readonly m5: M5Services,
     private readonly logger: Logger,
   ) {
     host.delegate = {
@@ -102,6 +135,8 @@ export class TaskService {
     workspace.onDidChangeWorkspace((ws) => {
       this.permissionEngine?.cancelAll('workspace changed');
       this.cancelAllAsks('workspace changed');
+      this.cancelAllPlanWaits('workspace changed');
+      this.planRecords.clear();
       this.gateway = null;
       this.permissionEngine = null;
       if (ws) this.buildGateway();
@@ -122,7 +157,10 @@ export class TaskService {
     const gateway = new ToolGateway({
       root: ws.canonicalPath,
       mode: 'ask',
-      permission: engine,
+      // AG-007: writes in edit/auto are refused until this task's plan is approved.
+      permission: createPlanAwarePermission(engine, {
+        planApproved: (taskId) => this.planStatus(taskId).status === 'approved',
+      }),
       audit: (record) => this.persistToolAudit(record),
     });
     registerReadOnlyTools(gateway, {
@@ -135,6 +173,12 @@ export class TaskService {
     registerCommandTools(gateway, {
       root: ws.canonicalPath,
       userGate: { ask: (prompt, signal) => this.askUser(prompt, signal) },
+    });
+    registerWriteTools(gateway, {
+      root: ws.canonicalPath,
+      changes: () => this.m5.changeService,
+      documents: ws.documents,
+      planGate: this.planGate(),
     });
     this.gateway = gateway;
     this.permissionEngine = engine;
@@ -288,6 +332,414 @@ export class TaskService {
 
   get toolGateway(): ToolGateway | null {
     return this.gateway;
+  }
+
+  // ---------- plan approval flow (M8-01, AG-007/008, §13.2) ----------
+
+  private planGate(): PlanGate {
+    return {
+      propose: (input, signal) => this.proposePlan(input, signal),
+      update: (input) => this.updatePlanStatuses(input),
+    };
+  }
+
+  /** Current plan projection for a task; rebuilt from the event log when cold. */
+  private planStatus(taskId: string): {
+    plan: TaskPlan | null;
+    status: 'none' | 'awaiting' | 'approved' | 'rejected';
+    version: number;
+  } {
+    const cached = this.planRecords.get(taskId);
+    if (cached) return cached;
+    const rows = this.db
+      .prepare(
+        "SELECT type, payload_json FROM task_events WHERE task_id = ? AND type IN ('agent.planProposed','agent.planUpdated','user.planEdited','user.planDecision') ORDER BY sequence",
+      )
+      .all(taskId) as Array<{ type: string; payload_json: string }>;
+    let plan: TaskPlan | null = null;
+    let status: 'none' | 'awaiting' | 'approved' | 'rejected' = 'none';
+    let version = 0;
+    for (const row of rows) {
+      const payload = JSON.parse(row.payload_json) as { plan?: TaskPlan; decision?: string };
+      switch (row.type) {
+        case 'agent.planProposed':
+          plan = payload.plan ?? plan;
+          status = 'awaiting';
+          break;
+        case 'agent.planUpdated':
+        case 'user.planEdited':
+          plan = payload.plan ?? plan;
+          break;
+        case 'user.planDecision':
+          status = payload.decision === 'approved' ? 'approved' : 'rejected';
+          break;
+      }
+      if (plan) version = Math.max(version, plan.version);
+    }
+    const record = { plan, status, version };
+    this.planRecords.set(taskId, record);
+    return record;
+  }
+
+  private async proposePlan(
+    input: { taskId: string; runId: string; callId: string; plan: ProposedPlanInput },
+    signal: AbortSignal,
+  ): Promise<{ decision: 'approved' | 'edited'; plan: TaskPlan }> {
+    const task = this.getTask(input.taskId);
+    const version = this.planStatus(input.taskId).version + 1;
+    const plan = normalizeProposedPlan(input.plan, version);
+    this.recordEvent(input.taskId, 'agent.planProposed', { plan, callId: input.callId });
+
+    if (task.mode === 'auto') {
+      // §5.2/§19.3 default: Auto approves the plan automatically and keeps going.
+      this.planRecords.set(input.taskId, { plan, status: 'approved', version });
+      this.recordEvent(input.taskId, 'user.planDecision', {
+        decision: 'approved',
+        auto: true,
+        edited: false,
+        version,
+      });
+      this.hopStates(input.taskId, ['PLANNING', 'IN_PROGRESS']);
+      return { decision: 'approved', plan };
+    }
+
+    this.planRecords.set(input.taskId, { plan, status: 'awaiting', version });
+    this.hopStates(input.taskId, ['PLANNING', 'AWAITING_PLAN_APPROVAL']);
+    return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        this.planWaiters.delete(input.taskId);
+        const record = this.planStatus(input.taskId);
+        this.planRecords.set(input.taskId, { ...record, status: 'none' });
+        reject(
+          new ProductFailure(
+            productError('CANCELLED', {
+              userMessage: 'The run stopped before the plan was decided.',
+            }),
+          ),
+        );
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      this.planWaiters.set(input.taskId, {
+        resolve,
+        reject,
+        cleanup: () => signal.removeEventListener('abort', onAbort),
+      });
+      if (signal.aborted) onAbort();
+    });
+  }
+
+  /** User decision on a proposed plan (IPC task.planDecision). */
+  decidePlan(input: {
+    taskId: string;
+    decision: 'approve' | 'reject';
+    editedPlan?: PlanEditDto;
+    reason?: string;
+    confirmRemovedDone?: boolean;
+  }): TaskDto {
+    const record = this.planStatus(input.taskId);
+    if (record.status !== 'awaiting' || !record.plan) {
+      throw new ProductFailure(
+        productError('PLAN_NOT_AWAITING', {
+          userMessage: 'This task has no plan waiting for a decision.',
+        }),
+      );
+    }
+    const task = this.getTask(input.taskId);
+
+    if (input.decision === 'approve') {
+      let finalPlan = record.plan;
+      let edited = false;
+      if (input.editedPlan) {
+        const result = applyPlanEdit(record.plan, input.editedPlan, record.version + 1);
+        if (result.removedDone.length > 0 && !input.confirmRemovedDone) {
+          throw new ProductFailure(
+            productError('PLAN_EDIT_REMOVES_DONE', {
+              userMessage:
+                'This edit removes steps that are already done. Confirm the removal to proceed.',
+              context: { removed: result.removedDone.map((s) => s.title) },
+              retryable: true,
+            }),
+          );
+        }
+        if (result.changed) {
+          finalPlan = result.plan;
+          edited = true;
+          this.recordEvent(input.taskId, 'user.planEdited', {
+            plan: finalPlan,
+            version: finalPlan.version,
+          });
+        }
+      }
+      this.planRecords.set(input.taskId, {
+        plan: finalPlan,
+        status: 'approved',
+        version: finalPlan.version,
+      });
+      this.recordEvent(input.taskId, 'user.planDecision', {
+        decision: 'approved',
+        auto: false,
+        edited,
+        version: finalPlan.version,
+      });
+      if (task.state === 'AWAITING_PLAN_APPROVAL') this.setState(input.taskId, 'IN_PROGRESS');
+      const waiter = this.planWaiters.get(input.taskId);
+      if (waiter) {
+        this.planWaiters.delete(input.taskId);
+        waiter.cleanup();
+        waiter.resolve({ decision: edited ? 'edited' : 'approved', plan: finalPlan });
+      }
+      return this.getTask(input.taskId);
+    }
+
+    // Reject: §6.1 AWAITING_PLAN_APPROVAL → CANCELLED; the run is aborted.
+    this.planRecords.set(input.taskId, {
+      plan: record.plan,
+      status: 'rejected',
+      version: record.version,
+    });
+    this.recordEvent(input.taskId, 'user.planDecision', {
+      decision: 'rejected',
+      auto: false,
+      edited: false,
+      reason: input.reason ?? null,
+      version: record.version,
+    });
+    const waiter = this.planWaiters.get(input.taskId);
+    if (waiter) {
+      this.planWaiters.delete(input.taskId);
+      waiter.cleanup();
+      waiter.reject(
+        new ProductFailure(
+          productError('PLAN_REJECTED', {
+            userMessage: input.reason
+              ? `The user rejected the plan: ${input.reason}`
+              : 'The user rejected the plan; the task was cancelled.',
+          }),
+        ),
+      );
+    }
+    if (task.state === 'AWAITING_PLAN_APPROVAL') this.setState(input.taskId, 'CANCELLED');
+    const runId = this.runsByTask.get(input.taskId) ?? this.host.activeRunForTask(input.taskId);
+    if (runId) this.host.abort(runId, 'user_stop');
+    return this.getTask(input.taskId);
+  }
+
+  private async updatePlanStatuses(input: {
+    taskId: string;
+    updates: PlanStepUpdate[];
+    note?: string;
+  }): Promise<TaskPlan> {
+    const record = this.planStatus(input.taskId);
+    if (record.status !== 'approved' || !record.plan) {
+      throw new ProductFailure(
+        productError('PLAN_NOT_APPROVED', {
+          userMessage: 'There is no approved plan to update — propose a plan first.',
+          retryable: true,
+        }),
+      );
+    }
+    const { plan, delta } = applyStatusUpdates(record.plan, input.updates, record.version + 1);
+    if (delta.length > 0) {
+      this.planRecords.set(input.taskId, { plan, status: 'approved', version: plan.version });
+      this.recordEvent(input.taskId, 'agent.planUpdated', {
+        plan,
+        delta,
+        note: input.note ?? null,
+      });
+    }
+    return plan;
+  }
+
+  private cancelAllPlanWaits(reason: string): void {
+    for (const [taskId, waiter] of [...this.planWaiters]) {
+      this.planWaiters.delete(taskId);
+      waiter.cleanup();
+      waiter.reject(
+        new ProductFailure(
+          productError('CANCELLED', { userMessage: `Plan approval cancelled: ${reason}` }),
+        ),
+      );
+    }
+  }
+
+  /** Walk through legal intermediate states, ignoring hops that do not apply. */
+  private hopStates(taskId: string, states: TaskState[]): void {
+    for (const state of states) {
+      try {
+        this.setState(taskId, state);
+      } catch (e) {
+        this.logger.warn('state hop skipped', {
+          taskId,
+          to: state,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+  }
+
+  // ---------- review projection and decisions (M8-05, CHG-005/007/008) ----------
+
+  /** Net change set with hunks and review-state projection for the Review page. */
+  async changeSetForReview(taskId: string): Promise<ChangeSetDto> {
+    const changes = this.m5.changeService;
+    if (!changes) {
+      throw new ProductFailure(
+        productError('WS_NONE_OPEN', { userMessage: 'No workspace is open.' }),
+      );
+    }
+    const cs = await changes.changeSet(taskId);
+    const decisions = this.reviewDecisions(taskId);
+    const files: ChangeSetFileDto[] = cs.files.map((file) => {
+      const fileDecision = decisions.files.get(file.path);
+      const hunkDecisions = decisions.hunks.get(file.path);
+      const hunks = parseHunks(file.diff).map((hunk) => ({
+        key: hunk.key,
+        header: hunk.header,
+        lines: hunk.lines,
+        state: (hunkDecisions?.get(hunk.key) ??
+          (fileDecision === 'accepted' ? 'accepted' : 'pending')) as
+          'pending' | 'accepted' | 'rejected',
+      }));
+      const anyHunkDecided = hunks.some((h) => h.state !== 'pending');
+      const allAccepted =
+        hunks.length > 0 ? hunks.every((h) => h.state === 'accepted') : fileDecision === 'accepted';
+      const reviewState: ChangeSetFileDto['reviewState'] =
+        fileDecision === 'accepted' || allAccepted
+          ? 'accepted'
+          : anyHunkDecided
+            ? 'partial'
+            : 'pending';
+      return {
+        path: file.path,
+        status: file.status,
+        renamedFrom: file.renamedFrom,
+        binary: file.binary,
+        additions: file.additions,
+        deletions: file.deletions,
+        currentHash: file.currentHash,
+        reviewState,
+        hunks,
+      };
+    });
+    return {
+      taskId,
+      files,
+      totalAdditions: cs.totalAdditions,
+      totalDeletions: cs.totalDeletions,
+    };
+  }
+
+  private reviewDecisions(taskId: string): {
+    files: Map<string, 'accepted' | 'rejected'>;
+    hunks: Map<string, Map<string, 'accepted' | 'rejected'>>;
+  } {
+    const rows = this.db
+      .prepare(
+        "SELECT payload_json FROM task_events WHERE task_id = ? AND type = 'review.decision' ORDER BY sequence",
+      )
+      .all(taskId) as Array<{ payload_json: string }>;
+    const files = new Map<string, 'accepted' | 'rejected'>();
+    const hunks = new Map<string, Map<string, 'accepted' | 'rejected'>>();
+    for (const row of rows) {
+      const payload = JSON.parse(row.payload_json) as {
+        path: string;
+        scope: 'file' | 'hunk';
+        decision: 'accept' | 'reject';
+        hunkKey: string | null;
+      };
+      const state = payload.decision === 'accept' ? 'accepted' : 'rejected';
+      if (payload.scope === 'file') {
+        files.set(payload.path, state);
+      } else if (payload.hunkKey) {
+        const perFile = hunks.get(payload.path) ?? new Map<string, 'accepted' | 'rejected'>();
+        perFile.set(payload.hunkKey, state);
+        hunks.set(payload.path, perFile);
+      }
+    }
+    return { files, hunks };
+  }
+
+  /** Apply a review decision. Rejects mutate the working tree via the ChangeService. */
+  async applyReviewDecision(input: {
+    taskId: string;
+    path: string;
+    scope: 'file' | 'hunk';
+    decision: 'accept' | 'reject';
+    hunkKey?: string;
+    expectedCurrentHash?: string;
+  }): Promise<{ status: 'applied' | 'stale'; changeSet: ChangeSetDto }> {
+    const task = this.getTask(input.taskId);
+    if (task.state !== 'REVIEW_READY') {
+      throw new ProductFailure(
+        productError('REVIEW_NOT_READY', {
+          userMessage: `Review decisions are only possible in REVIEW_READY (current: ${task.state}).`,
+        }),
+      );
+    }
+    const changes = this.m5.changeService;
+    if (!changes) {
+      throw new ProductFailure(
+        productError('WS_NONE_OPEN', { userMessage: 'No workspace is open.' }),
+      );
+    }
+    if (input.decision === 'reject') {
+      try {
+        if (input.scope === 'hunk') {
+          if (!input.hunkKey || !input.expectedCurrentHash) {
+            throw new ProductFailure(
+              productError('REVIEW_BAD_REQUEST', {
+                userMessage: 'Rejecting a hunk requires the hunk key and the current file hash.',
+              }),
+            );
+          }
+          await changes.rejectHunk(input.taskId, null, {
+            path: input.path,
+            hunkKey: input.hunkKey,
+            expectedCurrentHash: input.expectedCurrentHash,
+          });
+        } else {
+          await changes.revertFile(input.taskId, null, {
+            path: input.path,
+            ...(input.expectedCurrentHash !== undefined
+              ? { expectedCurrentHash: input.expectedCurrentHash }
+              : {}),
+          });
+        }
+      } catch (e) {
+        if (e instanceof ProductFailure && e.error.code === 'CHG_REVIEW_STALE') {
+          return { status: 'stale', changeSet: await this.changeSetForReview(input.taskId) };
+        }
+        throw e;
+      }
+    }
+    this.recordEvent(input.taskId, 'review.decision', {
+      path: input.path,
+      scope: input.scope,
+      decision: input.decision,
+      hunkKey: input.hunkKey ?? null,
+    });
+    return { status: 'applied', changeSet: await this.changeSetForReview(input.taskId) };
+  }
+
+  /** REVIEW_READY → ACCEPTED (user accepts the workspace state; not a git commit). */
+  acceptTask(taskId: string): TaskDto {
+    const task = this.getTask(taskId);
+    if (task.state !== 'REVIEW_READY') {
+      throw new ProductFailure(
+        productError('TASK_NOT_REVIEWABLE', {
+          userMessage: `Only a task in REVIEW_READY can be accepted (current: ${task.state}).`,
+        }),
+      );
+    }
+    // §6.1: ACCEPTED requires a final report; it is recorded when the run completes.
+    const hasReport = this.db
+      .prepare("SELECT id FROM task_events WHERE task_id = ? AND type = 'report.final' LIMIT 1")
+      .get(taskId) as { id: string } | undefined;
+    if (!hasReport) {
+      this.recordEvent(taskId, 'report.final', this.buildFinalReport(taskId, 'unknown'));
+    }
+    this.recordEvent(taskId, 'task.accepted', { at: new Date().toISOString() });
+    return this.setState(taskId, 'ACCEPTED');
   }
 
   // ---------- persistence helpers ----------
@@ -579,9 +1031,14 @@ export class TaskService {
         : task.mode === 'edit'
           ? 'You are in EDIT mode: workspace writes and commands require user approval — a denied permission is final for that call; adapt instead of retrying it verbatim.'
           : 'You are in AUTO mode: recognized low-risk actions run automatically; higher-risk actions pause for user approval. A denial is final for that call.';
+    const planRule =
+      task.mode === 'ask'
+        ? null
+        : 'Before your FIRST file modification, call propose_plan with your step-by-step plan and wait for the decision. The user may edit the plan — follow the version returned in the tool result, and keep step statuses current with update_plan.';
     return [
       `You are the coding agent inside Pi IDE working on the workspace at ${ws.canonicalPath}.`,
       modeRules,
+      ...(planRule ? [planRule] : []),
       'Use only the provided tools. read_file returns a hash — pass it as baseHash when patching.',
       'Never claim work is complete without evidence from tools; verification results are recorded by the IDE.',
       `Task: ${task.title}`,
@@ -709,15 +1166,19 @@ export class TaskService {
         this.recordEvent(taskId, 'run.failed', { runId, error: event.error });
         this.safeTransition(taskId, 'FAILED');
         break;
-      case 'run.aborted':
+      case 'run.aborted': {
         this.db
           .prepare(
             "UPDATE agent_runs SET state = 'ABORTED', stop_reason = ?, ended_at = ? WHERE id = ?",
           )
           .run(event.reason, new Date().toISOString(), runId);
         this.recordEvent(taskId, 'run.aborted', { runId, reason: event.reason });
-        this.safeTransition(taskId, 'INTERRUPTED');
+        // A plan rejection already moved the task to CANCELLED — keep it there.
+        if (this.getTask(taskId).state !== 'CANCELLED') {
+          this.safeTransition(taskId, 'INTERRUPTED');
+        }
         break;
+      }
     }
   }
 

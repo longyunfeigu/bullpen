@@ -1,8 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { AskUserPromptDto, PermissionCardDto, TimelineEventDto } from '@pi-ide/ipc-contracts';
+import type {
+  AskUserPromptDto,
+  PermissionCardDto,
+  TaskPlanDto,
+  TimelineEventDto,
+} from '@pi-ide/ipc-contracts';
 import { useTaskStore, activeTask, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
+import { useEditorStore } from '../store/editorStore.js';
 import { NewTaskDialog } from './NewTaskDialog.js';
+import { ReviewView } from './ReviewView.js';
 
 const RISK_COLORS: Record<string, string> = {
   R0: 'var(--fg-muted)',
@@ -170,6 +177,224 @@ function PermissionCard(props: {
   );
 }
 
+const STEP_ICON: Record<string, string> = {
+  pending: '○',
+  in_progress: '◐',
+  done: '●',
+  skipped: '◌',
+  blocked: '⊘',
+};
+
+/** Plan card (§13.2, AG-007/008): view, edit (text/order/remove), approve or reject. */
+function PlanCard(props: { plan: TaskPlanDto; open: boolean }): React.JSX.Element {
+  const store = useTaskStore();
+  const { plan, open } = props;
+  const [editing, setEditing] = useState(false);
+  const [summary, setSummary] = useState(plan.summary);
+  const [steps, setSteps] = useState(
+    plan.steps.map((s) => ({ id: s.id as string | undefined, title: s.title, status: s.status })),
+  );
+
+  if (!open) {
+    return (
+      <Card
+        key="plan-static"
+        icon="🗺"
+        title={`Plan v${plan.version} — ${plan.summary.slice(0, 80)}`}
+        testid="plan-card-static"
+        collapsible
+      >
+        <ol style={{ margin: '4px 0 4px 18px', padding: 0 }}>
+          {plan.steps.map((s) => (
+            <li key={s.id} style={{ fontSize: 12 }}>
+              <span aria-hidden>{STEP_ICON[s.status] ?? '○'}</span> {s.title}
+              <span className="text-muted"> ({s.status})</span>
+            </li>
+          ))}
+        </ol>
+      </Card>
+    );
+  }
+
+  const approve = (): void => {
+    const removedDone = plan.steps.filter(
+      (orig) => orig.status === 'done' && !steps.some((s) => s.id === orig.id),
+    );
+    if (removedDone.length > 0) {
+      const ok = window.confirm(
+        `This edit removes ${removedDone.length} completed step(s). Remove them anyway?`,
+      );
+      if (!ok) return;
+    }
+    const edited =
+      summary !== plan.summary ||
+      steps.length !== plan.steps.length ||
+      steps.some((s, i) => plan.steps[i]?.id !== s.id || plan.steps[i]?.title !== s.title);
+    void store.decidePlan({
+      decision: 'approve',
+      ...(edited
+        ? {
+            editedPlan: {
+              summary,
+              steps: steps.map((s) => ({ ...(s.id ? { id: s.id } : {}), title: s.title })),
+            },
+            confirmRemovedDone: removedDone.length > 0,
+          }
+        : {}),
+    });
+  };
+
+  const move = (index: number, delta: number): void => {
+    const next = [...steps];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    const [item] = next.splice(index, 1);
+    next.splice(target, 0, item!);
+    setSteps(next);
+  };
+
+  return (
+    <Card
+      key="plan-interactive"
+      icon="🗺"
+      title={`Plan proposed (v${plan.version}) — approval needed`}
+      tone="warning"
+      testid="plan-card"
+    >
+      {editing ? (
+        <input
+          data-testid="plan-summary-input"
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+          style={{
+            width: '100%',
+            marginBottom: 6,
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            padding: '4px 6px',
+            fontSize: 12,
+          }}
+        />
+      ) : (
+        <div style={{ marginBottom: 6 }}>{summary}</div>
+      )}
+      <ol style={{ margin: '0 0 6px 18px', padding: 0 }}>
+        {steps.map((step, i) => (
+          <li key={step.id ?? `new-${i}`} style={{ fontSize: 12, marginBottom: 3 }}>
+            {editing ? (
+              <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <input
+                  data-testid={`plan-step-input-${i}`}
+                  value={step.title}
+                  onChange={(e) =>
+                    setSteps(steps.map((s, j) => (j === i ? { ...s, title: e.target.value } : s)))
+                  }
+                  style={{
+                    flex: 1,
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 4,
+                    padding: '2px 6px',
+                    fontSize: 12,
+                  }}
+                />
+                <button className="btn" aria-label="Move step up" onClick={() => move(i, -1)}>
+                  ↑
+                </button>
+                <button className="btn" aria-label="Move step down" onClick={() => move(i, 1)}>
+                  ↓
+                </button>
+                <button
+                  className="btn danger"
+                  aria-label="Remove step"
+                  data-testid={`plan-step-remove-${i}`}
+                  onClick={() => {
+                    if (
+                      step.status === 'done' &&
+                      !window.confirm('This step is already done. Remove it anyway?')
+                    ) {
+                      return;
+                    }
+                    setSteps(steps.filter((_, j) => j !== i));
+                  }}
+                >
+                  ✕
+                </button>
+              </span>
+            ) : (
+              <>
+                <span aria-hidden>{STEP_ICON[step.status] ?? '○'}</span> {step.title}
+              </>
+            )}
+          </li>
+        ))}
+      </ol>
+      {editing ? (
+        <button
+          className="btn"
+          data-testid="plan-step-add"
+          onClick={() =>
+            setSteps([...steps, { id: undefined, title: 'New step', status: 'pending' }])
+          }
+        >
+          ＋ Add step
+        </button>
+      ) : null}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+        <button className="btn primary" data-testid="plan-approve" onClick={approve}>
+          Approve plan
+        </button>
+        <button className="btn" data-testid="plan-edit-toggle" onClick={() => setEditing(!editing)}>
+          {editing ? 'Preview' : 'Edit plan'}
+        </button>
+        <button
+          className="btn danger"
+          data-testid="plan-reject"
+          onClick={() => {
+            if (window.confirm('Reject the plan? The task will be cancelled.')) {
+              void store.decidePlan({ decision: 'reject' });
+            }
+          }}
+        >
+          Reject (cancels task)
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+/** Agent patch hit a version conflict (M8-06, E2E-014): user edits are protected. */
+function ConflictCard(props: { payload: Record<string, unknown> }): React.JSX.Element {
+  const editor = useEditorStore();
+  const input = (props.payload.input ?? {}) as { path?: string };
+  const path = typeof input.path === 'string' ? input.path : null;
+  return (
+    <Card
+      icon="⚠️"
+      title={`Version conflict — ${path ?? 'file'}`}
+      tone="danger"
+      testid="tl-conflict"
+    >
+      <div style={{ fontSize: 12 }}>
+        The file changed after the agent read it (your edit or an external change). The stale patch
+        was rejected and <b>nothing was overwritten</b>. The agent can re-read the file and try
+        again; you can compare the versions in the editor.
+      </div>
+      {path ? (
+        <button
+          className="btn"
+          style={{ marginTop: 6 }}
+          data-testid="conflict-open-file"
+          onClick={() => void editor.openFile(path)}
+        >
+          Open {path}
+        </button>
+      ) : null}
+    </Card>
+  );
+}
+
 /** ask_user question card — the run is paused until the user answers. */
 function QuestionCard(props: { prompt: AskUserPromptDto; answered: boolean }): React.JSX.Element {
   const store = useTaskStore();
@@ -271,6 +496,12 @@ function Card(props: {
   collapsible?: boolean;
 }): React.JSX.Element {
   const [open, setOpen] = useState(!props.collapsible);
+  // A card can switch from collapsible to fixed across re-renders (React keeps
+  // the state for same-type siblings); a fixed card must always be expanded.
+  useEffect(() => {
+    if (!props.collapsible && !open) setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.collapsible]);
   const border =
     props.tone === 'danger'
       ? 'var(--danger)'
@@ -322,6 +553,9 @@ function Card(props: {
 interface TimelineContext {
   permissionResolutions: Map<string, { outcome: string; scope?: string | null }>;
   answeredCallIds: Set<string>;
+  /** Sequence of the latest plan proposal that has no decision after it. */
+  openPlanSeq: number | null;
+  taskState: string;
 }
 
 function TimelineCard({
@@ -333,6 +567,70 @@ function TimelineCard({
 }): React.JSX.Element | null {
   const payload = event.payload as Record<string, unknown>;
   switch (event.type) {
+    case 'agent.planProposed': {
+      const plan = payload.plan as TaskPlanDto;
+      const open =
+        event.sequence === context.openPlanSeq && context.taskState === 'AWAITING_PLAN_APPROVAL';
+      return <PlanCard key={`plan-${event.id}`} plan={plan} open={open} />;
+    }
+    case 'agent.planUpdated': {
+      const delta = (payload.delta ?? []) as Array<{ id: string; from: string; to: string }>;
+      return (
+        <div
+          className="text-muted"
+          style={{ padding: '0 14px', fontSize: 11 }}
+          data-testid="tl-plan-updated"
+        >
+          🗺 plan updated: {delta.map((d) => `${d.id} → ${d.to}`).join(', ') || 'no changes'}
+        </div>
+      );
+    }
+    case 'user.planEdited':
+      return (
+        <div
+          className="text-muted"
+          style={{ padding: '0 14px', fontSize: 11 }}
+          data-testid="tl-plan-edited"
+        >
+          ✏️ You edited the plan (v
+          {String((payload.plan as TaskPlanDto | undefined)?.version ?? '?')})
+        </div>
+      );
+    case 'user.planDecision': {
+      const approved = payload.decision === 'approved';
+      return (
+        <div
+          style={{
+            padding: '0 14px',
+            fontSize: 11,
+            color: approved ? 'var(--success)' : 'var(--danger)',
+          }}
+          data-testid="tl-plan-decision"
+        >
+          {approved
+            ? `✔ Plan approved${payload.auto === true ? ' automatically (auto mode)' : ''}${payload.edited === true ? ' with edits' : ''}`
+            : '✘ Plan rejected — task cancelled'}
+        </div>
+      );
+    }
+    case 'review.decision':
+      return (
+        <div
+          className="text-muted"
+          style={{ padding: '0 14px', fontSize: 11 }}
+          data-testid="tl-review-decision"
+        >
+          🔍 review: {String(payload.decision)} {String(payload.scope)}{' '}
+          <span className="mono">{String(payload.path)}</span>
+        </div>
+      );
+    case 'task.accepted':
+      return (
+        <Card icon="✅" title="Changes accepted" tone="success" testid="tl-accepted">
+          The task's changes were accepted into the workspace. Committing to git is a separate,
+          manual action.
+        </Card>
+      );
     case 'permission.requested': {
       const card = payload.card as PermissionCardDto;
       return (
@@ -364,6 +662,10 @@ function TimelineCard({
       const ok = payload.ok === true;
       const state = String(payload.state ?? '');
       const denied = state === 'DENIED';
+      // Version conflicts get a dedicated card: user content is protected (M8-06).
+      if (state === 'FAILED' && String(payload.summary ?? '') === 'CHG_VERSION_CONFLICT') {
+        return <ConflictCard payload={payload} />;
+      }
       return (
         <Card
           icon={denied ? '⛔' : ok ? '🔧' : '⚠️'}
@@ -436,6 +738,16 @@ function TimelineCard({
           {unverified ? (
             <div className="text-warning">Unverified — no verification commands were run.</div>
           ) : null}
+          {context.taskState === 'REVIEW_READY' ? (
+            <button
+              className="btn primary"
+              style={{ marginTop: 6 }}
+              data-testid="report-review-open"
+              onClick={() => void useTaskStore.getState().openReview()}
+            >
+              Review changes
+            </button>
+          ) : null}
         </Card>
       );
     }
@@ -494,6 +806,7 @@ export function AgentPanel(): React.JSX.Element {
   const timelineContext: TimelineContext = React.useMemo(() => {
     const permissionResolutions = new Map<string, { outcome: string; scope?: string | null }>();
     const answeredCallIds = new Set<string>();
+    let openPlanSeq: number | null = null;
     for (const event of store.timeline) {
       const payload = event.payload as Record<string, unknown>;
       if (event.type === 'permission.decided' && typeof payload.requestId === 'string') {
@@ -505,9 +818,16 @@ export function AgentPanel(): React.JSX.Element {
       if (event.type === 'user.message' && typeof payload.callId === 'string') {
         answeredCallIds.add(payload.callId);
       }
+      if (event.type === 'agent.planProposed') openPlanSeq = event.sequence;
+      if (event.type === 'user.planDecision') openPlanSeq = null;
     }
-    return { permissionResolutions, answeredCallIds };
-  }, [store.timeline]);
+    return {
+      permissionResolutions,
+      answeredCallIds,
+      openPlanSeq,
+      taskState: task?.state ?? '',
+    };
+  }, [store.timeline, task?.state]);
 
   if (!workspace) {
     return (
@@ -543,6 +863,15 @@ export function AgentPanel(): React.JSX.Element {
               {task.title}
             </span>
             <StateBadge state={task.state} />
+            {task.state === 'REVIEW_READY' ? (
+              <button
+                className="btn primary"
+                data-testid="review-open"
+                onClick={() => void store.openReview()}
+              >
+                🔍 Review
+              </button>
+            ) : null}
             {running ? (
               <button
                 className="btn danger"
@@ -683,6 +1012,7 @@ export function AgentPanel(): React.JSX.Element {
       ) : null}
 
       {store.newTaskOpen ? <NewTaskDialog /> : null}
+      <ReviewView />
     </div>
   );
 }

@@ -9,9 +9,19 @@
 
 | 里程碑 | 状态 |
 | --- | --- |
-| M1 工程基线 → M6 Pi 只读 Agent | VERIFIED |
-| **M7 Tool Gateway 与权限系统** | **VERIFIED**（本轮完成） |
-| M8–M12 | NOT_STARTED（本文件的待办） |
+| M1 工程基线 → M7 Tool Gateway 与权限系统 | VERIFIED |
+| **M8 Agent 写入、计划与审查** | **VERIFIED**（E2E-010/011/014/015 绿，全套 26 E2E 绿） |
+| M9–M12 | NOT_STARTED（本文件的待办） |
+
+M8 交付要点（M9+ 可直接复用）：
+
+- **计划批准走工具通道**：`propose_plan`/`update_plan` 网关工具（`packages/tool-gateway/src/tools-write.ts`）。propose 的 execute 阻塞直到用户决定（PlanGate 由 TaskService 提供，`task-service.ts` plan flow 一节），auto 模式即时自动批准。真实 Pi 也走这条路（preamble 已注明）。拒绝 → PLAN_REJECTED + 任务 CANCELLED + abort run。
+- **写门禁**：`createPlanAwarePermission` 包装 PermissionEngine——edit/auto 下 apply_patch/create_file/delete_file 在计划未批准前一律拒（AG-007，retryable）；plan 工具本身自动放行。
+- **写工具**：apply_patch(R1)/create_file(R1)/delete_file(R3) 经 ChangeService；preview 产真实投影 diff；CHG_VERSION_CONFLICT / CHG_PATCH_FAILED 标 retryable。
+- **Review**：`task.changeSet`（净 diff + hunks + 决策投影）、`task.reviewDecision`（file/hunk × accept/reject）、`task.accept`。hunk 键 = 内容哈希（`packages/change-service/src/review.ts` parseHunks）；拒 hunk = reversePatch 反向应用；拒文件 = `revertFile` 回基线。**语义注意**：被拒绝的 hunk 还原后从净 diff 消失——剩余全接受时文件状态即 `accepted`（E2E-015 按此断言）。
+- **Mock**：`$lastReadHash` 令牌在 mock-runtime 替换为最近一次 read_file 的真实 hash；`echo: 'plan'` 步骤回显工具返回的计划（证明 agent 收到用户编辑版）。场景：edit-multifile / edit-plan-review / edit-conflict / edit-hunks。
+- **渲染器坑（已修）**：Timeline 卡片在同位置从 `<Card collapsible>` 切到非 collapsible `<Card>` 时 React 复用 useState，open=false 卡死——两分支必须给不同 key（PlanCard 已用 plan-static/plan-interactive），Card 也加了 effect 兜底。新卡片组件重蹈此模式时注意。
+- plan 事件：`agent.planProposed`/`agent.planUpdated`(带 delta)/`user.planEdited`/`user.planDecision`/`review.decision`/`task.accepted` 全部入 task_events；TaskService.planStatus 冷启动从事件重建。
 
 M7 交付物（新会话可直接复用）：
 

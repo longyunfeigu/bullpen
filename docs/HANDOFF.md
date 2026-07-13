@@ -15,10 +15,11 @@
 | M4 搜索/LSP/终端 | VERIFIED | 0f03e92 |
 | M5 Git/ChangeService | VERIFIED | c704edd |
 | M6 Pi Runtime/只读 Agent | VERIFIED | 931e167 |
-| M7 Tool Gateway/权限系统 | VERIFIED | (本轮提交) |
-| M8–M12 | NOT_STARTED | 见 `docs/TODO_M8_M12.md` |
+| M7 Tool Gateway/权限系统 | VERIFIED | 6ccb16d |
+| M8 Agent 写入/计划/审查 | VERIFIED | (本轮提交) |
+| M9–M12 | NOT_STARTED | 见 `docs/TODO_M8_M12.md` |
 
-证据基线（M7 提交时）：**201+ 个单元/集成测试**、**22 个 E2E** 全绿；`npm run check` 干净。
+证据基线（M8 提交时）：**226 个单元/集成测试**（30 文件）、**26 个 E2E** 全绿；`npm run check` 干净（boundary 141 文件）。
 M7 交付与接续点详见 `docs/TODO_M8_M12.md` 顶部"已完成状态"。
 测试命令：`npm test`、`npx playwright test --config tests/e2e/playwright.config.ts`、`npm run check`、`node scripts/build.mjs`。
 

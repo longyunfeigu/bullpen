@@ -4,7 +4,14 @@ export type ScenarioStep =
   | { kind: 'assistant'; text: string; chunkSize?: number }
   | { kind: 'plan'; plan: TaskPlan }
   | { kind: 'plan-update'; plan: TaskPlan }
-  | { kind: 'tool'; toolName: string; input: unknown; reason?: string }
+  /**
+   * Tool call. String values equal to '$lastReadHash' are replaced with the
+   * hash of the most recent successful read_file result (the mock executes
+   * against the real gateway, so base hashes must be genuine). `echo: 'plan'`
+   * emits a deterministic assistant message describing the plan returned by
+   * the tool — proof the agent received the (possibly user-edited) plan.
+   */
+  | { kind: 'tool'; toolName: string; input: unknown; reason?: string; echo?: 'plan' }
   | { kind: 'usage'; inputTokens: number; outputTokens: number }
   | { kind: 'wait'; ms: number }
   | { kind: 'compaction' }
@@ -70,14 +77,24 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   'edit-basic': () => [
     { kind: 'plan', plan: basicPlan() },
+    {
+      kind: 'tool',
+      toolName: 'propose_plan',
+      input: {
+        summary: 'Read the target file and apply a focused fix.',
+        steps: [{ title: 'Apply the fix', expectedFiles: ['src/index.ts'] }],
+      },
+      reason: 'plan before writing',
+    },
     { kind: 'tool', toolName: 'read_file', input: { path: 'src/index.ts' }, reason: 'inspect' },
     {
       kind: 'tool',
       toolName: 'apply_patch',
       input: {
         path: 'src/index.ts',
-        patch: '@@ -1 +1 @@\n-old\n+new\n',
-        baseHash: 'mock',
+        patch:
+          "--- src/index.ts\n+++ src/index.ts\n@@ -1,5 +1,5 @@\n import { add } from './util';\n \n export function main(): number {\n-  return add(2, 3);\n+  return add(3, 4);\n }\n",
+        baseHash: '$lastReadHash',
         reason: 'apply fix',
       },
       reason: 'apply the fix',
@@ -152,6 +169,203 @@ export const SCENARIOS: Record<string, Scenario> = {
       { kind: 'usage', inputTokens: 260, outputTokens: 80 },
     ];
   },
+  // E2E-010: plan → approve → patch two files, create one, run tests → REVIEW_READY.
+  'edit-multifile': () => [
+    { kind: 'assistant', text: 'I will propose a plan before modifying anything.', chunkSize: 24 },
+    {
+      kind: 'tool',
+      toolName: 'propose_plan',
+      input: {
+        summary: 'Update the math functions, add a helper module and verify with the test suite.',
+        steps: [
+          { title: 'Adjust main() in src/index.ts', expectedFiles: ['src/index.ts'] },
+          { title: 'Add mul() to src/util.ts', expectedFiles: ['src/util.ts'] },
+          { title: 'Create src/created-by-agent.ts', expectedFiles: ['src/created-by-agent.ts'] },
+          { title: 'Run the test suite', verification: 'npm test' },
+        ],
+      },
+      reason: 'plan before first write',
+      echo: 'plan',
+    },
+    { kind: 'tool', toolName: 'read_file', input: { path: 'src/index.ts' }, reason: 'get hash' },
+    {
+      kind: 'tool',
+      toolName: 'apply_patch',
+      input: {
+        path: 'src/index.ts',
+        patch:
+          "--- src/index.ts\n+++ src/index.ts\n@@ -1,5 +1,5 @@\n import { add } from './util';\n \n export function main(): number {\n-  return add(2, 3);\n+  return add(3, 4);\n }\n",
+        baseHash: '$lastReadHash',
+        reason: 'change the main() sum per the plan',
+      },
+      reason: 'apply planned change to index.ts',
+    },
+    { kind: 'tool', toolName: 'read_file', input: { path: 'src/util.ts' }, reason: 'get hash' },
+    {
+      kind: 'tool',
+      toolName: 'apply_patch',
+      input: {
+        path: 'src/util.ts',
+        patch:
+          '--- src/util.ts\n+++ src/util.ts\n@@ -5,3 +5,7 @@\n export function sub(a: number, b: number): number {\n   return a - b;\n }\n+\n+export function mul(a: number, b: number): number {\n+  return a * b;\n+}\n',
+        baseHash: '$lastReadHash',
+        reason: 'add mul() per the plan',
+      },
+      reason: 'apply planned change to util.ts',
+    },
+    {
+      kind: 'tool',
+      toolName: 'create_file',
+      input: {
+        path: 'src/created-by-agent.ts',
+        content: 'export const CREATED_BY_AGENT = true;\n',
+        reason: 'add the helper module per the plan',
+      },
+      reason: 'create helper module',
+    },
+    {
+      kind: 'tool',
+      toolName: 'update_plan',
+      input: {
+        updates: [
+          { id: 'step-1-1', status: 'done' },
+          { id: 'step-1-2', status: 'done' },
+          { id: 'step-1-3', status: 'done' },
+        ],
+      },
+      reason: 'mark write steps done',
+    },
+    {
+      kind: 'tool',
+      toolName: 'run_command',
+      input: { executable: 'npm', args: ['test'], purpose: 'test' },
+      reason: 'run the planned verification',
+    },
+    {
+      kind: 'tool',
+      toolName: 'update_plan',
+      input: { updates: [{ id: 'step-1-4', status: 'done' }] },
+      reason: 'mark verification done',
+    },
+    {
+      kind: 'assistant',
+      text: 'All three files are updated and the test suite passed. Ready for review. (deterministic mock answer)',
+      chunkSize: 24,
+    },
+    { kind: 'usage', inputTokens: 2400, outputTokens: 620 },
+  ],
+  // E2E-011: plan proposed; the user may edit before approving; the agent echoes the plan it must follow.
+  'edit-plan-review': () => [
+    { kind: 'assistant', text: 'Let me lay out the plan first.', chunkSize: 24 },
+    {
+      kind: 'tool',
+      toolName: 'propose_plan',
+      input: {
+        summary: 'Two-step refactor of the utility module.',
+        steps: [
+          { title: 'Tidy the add function', expectedFiles: ['src/util.ts'] },
+          { title: 'Document the module', expectedFiles: ['src/util.ts'] },
+        ],
+      },
+      reason: 'plan before writing',
+      echo: 'plan',
+    },
+    {
+      kind: 'assistant',
+      text: 'I will proceed exactly along the approved steps. (deterministic mock answer)',
+      chunkSize: 24,
+    },
+    { kind: 'usage', inputTokens: 700, outputTokens: 160 },
+  ],
+  // E2E-014: read → user edits meanwhile (ask_user pause) → stale patch conflicts → re-read → succeed.
+  'edit-conflict': () => [
+    {
+      kind: 'tool',
+      toolName: 'propose_plan',
+      input: {
+        summary: 'Patch src/index.ts to change the sum.',
+        steps: [{ title: 'Patch src/index.ts', expectedFiles: ['src/index.ts'] }],
+      },
+      reason: 'plan before writing',
+    },
+    { kind: 'tool', toolName: 'read_file', input: { path: 'src/index.ts' }, reason: 'get hash' },
+    {
+      kind: 'tool',
+      toolName: 'ask_user',
+      input: {
+        question: 'I am about to patch src/index.ts. Continue?',
+        options: ['Continue'],
+      },
+      reason: 'checkpoint before writing (test hook)',
+    },
+    {
+      kind: 'tool',
+      toolName: 'apply_patch',
+      input: {
+        path: 'src/index.ts',
+        patch:
+          "--- src/index.ts\n+++ src/index.ts\n@@ -1,5 +1,5 @@\n import { add } from './util';\n \n export function main(): number {\n-  return add(2, 3);\n+  return add(3, 4);\n }\n",
+        baseHash: '$lastReadHash',
+        reason: 'apply the planned change (stale base)',
+      },
+      reason: 'first attempt with the pre-edit hash',
+    },
+    {
+      kind: 'assistant',
+      text: 'A version conflict was reported — the file changed since I read it. Re-reading and retrying without touching your edit. (deterministic mock answer)',
+      chunkSize: 24,
+    },
+    { kind: 'tool', toolName: 'read_file', input: { path: 'src/index.ts' }, reason: 're-read' },
+    {
+      kind: 'tool',
+      toolName: 'apply_patch',
+      input: {
+        path: 'src/index.ts',
+        patch:
+          "--- src/index.ts\n+++ src/index.ts\n@@ -1,5 +1,5 @@\n import { add } from './util';\n \n export function main(): number {\n-  return add(2, 3);\n+  return add(3, 4);\n }\n",
+        baseHash: '$lastReadHash',
+        reason: 'retry with the fresh hash',
+      },
+      reason: 'second attempt after re-reading',
+    },
+    {
+      kind: 'assistant',
+      text: 'Patched successfully on retry; your edit is preserved. (deterministic mock answer)',
+      chunkSize: 24,
+    },
+    { kind: 'usage', inputTokens: 1200, outputTokens: 300 },
+  ],
+  // E2E-015: one file, two well-separated hunks for per-hunk review.
+  'edit-hunks': () => [
+    {
+      kind: 'tool',
+      toolName: 'propose_plan',
+      input: {
+        summary: 'Adjust alpha() and omega() in src/mathlib.ts.',
+        steps: [{ title: 'Patch mathlib', expectedFiles: ['src/mathlib.ts'] }],
+      },
+      reason: 'plan before writing',
+    },
+    { kind: 'tool', toolName: 'read_file', input: { path: 'src/mathlib.ts' }, reason: 'get hash' },
+    {
+      kind: 'tool',
+      toolName: 'apply_patch',
+      input: {
+        path: 'src/mathlib.ts',
+        patch:
+          '--- src/mathlib.ts\n+++ src/mathlib.ts\n@@ -1,3 +1,3 @@\n export function alpha(x: number): number {\n-  return x + 1;\n+  return x + 100;\n }\n@@ -13,3 +13,3 @@\n export function omega(x: number): number {\n-  return x / 2;\n+  return x / 4;\n }\n',
+        baseHash: '$lastReadHash',
+        reason: 'adjust both functions',
+      },
+      reason: 'apply the two-part change',
+    },
+    {
+      kind: 'assistant',
+      text: 'Both functions are adjusted in one patch — review the two change blocks. (deterministic mock answer)',
+      chunkSize: 24,
+    },
+    { kind: 'usage', inputTokens: 900, outputTokens: 210 },
+  ],
   // ask_user flow — clarifying question pauses the run until answered.
   'ask-clarify': () => [
     { kind: 'assistant', text: 'I need one detail before continuing.', chunkSize: 16 },

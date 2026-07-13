@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import type { ModelDescriptorDto, TaskDto, TimelineEventDto } from '@pi-ide/ipc-contracts';
+import type {
+  ChangeSetDto,
+  ModelDescriptorDto,
+  PlanEditDto,
+  TaskDto,
+  TimelineEventDto,
+} from '@pi-ide/ipc-contracts';
 import { onEvent, rpcResult } from '../bridge.js';
 import { useAppStore } from './appStore.js';
 
@@ -43,6 +49,28 @@ interface TaskStore {
     applyToSimilar?: boolean;
   }): Promise<void>;
   answerUser(callId: string, answer: string): Promise<void>;
+
+  // M8: plan approval + review
+  reviewOpen: boolean;
+  changeSet: ChangeSetDto | null;
+  loadingChangeSet: boolean;
+  decidePlan(input: {
+    decision: 'approve' | 'reject';
+    editedPlan?: PlanEditDto;
+    reason?: string;
+    confirmRemovedDone?: boolean;
+  }): Promise<boolean>;
+  openReview(): Promise<void>;
+  closeReview(): void;
+  refreshChangeSet(): Promise<void>;
+  reviewDecision(input: {
+    path: string;
+    scope: 'file' | 'hunk';
+    decision: 'accept' | 'reject';
+    hunkKey?: string;
+    expectedCurrentHash?: string;
+  }): Promise<void>;
+  acceptTask(): Promise<boolean>;
 }
 
 export const useTaskStore = create<TaskStore>((set, get) => ({
@@ -190,6 +218,85 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     if (!res.ok) useAppStore.getState().pushToast('error', res.error.userMessage);
     else if (!res.data.ok)
       useAppStore.getState().pushToast('info', 'This question is no longer waiting.');
+  },
+
+  reviewOpen: false,
+  changeSet: null,
+  loadingChangeSet: false,
+
+  async decidePlan(input) {
+    const taskId = get().activeTaskId;
+    if (!taskId) return false;
+    const res = await rpcResult('task.planDecision', {
+      taskId,
+      decision: input.decision,
+      ...(input.editedPlan ? { editedPlan: input.editedPlan } : {}),
+      ...(input.reason ? { reason: input.reason } : {}),
+      confirmRemovedDone: input.confirmRemovedDone ?? false,
+    });
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      return false;
+    }
+    await get().refreshTasks();
+    return true;
+  },
+
+  async openReview() {
+    set({ reviewOpen: true });
+    await get().refreshChangeSet();
+  },
+
+  closeReview() {
+    set({ reviewOpen: false });
+  },
+
+  async refreshChangeSet() {
+    const taskId = get().activeTaskId;
+    if (!taskId) return;
+    set({ loadingChangeSet: true });
+    const res = await rpcResult('task.changeSet', { taskId });
+    if (res.ok) set({ changeSet: res.data.changeSet, loadingChangeSet: false });
+    else {
+      set({ loadingChangeSet: false });
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+    }
+  },
+
+  async reviewDecision(input) {
+    const taskId = get().activeTaskId;
+    if (!taskId) return;
+    const res = await rpcResult('task.reviewDecision', {
+      taskId,
+      path: input.path,
+      scope: input.scope,
+      decision: input.decision,
+      ...(input.hunkKey ? { hunkKey: input.hunkKey } : {}),
+      ...(input.expectedCurrentHash ? { expectedCurrentHash: input.expectedCurrentHash } : {}),
+    });
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      return;
+    }
+    if (res.data.status === 'stale') {
+      useAppStore
+        .getState()
+        .pushToast('info', 'The file changed while reviewing — the view was refreshed.');
+    }
+    set({ changeSet: res.data.changeSet });
+  },
+
+  async acceptTask() {
+    const taskId = get().activeTaskId;
+    if (!taskId) return false;
+    const res = await rpcResult('task.accept', { taskId });
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      return false;
+    }
+    set({ reviewOpen: false });
+    await get().refreshTasks();
+    return true;
   },
 }));
 

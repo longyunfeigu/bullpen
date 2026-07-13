@@ -29,6 +29,27 @@ export function createTsSmallFixture(): string {
     `export function add(a: number, b: number): number {\n  return a + b;\n}\n\nexport function sub(a: number, b: number): number {\n  return a - b;\n}\n`,
   );
   writeFileSync(
+    join(root, 'src/mathlib.ts'),
+    [
+      'export function alpha(x: number): number {',
+      '  return x + 1;',
+      '}',
+      '',
+      'export function beta(x: number): number {',
+      '  return x * 2;',
+      '}',
+      '',
+      'export function gamma(x: number): number {',
+      '  return x - 1;',
+      '}',
+      '',
+      'export function omega(x: number): number {',
+      '  return x / 2;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(
     join(root, 'run-tests.mjs'),
     `const ok = 2 + 3 === 5;\nconsole.log(ok ? 'PASS add' : 'FAIL add');\nprocess.exit(ok ? 0 : 1);\n`,
   );

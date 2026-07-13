@@ -91,13 +91,13 @@
 
 | 任务 | 交付 | 依赖 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| M8-01 | Task plan schema、编辑、批准与历史 | M6-06 | NOT_STARTED |  |
-| M8-02 | apply/create/delete tools 经 ChangeService | M5,M7 | NOT_STARTED |  |
-| M8-03 | Document Store 与 Agent patch 协调 | M3-03,M8-02 | NOT_STARTED |  |
-| M8-04 | Edit/Auto 模式与默认策略 | M8-01,M8-02 | NOT_STARTED |  |
-| M8-05 | Review 页面、文件/hunk 接受拒绝 | M5-05,M3-06 | NOT_STARTED |  |
-| M8-06 | 三方冲突视图与恢复动作 | M3-05,M8-03 | NOT_STARTED |  |
-| M8-07 | 跨文件真实任务 E2E | M8 | NOT_STARTED |  |
+| M8-01 | Task plan schema、编辑、批准与历史 | M6-06 | VERIFIED | propose_plan/update_plan tools + plan-utils (5 tests) + PlanCard edit UI; E2E-011 |
+| M8-02 | apply/create/delete tools 经 ChangeService | M5,M7 | VERIFIED | tools-write.ts + 10 unit tests (conflict/no-overwrite/R3-snapshot/ask-refusal) |
+| M8-03 | Document Store 与 Agent patch 协调 | M3-03,M8-02 | VERIFIED | readLogical hash = baseHash contract; buffer-aware writeThrough; E2E-014 |
+| M8-04 | Edit/Auto 模式与默认策略 | M8-01,M8-02 | VERIFIED | createPlanAwarePermission (AG-007 gate) + engine auto policy; unit + E2E-010 |
+| M8-05 | Review 页面、文件/hunk 接受拒绝 | M5-05,M3-06 | VERIFIED | ReviewView + rejectHunk/revertFile (10 tests) + task.changeSet/reviewDecision IPC; E2E-015 |
+| M8-06 | 三方冲突视图与恢复动作 | M3-05,M8-03 | VERIFIED | CHG_VERSION_CONFLICT ConflictCard + retry path; E2E-014 zero overwrite |
+| M8-07 | 跨文件真实任务 E2E | M8 | VERIFIED | E2E-010: 3 files patched/created + npm test + accept → ACCEPTED |
 
 ## Milestone 9: 验证、报告与历史
 

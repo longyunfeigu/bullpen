@@ -23,6 +23,25 @@ interface RunHandle {
   abortReason: AbortReason | null;
   steerQueue: string[];
   followUpQueue: string[];
+  /** Hash of the most recent successful read_file — substituted for '$lastReadHash'. */
+  lastReadHash: string | null;
+}
+
+/** Replace '$lastReadHash' string values so scripted patches carry genuine base hashes. */
+function substituteMemory(value: unknown, handle: RunHandle): unknown {
+  if (typeof value === 'string') {
+    return value === '$lastReadHash' ? (handle.lastReadHash ?? 'no-read-yet') : value;
+  }
+  if (Array.isArray(value)) return value.map((v) => substituteMemory(v, handle));
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+        k,
+        substituteMemory(v, handle),
+      ]),
+    );
+  }
+  return value;
 }
 
 export interface MockRuntimeOptions {
@@ -84,6 +103,7 @@ export class MockAgentRuntime implements AgentRuntime {
       abortReason: null,
       steerQueue: [],
       followUpQueue: [],
+      lastReadHash: null,
     };
     this.runs.set(input.runId, handle);
     return this.generate(input, session, handle);
@@ -231,10 +251,11 @@ export class MockAgentRuntime implements AgentRuntime {
       }
       case 'tool': {
         const callId = newId('call');
+        const toolInput = substituteMemory(step.input, handle);
         yield {
           ...base(),
           type: 'tool.proposed',
-          call: { callId, toolName: step.toolName, input: step.input, reason: step.reason },
+          call: { callId, toolName: step.toolName, input: toolInput, reason: step.reason },
         };
         if (aborted()) return 'ok';
         yield { ...base(), type: 'tool.started', callId };
@@ -246,7 +267,7 @@ export class MockAgentRuntime implements AgentRuntime {
               runId: input.runId,
               taskId: session.taskId,
               toolName: step.toolName,
-              input: step.input,
+              input: toolInput,
             },
             handle.controller.signal,
           );
@@ -259,7 +280,29 @@ export class MockAgentRuntime implements AgentRuntime {
             data: {},
           };
         }
+        if (step.toolName === 'read_file' && result.ok) {
+          const hash = (result.data as { hash?: unknown } | null)?.hash;
+          if (typeof hash === 'string') handle.lastReadHash = hash;
+        }
         yield { ...base(), type: 'tool.completed', callId, result };
+        if (step.echo === 'plan' && !aborted()) {
+          const plan = result.ok
+            ? ((result.data as { plan?: { summary?: string; steps?: Array<{ title: string }> } })
+                ?.plan ?? null)
+            : null;
+          const text = plan
+            ? `Following the approved plan: ${plan.summary ?? ''} — steps: ${(plan.steps ?? [])
+                .map((s) => s.title)
+                .join(' | ')} (deterministic mock answer)`
+            : `The plan was not approved (${result.code}). Stopping here. (deterministic mock answer)`;
+          const message: VisibleMessage = {
+            messageId: newId('msg'),
+            role: 'assistant',
+            text,
+            at: new Date().toISOString(),
+          };
+          yield { ...base(), type: 'message.completed', message };
+        }
         return 'ok';
       }
       case 'usage':
