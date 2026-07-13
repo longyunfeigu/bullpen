@@ -172,6 +172,22 @@ export const ChangeSetDtoSchema = z.object({
 });
 export type ChangeSetDto = z.infer<typeof ChangeSetDtoSchema>;
 
+/** One verification run (VER-003/005/008). */
+export const VerificationRunDtoSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  state: z.enum(['running', 'passed', 'failed', 'timeout', 'cancelled']),
+  exitCode: z.number().int().nullable(),
+  timedOut: z.boolean(),
+  cancelled: z.boolean(),
+  stale: z.boolean(),
+  superseded: z.boolean(),
+  outputExcerpt: z.string(),
+  startedAt: z.string().nullable(),
+  endedAt: z.string().nullable(),
+});
+export type VerificationRunDto = z.infer<typeof VerificationRunDtoSchema>;
+
 export const ModelDescriptorDtoSchema = z.object({
   providerId: z.string(),
   providerName: z.string(),

@@ -366,6 +366,98 @@ export const SCENARIOS: Record<string, Scenario> = {
     },
     { kind: 'usage', inputTokens: 900, outputTokens: 210 },
   ],
+  // E2E-016: create + modify + delete + rename, then the user rolls everything back.
+  'edit-rollback': () => [
+    {
+      kind: 'tool',
+      toolName: 'propose_plan',
+      input: {
+        summary: 'Touch files in all four ways (create/modify/delete/rename).',
+        steps: [{ title: 'Apply the four changes' }],
+      },
+      reason: 'plan before writing',
+    },
+    {
+      kind: 'tool',
+      toolName: 'create_file',
+      input: { path: 'rollback-note.txt', content: 'temporary note\n', reason: 'create sample' },
+      reason: 'create a new file',
+    },
+    { kind: 'tool', toolName: 'read_file', input: { path: 'src/index.ts' }, reason: 'get hash' },
+    {
+      kind: 'tool',
+      toolName: 'apply_patch',
+      input: {
+        path: 'src/index.ts',
+        patch:
+          "--- src/index.ts\n+++ src/index.ts\n@@ -1,5 +1,5 @@\n import { add } from './util';\n \n export function main(): number {\n-  return add(2, 3);\n+  return add(3, 4);\n }\n",
+        baseHash: '$lastReadHash',
+        reason: 'modify a file',
+      },
+      reason: 'modify index.ts',
+    },
+    {
+      kind: 'tool',
+      toolName: 'delete_file',
+      input: { path: 'src/util.ts', reason: 'delete sample' },
+      reason: 'delete util.ts',
+    },
+    {
+      kind: 'tool',
+      toolName: 'rename_file',
+      input: { from: 'src/mathlib.ts', to: 'src/mathlib-renamed.ts', reason: 'rename sample' },
+      reason: 'rename mathlib',
+    },
+    {
+      kind: 'assistant',
+      text: 'Created, modified, deleted and renamed files as planned. (deterministic mock answer)',
+      chunkSize: 24,
+    },
+    { kind: 'usage', inputTokens: 1500, outputTokens: 380 },
+  ],
+  // E2E-017: verification fails, the agent fixes the code, the re-run passes.
+  'verify-fail-fix': () => [
+    {
+      kind: 'tool',
+      toolName: 'propose_plan',
+      input: {
+        summary: 'Create the check target, verify, fix until the check passes.',
+        steps: [{ title: 'Create target and verify' }, { title: 'Fix and re-verify' }],
+      },
+      reason: 'plan before writing',
+    },
+    {
+      kind: 'tool',
+      toolName: 'create_file',
+      input: { path: 'check-target.txt', content: 'WRONG\n', reason: 'seed the check target' },
+      reason: 'create the target (intentionally failing first)',
+    },
+    { kind: 'tool', toolName: 'run_verification', input: {}, reason: 'first verification' },
+    {
+      kind: 'assistant',
+      text: 'The verification failed as recorded — fixing the target now. (deterministic mock answer)',
+      chunkSize: 24,
+    },
+    { kind: 'tool', toolName: 'read_file', input: { path: 'check-target.txt' }, reason: 'hash' },
+    {
+      kind: 'tool',
+      toolName: 'apply_patch',
+      input: {
+        path: 'check-target.txt',
+        patch: '--- check-target.txt\n+++ check-target.txt\n@@ -1,1 +1,1 @@\n-WRONG\n+RIGHT\n',
+        baseHash: '$lastReadHash',
+        reason: 'fix the check target',
+      },
+      reason: 'fix the target',
+    },
+    { kind: 'tool', toolName: 'run_verification', input: {}, reason: 'second verification' },
+    {
+      kind: 'assistant',
+      text: 'Second verification passed; the failed record is kept in history. (deterministic mock answer)',
+      chunkSize: 24,
+    },
+    { kind: 'usage', inputTokens: 1800, outputTokens: 420 },
+  ],
   // ask_user flow — clarifying question pauses the run until answered.
   'ask-clarify': () => [
     { kind: 'assistant', text: 'I need one detail before continuing.', chunkSize: 16 },

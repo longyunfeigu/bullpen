@@ -44,11 +44,30 @@ interface AppStore {
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingLayout: LayoutState | null = null;
 function persistLayout(layout: LayoutState): void {
+  pendingLayout = layout;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    void rpcResult('layout.save', { layout });
+    saveTimer = null;
+    const toSave = pendingLayout;
+    pendingLayout = null;
+    if (toSave) void rpcResult('layout.save', { layout: toSave });
   }, 400);
+}
+
+/** Layout changes made within the debounce window must survive quitting (APP-003). */
+function flushPendingLayout(): void {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  const toSave = pendingLayout;
+  pendingLayout = null;
+  if (toSave) void rpcResult('layout.save', { layout: toSave });
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', flushPendingLayout);
 }
 
 function applyThemeAttribute(settings: Settings | null): void {

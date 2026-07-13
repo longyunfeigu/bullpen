@@ -53,6 +53,22 @@ export function createTsSmallFixture(): string {
     join(root, 'run-tests.mjs'),
     `const ok = 2 + 3 === 5;\nconsole.log(ok ? 'PASS add' : 'FAIL add');\nprocess.exit(ok ? 0 : 1);\n`,
   );
+  // Verification probe used by E2E-017: passes only when check-target.txt says RIGHT.
+  writeFileSync(
+    join(root, 'check-agent.mjs'),
+    [
+      "import { readFileSync } from 'node:fs';",
+      'try {',
+      "  const value = readFileSync('check-target.txt', 'utf8').trim();",
+      "  console.log(value === 'RIGHT' ? 'CHECK PASS' : `CHECK FAIL: ${value}`);",
+      "  process.exit(value === 'RIGHT' ? 0 : 1);",
+      '} catch (e) {',
+      "  console.error('CHECK FAIL: missing check-target.txt');",
+      '  process.exit(1);',
+      '}',
+      '',
+    ].join('\n'),
+  );
   writeFileSync(join(root, 'README.md'), '# Fixture\n\nSmall TS project for E2E.\n');
   return root;
 }

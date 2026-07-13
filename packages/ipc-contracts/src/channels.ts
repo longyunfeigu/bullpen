@@ -15,6 +15,7 @@ import {
   TaskDtoSchema,
   TimelineEventDtoSchema,
   VerificationCommandSchema,
+  VerificationRunDtoSchema,
 } from './agent-dto.js';
 
 const SettingsStateSchema = z.object({
@@ -561,8 +562,37 @@ export const CHANNELS = {
   'task.accept': ch(
     'task.accept',
     1,
-    z.object({ taskId: z.string() }).strict(),
+    z.object({ taskId: z.string(), confirmUnverified: z.boolean().default(false) }).strict(),
     z.object({ task: TaskDtoSchema }),
+  ),
+  'task.rollback': ch(
+    'task.rollback',
+    1,
+    z.object({ taskId: z.string(), force: z.boolean().default(false) }).strict(),
+    z.object({
+      status: z.enum(['ok', 'conflicts']),
+      task: TaskDtoSchema,
+      restored: z.array(z.string()).optional(),
+      conflicts: z.array(z.object({ path: z.string(), reason: z.string() })).optional(),
+    }),
+  ),
+  'task.runVerification': ch(
+    'task.runVerification',
+    1,
+    z.object({ taskId: z.string(), label: z.string().max(120).optional() }).strict(),
+    z.object({ configured: z.boolean(), runs: z.array(VerificationRunDtoSchema) }),
+  ),
+  'task.verificationRuns': ch(
+    'task.verificationRuns',
+    1,
+    z.object({ taskId: z.string() }).strict(),
+    z.object({ runs: z.array(VerificationRunDtoSchema) }),
+  ),
+  'task.suggestVerifications': ch(
+    'task.suggestVerifications',
+    1,
+    z.object({}).strict(),
+    z.object({ suggestions: z.array(VerificationCommandSchema) }),
   ),
   'models.list': ch(
     'models.list',

@@ -15,10 +15,18 @@ export function NewTaskDialog(): React.JSX.Element {
   const [apiKey, setApiKey] = useState('');
   const [savingKey, setSavingKey] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [suggestions, setSuggestions] = useState<
+    Array<{ label: string; executable: string; args: string[]; cwd: string; timeoutMs: number }>
+  >([]);
+  const [selectedVerifications, setSelectedVerifications] = useState<Set<string>>(new Set());
+  const [customVerification, setCustomVerification] = useState('');
 
   useEffect(() => {
     void store.refreshModels();
     void rpcResult('secrets.list', {});
+    void rpcResult('task.suggestVerifications', {}).then((res) => {
+      if (res.ok) setSuggestions(res.data.suggestions);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -64,12 +72,27 @@ export function NewTaskDialog(): React.JSX.Element {
       return;
     }
     setSubmitting(true);
+    const verification = suggestions.filter((s) => selectedVerifications.has(s.label));
+    const custom = customVerification.trim();
+    if (custom) {
+      const [executable, ...args] = custom.split(/\s+/);
+      if (executable) {
+        verification.push({
+          label: custom.length > 60 ? `${custom.slice(0, 57)}…` : custom,
+          executable,
+          args,
+          cwd: '',
+          timeoutMs: 300_000,
+        });
+      }
+    }
     await store.createAndStart({
       title: title.trim(),
       goalMd: goal.trim(),
       acceptance: acceptance.map((a) => a.trim()).filter(Boolean),
       mode,
       model: { providerId, modelId },
+      verification,
     });
     setSubmitting(false);
   };
@@ -183,6 +206,43 @@ export function NewTaskDialog(): React.JSX.Element {
                 Without acceptance criteria the final report will be marked Unverified-by-user.
               </div>
             ) : null}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="text-muted" style={{ fontSize: 11 }}>
+              Verification commands (optional; VER-001/002)
+            </span>
+            {suggestions.map((s) => (
+              <label key={s.label} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  data-testid={`verification-suggest-${s.label.replace(/\s+/g, '-')}`}
+                  checked={selectedVerifications.has(s.label)}
+                  onChange={(e) => {
+                    const next = new Set(selectedVerifications);
+                    if (e.target.checked) next.add(s.label);
+                    else next.delete(s.label);
+                    setSelectedVerifications(next);
+                  }}
+                />
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {s.label}
+                </span>
+              </label>
+            ))}
+            <input
+              data-testid="task-verification-custom"
+              value={customVerification}
+              onChange={(e) => setCustomVerification(e.target.value)}
+              placeholder="Custom command, e.g. node check-agent.mjs (no shell syntax)"
+              style={{
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '6px 8px',
+                fontSize: 12,
+              }}
+            />
           </div>
 
           <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>

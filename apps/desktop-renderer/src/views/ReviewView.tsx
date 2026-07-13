@@ -290,6 +290,14 @@ export function ReviewView(): React.JSX.Element | null {
         >
           Accept all changes
         </button>
+        <button
+          className="btn danger"
+          data-testid="review-rollback"
+          disabled={!canDecide}
+          onClick={() => void store.rollbackTask()}
+        >
+          Roll back all
+        </button>
         <button className="btn" data-testid="review-close" onClick={() => store.closeReview()}>
           Close
         </button>

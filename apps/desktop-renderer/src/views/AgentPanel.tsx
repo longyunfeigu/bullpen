@@ -725,28 +725,143 @@ function TimelineCard({
           The run was stopped ({String(payload.reason)}). Nothing was rolled back automatically.
         </Card>
       );
+    case 'verification.started':
+      return (
+        <div className="text-muted" style={{ padding: '0 14px', fontSize: 11 }}>
+          ▶ verification started: {String(payload.label)}
+        </div>
+      );
+    case 'verification.completed': {
+      const run = payload.run as {
+        label: string;
+        state: string;
+        exitCode: number | null;
+        outputExcerpt: string;
+      };
+      const passed = run.state === 'passed';
+      return (
+        <Card
+          icon={passed ? '✅' : '❌'}
+          title={`Verification "${run.label}" — ${run.state}${run.exitCode !== null ? ` (exit ${run.exitCode})` : ''}`}
+          tone={passed ? 'success' : 'danger'}
+          testid={`tl-verification-${run.state}`}
+          collapsible
+        >
+          <pre
+            className="mono"
+            style={{ fontSize: 11, maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap' }}
+          >
+            {run.outputExcerpt || '(no output)'}
+          </pre>
+        </Card>
+      );
+    }
+    case 'rollback.blocked': {
+      const conflicts = (payload.conflicts ?? []) as Array<{ path: string; reason: string }>;
+      return (
+        <Card
+          icon="🛑"
+          title="Rollback blocked by conflicts"
+          tone="warning"
+          testid="tl-rollback-blocked"
+        >
+          {conflicts.map((c) => (
+            <div key={c.path} style={{ fontSize: 12 }}>
+              <span className="mono">{c.path}</span> — {c.reason}
+            </div>
+          ))}
+        </Card>
+      );
+    }
+    case 'task.rolledBack':
+      return (
+        <Card icon="↩️" title="Rolled back" tone="warning" testid="tl-rolledback">
+          {String((payload.restored as string[] | undefined)?.length ?? 0)} file(s) restored to
+          their pre-task state.
+        </Card>
+      );
     case 'report.final': {
       const unverified = payload.unverified === true;
+      const changed = payload.changed as
+        { files: number; additions: number; deletions: number } | undefined;
+      const verification = payload.verification as
+        | {
+            runs: Array<{ label: string; state: string; stale?: boolean; superseded?: boolean }>;
+            passed: number;
+            failed: number;
+            note: string | null;
+          }
+        | undefined;
+      const agentSummary = typeof payload.agentSummary === 'string' ? payload.agentSummary : null;
+      const risks = (payload.unresolvedRisks ?? []) as string[];
       return (
         <Card
           icon="📋"
           title="Final report"
-          tone={unverified ? 'warning' : 'success'}
+          tone={unverified || (verification?.failed ?? 0) > 0 ? 'warning' : 'success'}
           testid="tl-report"
         >
           <div>Outcome: {String(payload.outcome)}</div>
-          {unverified ? (
-            <div className="text-warning">Unverified — no verification commands were run.</div>
+          {changed ? (
+            <div data-testid="report-changed">
+              Changed: {changed.files} file{changed.files === 1 ? '' : 's'},{' '}
+              <span style={{ color: 'var(--success)' }}>+{changed.additions}</span> /{' '}
+              <span style={{ color: 'var(--danger)' }}>-{changed.deletions}</span>
+            </div>
           ) : null}
+          {verification && verification.runs.length > 0 ? (
+            <div data-testid="report-verification">
+              Verification: {verification.passed} passed, {verification.failed} failed
+              <ul style={{ margin: '2px 0 2px 16px', padding: 0, fontSize: 11.5 }}>
+                {verification.runs.map((r, i) => (
+                  <li key={i} className={r.state === 'passed' ? '' : 'text-warning'}>
+                    {r.label} — {r.state}
+                    {r.stale ? ' (stale)' : ''}
+                    {r.superseded ? ' (superseded)' : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {unverified ? (
+            <div className="text-warning" data-testid="report-unverified">
+              Unverified — no verification commands were run (UNVERIFIED_BY_USER).
+            </div>
+          ) : null}
+          {risks.length > 0 ? (
+            <div className="text-warning" style={{ fontSize: 11.5 }}>
+              Unresolved risks: {risks.join('; ')}
+            </div>
+          ) : null}
+          {agentSummary ? (
+            <details style={{ marginTop: 4, fontSize: 12 }}>
+              <summary style={{ cursor: 'pointer' }} className="text-muted">
+                Agent's own summary (unverified narrative)
+              </summary>
+              <div style={{ whiteSpace: 'pre-wrap', paddingTop: 4 }}>{agentSummary}</div>
+            </details>
+          ) : null}
+          <div className="text-muted" style={{ fontSize: 10.5, marginTop: 4 }}>
+            Evidence above comes from the change/verification/permission records, not from the
+            agent. Check the Problems panel for live diagnostics before accepting.
+          </div>
           {context.taskState === 'REVIEW_READY' ? (
-            <button
-              className="btn primary"
-              style={{ marginTop: 6 }}
-              data-testid="report-review-open"
-              onClick={() => void useTaskStore.getState().openReview()}
-            >
-              Review changes
-            </button>
+            <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+              <button
+                className="btn primary"
+                data-testid="report-review-open"
+                onClick={() => void useTaskStore.getState().openReview()}
+              >
+                Review changes
+              </button>
+              <button
+                className="btn danger"
+                data-testid="report-rollback"
+                onClick={() => void useTaskStore.getState().rollbackTask()}
+              >
+                Roll back all
+              </button>
+            </div>
           ) : null}
         </Card>
       );

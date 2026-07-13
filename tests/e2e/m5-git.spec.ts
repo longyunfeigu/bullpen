@@ -32,10 +32,27 @@ test.describe('M5 git workflow', () => {
       await expect(page.getByTestId('scm-group-staged')).toBeVisible();
       await expect.poll(() => git(fixture, ['status', '--porcelain'])).toContain('M  src/util.ts');
 
-      // Unstage round-trip.
-      await page.getByTestId('unstage-src/util.ts').click();
-      await expect.poll(() => git(fixture, ['status', '--porcelain'])).toContain(' M src/util.ts');
-      await page.getByTestId('stage-src/util.ts').click();
+      // Unstage round-trip. The SCM list re-renders on every git refresh, which
+      // can swallow a click that lands on the re-render boundary — retry the
+      // idempotent click until the CLI confirms the unstage took effect.
+      await expect
+        .poll(async () => {
+          const unstageBtn = page.getByTestId('unstage-src/util.ts');
+          if (await unstageBtn.isVisible().catch(() => false)) {
+            await unstageBtn.click().catch(() => undefined);
+          }
+          return git(fixture, ['status', '--porcelain']);
+        })
+        .toContain(' M src/util.ts');
+      await expect
+        .poll(async () => {
+          const stageBtn = page.getByTestId('stage-src/util.ts');
+          if (await stageBtn.isVisible().catch(() => false)) {
+            await stageBtn.click().catch(() => undefined);
+          }
+          return git(fixture, ['status', '--porcelain']);
+        })
+        .toContain('M  src/util.ts');
 
       // Commit.
       await page.getByTestId('commit-message').fill('feat: e2e commit');

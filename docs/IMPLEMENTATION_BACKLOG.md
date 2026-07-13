@@ -103,12 +103,12 @@
 
 | 任务 | 交付 | 依赖 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| M9-01 | Verification config/project detector | M4,M7-06 | NOT_STARTED |  |
-| M9-02 | verification runner/output/stale semantics | M9-01 | NOT_STARTED |  |
-| M9-03 | Final Report 系统证据投影 | M5,M9-02 | NOT_STARTED |  |
-| M9-04 | REVIEW_READY/ACCEPTED/ROLLED_BACK 状态规则 | M8,M9-03 | NOT_STARTED |  |
-| M9-05 | 任务列表、筛选、归档、恢复 | M6-06,M2-03 | NOT_STARTED |  |
-| M9-06 | 验证失败继续修复 E2E | M9-02,M8 | NOT_STARTED |  |
+| M9-01 | Verification config/project detector | M4,M7-06 | VERIFIED | VerificationService.detectSuggestions + NewTaskDialog suggestions/custom (VER-002) |
+| M9-02 | verification runner/output/stale semantics | M9-01 | VERIFIED | run/superseded/stale/timeout + blob output_ref (7 unit tests); run_verification tool R2-recognized |
+| M9-03 | Final Report 系统证据投影 | M5,M9-02 | VERIFIED | buildFinalReportData: changeSet/verification/denied-risks/git HEAD delta; agent narrative separated (§13.4) |
+| M9-04 | REVIEW_READY/ACCEPTED/ROLLED_BACK 状态规则 | M8,M9-03 | VERIFIED | ACCEPT_NEEDS_CONFIRM (unverified), rollback preflight conflicts→blocked event; E2E-016/018 |
+| M9-05 | 任务列表、筛选、归档、恢复 | M6-06,M2-03 | VERIFIED | filters/archive since M6; REVIEW_READY→IN_PROGRESS continue via startTask guard |
+| M9-06 | 验证失败继续修复 E2E | M9-02,M8 | VERIFIED | E2E-017: fail→fix→pass, both records kept, old stale+superseded |
 
 ## Milestone 10: 恢复与诊断
 

@@ -33,19 +33,28 @@ import {
   registerReadOnlyTools,
   registerCommandTools,
   registerWriteTools,
+  registerVerificationTool,
   createPlanAwarePermission,
   normalizeProposedPlan,
   applyPlanEdit,
   applyStatusUpdates,
   PermissionEngine,
+  WRITE_TOOL_NAMES,
   type AskUserPrompt,
   type PermissionRequestCard,
   type PlanGate,
   type PlanStepUpdate,
   type ProposedPlanInput,
   type ToolAuditRecord,
+  type VerificationGate,
 } from '@pi-ide/tool-gateway';
 import { parseHunks } from '@pi-ide/change-service';
+import {
+  VerificationService,
+  type VerificationCommand as VerCommand,
+  type VerificationRunRecord,
+} from '@pi-ide/verification-service';
+import { createHash } from 'node:crypto';
 import { SearchService } from '@pi-ide/search-service';
 import { GitService } from '@pi-ide/git-service';
 import type { AgentHost, RuntimeKind } from './agent-host.js';
@@ -53,6 +62,7 @@ import type { WorkspaceHost } from './workspace-host.js';
 import type { SettingsService } from './settings-service.js';
 import type { M5Services } from '../ipc/m5-handlers.js';
 import { SqlPermissionStore } from './permission-store.js';
+import { SqlVerificationRepo } from './verification-store.js';
 import { broadcast } from '../broadcast.js';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
@@ -93,6 +103,7 @@ export class TaskService {
   private readonly startQueue: Array<{ taskId: string; prompt: string | undefined }> = [];
   private gateway: ToolGateway | null = null;
   private permissionEngine: PermissionEngine | null = null;
+  private verifications: VerificationService | null = null;
   /** Open ask_user questions waiting for an answer, keyed by callId. */
   private readonly pendingAsks = new Map<
     string,
@@ -139,6 +150,7 @@ export class TaskService {
       this.planRecords.clear();
       this.gateway = null;
       this.permissionEngine = null;
+      this.verifications = null;
       if (ws) this.buildGateway();
     });
   }
@@ -180,6 +192,14 @@ export class TaskService {
       documents: ws.documents,
       planGate: this.planGate(),
     });
+    registerVerificationTool(gateway, { gate: this.verificationGate() });
+    this.verifications = this.m5.blobStore
+      ? new VerificationService({
+          root: ws.canonicalPath,
+          repo: new SqlVerificationRepo(this.db),
+          blobs: this.m5.blobStore,
+        })
+      : null;
     this.gateway = gateway;
     this.permissionEngine = engine;
   }
@@ -722,7 +742,10 @@ export class TaskService {
   }
 
   /** REVIEW_READY → ACCEPTED (user accepts the workspace state; not a git commit). */
-  acceptTask(taskId: string): TaskDto {
+  async acceptTask(
+    taskId: string,
+    options: { confirmUnverified?: boolean } = {},
+  ): Promise<TaskDto> {
     const task = this.getTask(taskId);
     if (task.state !== 'REVIEW_READY') {
       throw new ProductFailure(
@@ -731,15 +754,199 @@ export class TaskService {
         }),
       );
     }
+    // VER-007/E2E-018: accepting real changes without any verification needs a
+    // second, explicit confirmation.
+    const verificationRuns = this.verifications?.listForTask(taskId) ?? [];
+    if (verificationRuns.length === 0 && task.mode !== 'ask' && !options.confirmUnverified) {
+      const changed = this.m5.changeService ? await this.m5.changeService.changeSet(taskId) : null;
+      if (changed && changed.files.length > 0) {
+        throw new ProductFailure(
+          productError('ACCEPT_NEEDS_CONFIRM', {
+            userMessage:
+              'No verification was run for this task. Confirm explicitly to accept unverified changes.',
+            retryable: true,
+          }),
+        );
+      }
+    }
     // §6.1: ACCEPTED requires a final report; it is recorded when the run completes.
     const hasReport = this.db
       .prepare("SELECT id FROM task_events WHERE task_id = ? AND type = 'report.final' LIMIT 1")
       .get(taskId) as { id: string } | undefined;
     if (!hasReport) {
-      this.recordEvent(taskId, 'report.final', this.buildFinalReport(taskId, 'unknown'));
+      this.recordEvent(
+        taskId,
+        'report.final',
+        await this.buildFinalReportData(taskId, null, 'completed'),
+      );
     }
-    this.recordEvent(taskId, 'task.accepted', { at: new Date().toISOString() });
+    this.recordEvent(taskId, 'task.accepted', {
+      at: new Date().toISOString(),
+      unverifiedConfirmed: verificationRuns.length === 0 && options.confirmUnverified === true,
+    });
     return this.setState(taskId, 'ACCEPTED');
+  }
+
+  /** Full rollback with preflight (CHG-009/010, M9-04). Conflicts stop; force overrides explicitly. */
+  async rollbackTask(
+    taskId: string,
+    options: { force?: boolean } = {},
+  ): Promise<
+    | { status: 'ok'; task: TaskDto; restored: string[] }
+    | { status: 'conflicts'; task: TaskDto; conflicts: Array<{ path: string; reason: string }> }
+  > {
+    const task = this.getTask(taskId);
+    if (!['REVIEW_READY', 'INTERRUPTED', 'FAILED'].includes(task.state)) {
+      throw new ProductFailure(
+        productError('TASK_NOT_ROLLBACKABLE', {
+          userMessage: `The task cannot be rolled back from state ${task.state}.`,
+        }),
+      );
+    }
+    const changes = this.m5.changeService;
+    if (!changes) {
+      throw new ProductFailure(
+        productError('WS_NONE_OPEN', { userMessage: 'No workspace is open.' }),
+      );
+    }
+    const preflight = await changes.rollbackPreflight(taskId);
+    if (preflight.conflicts.length > 0 && !options.force) {
+      this.recordEvent(taskId, 'rollback.blocked', {
+        conflicts: preflight.conflicts.map((c) => ({ path: c.path, reason: c.reason })),
+      });
+      return {
+        status: 'conflicts',
+        task: this.getTask(taskId),
+        conflicts: preflight.conflicts.map((c) => ({ path: c.path, reason: c.reason })),
+      };
+    }
+    const report = await changes.rollback(taskId, { force: options.force ?? false });
+    this.recordEvent(taskId, 'task.rolledBack', {
+      ok: report.ok,
+      restored: report.restored,
+      conflictsOverridden: report.conflictsOverridden,
+      failed: report.verified.filter((v) => !v.ok),
+    });
+    if (!report.ok) {
+      throw new ProductFailure(
+        productError('CHG_ROLLBACK_INCOMPLETE', {
+          userMessage:
+            'Some files could not be restored; snapshots are kept for manual recovery. See the timeline for details.',
+          context: { failed: report.verified.filter((v) => !v.ok) },
+        }),
+      );
+    }
+    return { status: 'ok', task: this.setState(taskId, 'ROLLED_BACK'), restored: report.restored };
+  }
+
+  // ---------- verification (M9-01/02, VER-001..010) ----------
+
+  private verificationGate(): VerificationGate {
+    return {
+      run: async (input, signal) => {
+        const runs = await this.runVerifications(input.taskId, {
+          ...(input.label !== undefined ? { label: input.label } : {}),
+          initiator: 'agent',
+          signal,
+        });
+        return {
+          configured: runs !== null,
+          runs: (runs ?? []).map((r) => ({
+            id: r.id,
+            label: r.label,
+            state: r.state,
+            exitCode: r.exitCode,
+            outputExcerpt: r.outputExcerpt.slice(0, 800),
+          })),
+        };
+      },
+    };
+  }
+
+  /** Fingerprint of the task's current net change set (VER-008 stale detection). */
+  private async codeRevision(taskId: string): Promise<string | null> {
+    const changes = this.m5.changeService;
+    if (!changes) return null;
+    try {
+      const cs = await changes.changeSet(taskId);
+      const shape = cs.files.map((f) => [f.path, f.currentHash]);
+      return createHash('sha256').update(JSON.stringify(shape)).digest('hex').slice(0, 24);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Run configured verification commands; null = none configured (VER-001/010). */
+  async runVerifications(
+    taskId: string,
+    options: { label?: string; initiator: 'agent' | 'user'; signal?: AbortSignal },
+  ): Promise<VerificationRunRecord[] | null> {
+    const service = this.verifications;
+    if (!service) {
+      throw new ProductFailure(
+        productError('WS_NONE_OPEN', { userMessage: 'No workspace is open.' }),
+      );
+    }
+    const task = this.getTask(taskId);
+    const commands = (task.verification as VerCommand[]).filter(
+      (c) => !options.label || c.label === options.label,
+    );
+    if (commands.length === 0) return null;
+
+    const startState = task.state;
+    // §6.1: VERIFYING is entered from IN_PROGRESS; a user re-run from
+    // REVIEW_READY hops through IN_PROGRESS and returns to REVIEW_READY.
+    if (startState === 'REVIEW_READY') this.setState(taskId, 'IN_PROGRESS');
+    if (this.getTask(taskId).state === 'IN_PROGRESS') this.setState(taskId, 'VERIFYING');
+
+    const results: VerificationRunRecord[] = [];
+    try {
+      const revision = await this.codeRevision(taskId);
+      for (const command of commands) {
+        this.recordEvent(taskId, 'verification.started', {
+          label: command.label,
+          initiator: options.initiator,
+        });
+        const run = await service.run({
+          taskId,
+          command,
+          codeRevision: revision,
+          ...(options.signal ? { signal: options.signal } : {}),
+        });
+        results.push(run);
+        this.recordEvent(taskId, 'verification.completed', { run: this.verificationDto(run) });
+      }
+    } finally {
+      const current = this.getTask(taskId).state;
+      if (current === 'VERIFYING') {
+        this.setState(taskId, startState === 'REVIEW_READY' ? 'REVIEW_READY' : 'IN_PROGRESS');
+      }
+    }
+    return results;
+  }
+
+  private verificationDto(run: VerificationRunRecord): Record<string, unknown> {
+    return {
+      id: run.id,
+      label: run.label,
+      state: run.state,
+      exitCode: run.exitCode,
+      timedOut: run.timedOut,
+      cancelled: run.cancelled,
+      stale: run.stale,
+      superseded: run.supersededBy !== null,
+      outputExcerpt: run.outputExcerpt,
+      startedAt: run.startedAt,
+      endedAt: run.endedAt,
+    };
+  }
+
+  verificationRuns(taskId: string): Array<Record<string, unknown>> {
+    return (this.verifications?.listForTask(taskId) ?? []).map((r) => this.verificationDto(r));
+  }
+
+  async suggestVerifications(): Promise<VerCommand[]> {
+    return this.verifications ? this.verifications.detectSuggestions() : [];
   }
 
   // ---------- persistence helpers ----------
@@ -1148,13 +1355,7 @@ export class TaskService {
           )
           .run(event.stopReason, new Date().toISOString(), runId);
         this.recordEvent(taskId, 'run.completed', { runId, stopReason: event.stopReason });
-        const task = this.getTask(taskId);
-        if (task.state === 'EXPLORING') {
-          // Ask flow: EXPLORING → IN_PROGRESS → REVIEW_READY (§6.1 exact hops).
-          this.setState(taskId, 'IN_PROGRESS');
-        }
-        this.recordEvent(taskId, 'report.final', this.buildFinalReport(taskId, runId));
-        this.setState(taskId, 'REVIEW_READY');
+        void this.finalizeRun(taskId, runId);
         break;
       }
       case 'run.failed':
@@ -1200,24 +1401,139 @@ export class TaskService {
     }
   }
 
-  private buildFinalReport(taskId: string, runId: string): Record<string, unknown> {
+  /** Emit the final report, then move to REVIEW_READY (§6.1: never auto-ACCEPTED). */
+  private async finalizeRun(taskId: string, runId: string): Promise<void> {
+    try {
+      const task = this.getTask(taskId);
+      if (task.state === 'EXPLORING') {
+        // Ask flow: EXPLORING → IN_PROGRESS → REVIEW_READY (§6.1 exact hops).
+        this.setState(taskId, 'IN_PROGRESS');
+      }
+      const report = await this.buildFinalReportData(taskId, runId, 'completed');
+      this.recordEvent(taskId, 'report.final', report);
+      const current = this.getTask(taskId).state;
+      if (current === 'VERIFYING') this.setState(taskId, 'REVIEW_READY');
+      else this.safeTransition(taskId, 'REVIEW_READY');
+    } catch (e) {
+      this.logger.error('finalize run failed', {
+        taskId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      this.safeTransition(taskId, 'REVIEW_READY');
+    }
+  }
+
+  /**
+   * Final report (§13.4, M9-03): the agent's own summary is kept separate from
+   * system evidence, which comes from the ChangeService, VerificationService
+   * and the permission/tool audit — never from the model's claims.
+   */
+  private async buildFinalReportData(
+    taskId: string,
+    runId: string | null,
+    outcome: 'completed' | 'failed' | 'interrupted',
+  ): Promise<Record<string, unknown>> {
     const task = this.getTask(taskId);
-    const usageRow = this.db
-      .prepare('SELECT usage_json, provider, model FROM agent_runs WHERE id = ?')
-      .get(runId) as { usage_json: string | null; provider: string; model: string } | undefined;
+    const latestRun = this.db
+      .prepare('SELECT id FROM agent_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1')
+      .get(taskId) as { id: string } | undefined;
+    const effectiveRunId = runId ?? latestRun?.id ?? null;
+    const usageRow = effectiveRunId
+      ? (this.db
+          .prepare('SELECT usage_json, provider, model FROM agent_runs WHERE id = ?')
+          .get(effectiveRunId) as
+          { usage_json: string | null; provider: string; model: string } | undefined)
+      : undefined;
     const toolCounts = this.db
       .prepare('SELECT state, COUNT(*) as n FROM tool_calls WHERE task_id = ? GROUP BY state')
       .all(taskId) as Array<{ state: string; n: number }>;
+    const deniedCount = toolCounts.find((t) => t.state === 'DENIED')?.n ?? 0;
+    const failedCount = toolCounts.find((t) => t.state === 'FAILED')?.n ?? 0;
+
+    // Agent self-description: the last visible assistant message.
+    const lastMessage = this.db
+      .prepare(
+        "SELECT payload_json FROM task_events WHERE task_id = ? AND type = 'agent.message' ORDER BY sequence DESC LIMIT 1",
+      )
+      .get(taskId) as { payload_json: string } | undefined;
+    const agentSummary = lastMessage
+      ? String((JSON.parse(lastMessage.payload_json) as { text?: string }).text ?? '').slice(
+          0,
+          2000,
+        )
+      : null;
+
+    // System evidence: net changes.
+    let changed: Record<string, unknown> = { files: 0, additions: 0, deletions: 0, list: [] };
+    try {
+      const cs = this.m5.changeService ? await this.m5.changeService.changeSet(taskId) : null;
+      if (cs) {
+        changed = {
+          files: cs.files.length,
+          additions: cs.totalAdditions,
+          deletions: cs.totalDeletions,
+          list: cs.files.map((f) => ({
+            path: f.path,
+            status: f.status,
+            additions: f.additions,
+            deletions: f.deletions,
+          })),
+        };
+      }
+    } catch {
+      // change set unavailable (workspace closed mid-flight)
+    }
+
+    // System evidence: verification runs with stale/superseded flags (VER-005/008).
+    const runs = (this.verifications?.listForTask(taskId) ?? []).map((r) =>
+      this.verificationDto(r),
+    );
+    const currentRuns = runs.filter((r) => r.superseded !== true);
+    const passed = currentRuns.filter((r) => r.state === 'passed' && r.stale !== true).length;
+    const failed = currentRuns.filter((r) => r.state === 'failed').length;
+    const unverified = task.mode !== 'ask' && runs.length === 0;
+
+    // GIT-009: report whether HEAD moved during the task.
+    let gitHeadChanged: boolean | null = null;
+    try {
+      const ws = this.workspace.current;
+      if (ws?.isGitRepo && task.gitBaseline) {
+        const head = await new GitService(ws.canonicalPath).headInfo();
+        gitHeadChanged = head.head !== task.gitBaseline.head;
+      }
+    } catch {
+      gitHeadChanged = null;
+    }
+
+    const unresolvedRisks: string[] = [];
+    if (deniedCount > 0) unresolvedRisks.push(`${deniedCount} tool call(s) were denied`);
+    if (failedCount > 0) unresolvedRisks.push(`${failedCount} tool call(s) failed`);
+    if (failed > 0) unresolvedRisks.push(`${failed} verification(s) failing`);
+    if (runs.some((r) => r.stale === true))
+      unresolvedRisks.push('some verification results are stale (code changed afterwards)');
+
     return {
-      outcome: 'completed',
+      outcome,
       mode: task.mode,
+      agentSummary,
       acceptance: task.acceptance,
-      verification: { runs: [], note: task.mode === 'ask' ? 'not applicable (ask)' : 'unverified' },
-      unverified: task.mode !== 'ask',
+      changed,
+      verification: {
+        runs,
+        passed,
+        failed,
+        note:
+          task.mode === 'ask' ? 'not applicable (ask)' : unverified ? 'UNVERIFIED_BY_USER' : null,
+      },
+      unverified,
+      diagnosticsNote:
+        'Problems counts are live workspace state; check the Problems panel before accepting (VER-009).',
+      unresolvedRisks,
       toolCounts,
       model: usageRow ? { provider: usageRow.provider, model: usageRow.model } : null,
       usage: usageRow?.usage_json ? JSON.parse(usageRow.usage_json) : null,
       gitBaseline: task.gitBaseline,
+      gitHeadChanged,
     };
   }
 
@@ -1306,6 +1622,15 @@ export class TaskService {
           summary: record.resultSummary,
           input: record.input,
         });
+      }
+      // VER-008: a successful write moves the code revision — older verification
+      // results become stale.
+      if (record.state === 'SUCCEEDED' && WRITE_TOOL_NAMES.has(record.name)) {
+        void this.codeRevision(record.taskId)
+          .then((revision) => {
+            if (revision) this.verifications?.markStale(record.taskId, revision);
+          })
+          .catch(() => undefined);
       }
     } catch (e) {
       this.logger.warn('tool audit persist failed', {

@@ -10,6 +10,7 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   'apply_patch',
   'create_file',
   'delete_file',
+  'rename_file',
 ]);
 export const PLAN_TOOL_NAMES: ReadonlySet<string> = new Set(['propose_plan', 'update_plan']);
 
@@ -213,6 +214,37 @@ export function registerWriteTools(gateway: ToolGateway, services: WriteToolServ
         code: 'OK',
         summary: `Deleted ${input.path} (snapshot kept for rollback).`,
         data: { deleted: input.path },
+      };
+    },
+  });
+
+  gateway.register({
+    name: 'rename_file',
+    version: 1,
+    description:
+      'Rename or move one workspace file. Fails if the target already exists — it never overwrites.',
+    inputSchema: z
+      .object({
+        from: z.string().min(1).max(1000),
+        to: z.string().min(1).max(1000),
+        reason: z.string().min(1).max(500),
+      })
+      .strict(),
+    risk: () => ({ level: 'R1', reasons: ['renames a file within the workspace (reversible)'] }),
+    preview: async (input) => ({
+      summary: `Rename ${input.from} → ${input.to}`,
+      detail: `why: ${input.reason}`,
+      diff: null,
+      targets: [input.from, input.to],
+      ruleKey: 'write:rename_file',
+    }),
+    async execute(input, _signal, call) {
+      const changes = mustChanges(services);
+      await changes.renameFile(call.taskId, call.callId, { from: input.from, to: input.to });
+      return {
+        code: 'OK',
+        summary: `Renamed ${input.from} to ${input.to}.`,
+        data: { from: input.from, to: input.to },
       };
     },
   });

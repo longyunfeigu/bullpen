@@ -37,6 +37,13 @@ interface TaskStore {
     acceptance: string[];
     mode: 'ask' | 'edit' | 'auto';
     model: { providerId: string; modelId: string };
+    verification?: Array<{
+      label: string;
+      executable: string;
+      args: string[];
+      cwd: string;
+      timeoutMs: number;
+    }>;
   }): Promise<boolean>;
   send(text: string, during: 'steer' | 'followUp'): Promise<void>;
   stop(): Promise<void>;
@@ -71,6 +78,10 @@ interface TaskStore {
     expectedCurrentHash?: string;
   }): Promise<void>;
   acceptTask(): Promise<boolean>;
+
+  // M9: verification + rollback
+  rollbackTask(): Promise<boolean>;
+  runVerification(label?: string): Promise<void>;
 }
 
 export const useTaskStore = create<TaskStore>((set, get) => ({
@@ -161,7 +172,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       acceptance: input.acceptance,
       mode: input.mode,
       model: input.model,
-      verification: [],
+      verification: input.verification ?? [],
     });
     if (!create.ok) {
       useAppStore.getState().pushToast('error', create.error.userMessage);
@@ -289,7 +300,15 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   async acceptTask() {
     const taskId = get().activeTaskId;
     if (!taskId) return false;
-    const res = await rpcResult('task.accept', { taskId });
+    let res = await rpcResult('task.accept', { taskId, confirmUnverified: false });
+    if (!res.ok && res.error.code === 'ACCEPT_NEEDS_CONFIRM') {
+      // VER-007/E2E-018: unverified changes need a second, explicit confirmation.
+      const confirmed = window.confirm(
+        'No verification was run for this task. Accept the unverified changes anyway?',
+      );
+      if (!confirmed) return false;
+      res = await rpcResult('task.accept', { taskId, confirmUnverified: true });
+    }
     if (!res.ok) {
       useAppStore.getState().pushToast('error', res.error.userMessage);
       return false;
@@ -297,6 +316,54 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     set({ reviewOpen: false });
     await get().refreshTasks();
     return true;
+  },
+
+  async rollbackTask() {
+    const taskId = get().activeTaskId;
+    if (!taskId) return false;
+    if (
+      !window.confirm(
+        'Roll back all changes made by this task? Files are restored byte-exact to their pre-task state.',
+      )
+    ) {
+      return false;
+    }
+    let res = await rpcResult('task.rollback', { taskId, force: false });
+    if (res.ok && res.data.status === 'conflicts') {
+      const conflictList = (res.data.conflicts ?? [])
+        .map((c) => `• ${c.path}: ${c.reason}`)
+        .join('\n');
+      const override = window.confirm(
+        `Some files changed outside this task after the agent touched them:\n\n${conflictList}\n\n` +
+          'Restore the pre-task state anyway? Your outside edits to these files will be replaced.',
+      );
+      if (!override) return false;
+      res = await rpcResult('task.rollback', { taskId, force: true });
+    }
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      return false;
+    }
+    set({ reviewOpen: false });
+    await get().refreshTasks();
+    useAppStore
+      .getState()
+      .pushToast('info', `Rolled back ${res.data.restored?.length ?? 0} file(s).`);
+    return true;
+  },
+
+  async runVerification(label) {
+    const taskId = get().activeTaskId;
+    if (!taskId) return;
+    const res = await rpcResult('task.runVerification', {
+      taskId,
+      ...(label ? { label } : {}),
+    });
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+    } else if (!res.data.configured) {
+      useAppStore.getState().pushToast('info', 'No verification commands are configured.');
+    }
   },
 }));
 

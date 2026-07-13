@@ -322,3 +322,26 @@ describe('plan gate (AG-007, M8-01/04)', () => {
     expect(result.code).toBe('PLAN_REJECTED');
   });
 });
+
+describe('rename_file (M9, CHG-004)', () => {
+  it('renames a file and refuses to overwrite an existing target', async () => {
+    const gateway = buildGateway();
+    const moved = await gateway.executeCall(
+      call('rename_file', { from: 'src.ts', to: 'renamed.ts', reason: 'restructure' }),
+      new AbortController().signal,
+    );
+    expect(moved.ok).toBe(true);
+    expect(existsSync(join(root, 'src.ts'))).toBe(false);
+    expect(readFileSync(join(root, 'renamed.ts'), 'utf8')).toContain('const a = 1;');
+
+    writeFileSync(join(root, 'other.ts'), 'occupied\n');
+    const clash = await gateway.executeCall(
+      call('rename_file', { from: 'renamed.ts', to: 'other.ts', reason: 'collide' }),
+      new AbortController().signal,
+    );
+    expect(clash.ok).toBe(false);
+    expect(clash.code).toBe('CHG_ALREADY_EXISTS');
+    expect(readFileSync(join(root, 'other.ts'), 'utf8')).toBe('occupied\n');
+    expect(existsSync(join(root, 'renamed.ts'))).toBe(true);
+  });
+});

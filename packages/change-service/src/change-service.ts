@@ -382,6 +382,15 @@ export class ChangeService {
   ): Promise<void> {
     const absFrom = await resolveInsideRoot(this.root, input.from);
     const absTo = await resolveInsideRoot(this.root, input.to);
+    const targetExists = await fs.access(absTo).then(
+      () => true,
+      () => false,
+    );
+    if (targetExists) {
+      throw chgError('CHG_ALREADY_EXISTS', 'The rename target already exists; nothing was moved.', {
+        path: input.to,
+      });
+    }
     await this.ensureBaseline(taskId, input.from);
     await this.ensureBaseline(taskId, input.to);
     const bytes = await fs.readFile(absFrom);

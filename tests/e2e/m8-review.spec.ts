@@ -28,6 +28,9 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
     });
     try {
+      // The scenario runs tests via run_command (not run_verification), so
+      // accepting later triggers the unverified-accept confirmation (VER-007).
+      page.on('dialog', (dialog) => void dialog.accept());
       await createTask(page, '[scenario:edit-multifile] cross-file change', 'edit', 'Multi');
 
       // Plan approval gate (AG-007): the run pauses until the user approves.

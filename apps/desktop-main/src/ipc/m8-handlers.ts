@@ -29,7 +29,9 @@ export function registerM8Handlers(tasks: TaskService, logger: Logger): void {
             ? { expectedCurrentHash: payload.expectedCurrentHash }
             : {}),
         }),
-      'task.accept': async ({ taskId }) => ({ task: tasks.acceptTask(taskId) }),
+      'task.accept': async ({ taskId, confirmUnverified }) => ({
+        task: await tasks.acceptTask(taskId, { confirmUnverified }),
+      }),
     },
     logger,
   );

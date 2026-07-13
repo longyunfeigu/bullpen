@@ -145,6 +145,7 @@ export class SqliteChangeRepo implements ChangeRepo {
 export class M5Services {
   private git: GitService | null = null;
   private changes: ChangeService | null = null;
+  private blobs: BlobStore | null = null;
   private gitRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -157,9 +158,10 @@ export class M5Services {
       if (ws) {
         this.git = new GitService(ws.canonicalPath);
         const dataDir = workspaceDataDir(paths, ws.id);
+        this.blobs = new BlobStore(join(dataDir, 'checkpoints', 'blobs'));
         this.changes = new ChangeService({
           root: ws.canonicalPath,
-          blobs: new BlobStore(join(dataDir, 'checkpoints', 'blobs')),
+          blobs: this.blobs,
           repo: new SqliteChangeRepo(state.db),
           documents: ws.documents,
         });
@@ -167,6 +169,7 @@ export class M5Services {
       } else {
         this.git = null;
         this.changes = null;
+        this.blobs = null;
       }
     });
   }
@@ -189,6 +192,10 @@ export class M5Services {
 
   get changeService(): ChangeService | null {
     return this.changes;
+  }
+
+  get blobStore(): BlobStore | null {
+    return this.blobs;
   }
 
   notifyGitChanged(reason: string): void {

@@ -9,9 +9,19 @@
 
 | 里程碑 | 状态 |
 | --- | --- |
-| M1 工程基线 → M7 Tool Gateway 与权限系统 | VERIFIED |
-| **M8 Agent 写入、计划与审查** | **VERIFIED**（E2E-010/011/014/015 绿，全套 26 E2E 绿） |
-| M9–M12 | NOT_STARTED（本文件的待办） |
+| M1 工程基线 → M8 Agent 写入、计划与审查 | VERIFIED |
+| **M9 验证、完成报告与任务历史** | **VERIFIED**（E2E-016/017/018 绿，全套 29 E2E 连续两轮绿） |
+| M10–M12 | NOT_STARTED（本文件的待办） |
+
+M9 交付要点（M10+ 可直接复用）：
+
+- `packages/verification-service`：runner（经 tool-gateway 的 runCommand）、detectSuggestions（package.json scripts）、superseded（同 label 重跑旧行标 superseded_by）、stale（写工具成功后 TaskService 用 changeSet 指纹 markStale）；大输出进 BlobStore（output_ref）+ 2KB excerpt。SQL 存储 `verification-store.ts`。
+- 工具：`run_verification`（R2 recognized，auto 自动放行/edit 询问）、`rename_file`（R1，rename 目标存在即拒）。ChangeService.renameFile 加了不覆盖守卫。
+- Final Report（`buildFinalReportData`）：agentSummary（最后一条 agent 消息，标注"未验证叙述"）与系统证据（changeSet ±、verification runs 含 stale/superseded、denied/failed 工具数、git HEAD 是否移动）分区；无验证 → UNVERIFIED_BY_USER。
+- `task.accept` 需 confirmUnverified（有文件变更且 0 验证时抛 ACCEPT_NEEDS_CONFIRM，UI window.confirm 重试）；`task.rollback` 先 preflight，冲突返回 status:'conflicts'（事件 rollback.blocked），用户显式 force 才覆盖。
+- 用户验证重跑 `task.runVerification`：REVIEW_READY→IN_PROGRESS→VERIFYING→REVIEW_READY 合法跳变链。
+- **修复的真实缺陷**：渲染器布局保存 400ms 防抖在退出时不 flush → pagehide flush（APP-003 恢复保真）；m5 E2E unstage 点击落在 SCM 重渲染边界被吞 → 幂等 poll-click 模式（断言不弱化）。新 E2E 与重渲染列表交互时优先用该模式。
+- fixture 增加 check-agent.mjs（读 check-target.txt 判 RIGHT）；场景 edit-rollback / verify-fail-fix。
 
 M8 交付要点（M9+ 可直接复用）：
 

@@ -1,8 +1,8 @@
 # IMPLEMENTATION_STATUS.md
 
 Overall status: IN_PROGRESS  
-Current milestone: 9  
-Last verified commit: (M8 pending commit)
+Current milestone: 10  
+Last verified commit: (M9 pending commit)
 
 ## Status legend
 
@@ -24,7 +24,7 @@ Last verified commit: (M8 pending commit)
 | 6. Pi read-only agent | VERIFIED | E2E-009/019-core/HIST-002 (4 E2E), pi adapter contract tests (no-builtin-tools), 141 unit tests total | OAuth providers deferred to API-key flow (ADR pending M12 notes) |
 | 7. Tools and permissions | VERIFIED | E2E-012/013 + approve-and-run + ask_user (4 E2E green), permission engine 15 tests, classifier 17, runner 11, command tools 9, security matrix 9, SQL store 3 | R3 never granted permanently; R4 refused pre-prompt; PERM-007 param-binding enforced |
 | 8. Agent editing and review | VERIFIED | E2E-010/011/014/015 all green (m8-review.spec, full suite 26/26), 25 new unit tests (review hunks 10, write tools 10, plan utils 5) | Plan approval flows through the propose_plan tool channel (works for real Pi too); write gate denies first write until plan approved (AG-007); hunk keys are content-derived so decisions fail closed on staleness |
-| 9. Verification and history | NOT_STARTED | | |
+| 9. Verification and history | VERIFIED | E2E-016/017/018 green (m9-verification.spec, full suite 29/29 twice), VerificationService 7 unit tests, rename tool test | Final report separates agent narrative from system evidence; stale/superseded semantics on verification_runs; unverified accept needs explicit confirm; rollback preflight stops on external-change conflicts |
 | 10. Recovery and diagnostics | NOT_STARTED | | |
 | 11. Security and quality hardening | NOT_STARTED | | |
 | 12. Packaging and Stable release | NOT_STARTED | | |
@@ -37,8 +37,10 @@ None.
 
 | Date | Commit | Command | Result | Artifact |
 | --- | --- | --- | --- | --- |
+| 2026-07-13 | (M9) | `npm test` | 234 unit/integration passed (31 files) | vitest |
+| 2026-07-13 | (M9) | `npm run check` | prettier + boundary(147) + tsc clean | — |
+| 2026-07-13 | (M9) | `playwright test` (full) | 29 E2E passed, twice consecutively | playwright |
 | 2026-07-13 | (M8) | `npm test` | 226 unit/integration passed (30 files) | vitest |
-| 2026-07-13 | (M8) | `npm run check` | prettier + boundary(141) + tsc clean | — |
 | 2026-07-13 | (M8) | `playwright test` (full) | 26 E2E passed | playwright |
 | 2026-07-13 | (M7) | `npm test` | 201 unit/integration passed (27 files) | vitest |
 | 2026-07-13 | (M7) | `playwright test` (full) | 22 E2E passed (clean machine) | playwright |
