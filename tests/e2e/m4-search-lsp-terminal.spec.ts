@@ -14,9 +14,11 @@ test.describe('M4 search, intelligence, terminal', () => {
       await expect(page.getByTestId('workspace-chip')).toBeVisible();
       await page.keyboard.press(`${mod}+p`);
       await expect(page.getByTestId('quick-open')).toBeVisible();
-      await page.keyboard.type('util');
+      // Fill the input directly — free typing races the dialog's focus timing.
+      const input = page.getByRole('textbox', { name: 'File name' });
+      await input.fill('util');
       await expect(page.getByTestId('quickopen-item-src/util.ts')).toBeVisible();
-      await page.keyboard.press('Enter');
+      await input.press('Enter');
       await expect(page.getByTestId('tab-src/util.ts')).toBeVisible();
     } finally {
       await app.close();
