@@ -1866,15 +1866,62 @@ export class TaskService {
     }
   }
 
+  /**
+   * Quit-time teardown (M10/REL): resolve every pending gate BEFORE the
+   * database closes, so late worker-exit abort callbacks find nothing to
+   * persist. Fixes the "database is not open" crash on quit.
+   */
+  shutdown(): void {
+    this.permissionEngine?.cancelAll('app quit');
+    this.cancelAllAsks('app quit');
+    this.cancelAllPlanWaits('app quit');
+    this.startQueue.length = 0;
+  }
+
   /** Restart-time scan (M10 expands): mark previously-running tasks interrupted. */
   markOrphanedRunsInterrupted(): void {
     // Permission requests left PENDING by a previous process can never be
-    // answered — the waiting tool call died with that process.
+    // answered — the waiting tool call died with that process. Record the
+    // cancellation in the task event log too, so the timeline's card resolves
+    // instead of rendering a dead-but-actionable approval (M10/E2E-020).
+    const orphaned = this.db
+      .prepare(
+        `SELECT p.id, p.task_id, p.risk, p.preview_json, t.name AS tool_name
+         FROM permission_requests p LEFT JOIN tool_calls t ON t.id = p.tool_call_id
+         WHERE p.state = 'PENDING'`,
+      )
+      .all() as Array<{
+      id: string;
+      task_id: string;
+      risk: string | null;
+      preview_json: string | null;
+      tool_name: string | null;
+    }>;
     this.db
       .prepare(
         "UPDATE permission_requests SET state = 'CANCELLED', resolved_at = ? WHERE state = 'PENDING'",
       )
       .run(new Date().toISOString());
+    for (const req of orphaned) {
+      let summary = '';
+      try {
+        summary = String(
+          (JSON.parse(req.preview_json ?? '{}') as { summary?: unknown }).summary ?? '',
+        );
+      } catch {
+        summary = '';
+      }
+      this.recordEvent(req.task_id, 'permission.decided', {
+        requestId: req.id,
+        outcome: 'cancelled',
+        scope: null,
+        actor: 'system',
+        reason: 'The application restarted while this request was pending.',
+        toolName: req.tool_name ?? 'unknown',
+        risk: req.risk,
+        summary,
+      });
+    }
     const ws = this.workspace.current;
     const rows = this.db
       .prepare(

@@ -1006,6 +1006,35 @@ export function AgentPanel(): React.JSX.Element {
                 🔍 Review
               </button>
             ) : null}
+            {task.state === 'INTERRUPTED' || task.state === 'FAILED' ? (
+              // M10 recovery: pick up where it stopped, inspect, or restore.
+              <>
+                <button
+                  className="btn primary"
+                  data-testid="task-resume"
+                  title="Start a new run for this task"
+                  onClick={() => void store.resumeTask()}
+                >
+                  ▶ Resume
+                </button>
+                <button
+                  className="btn"
+                  data-testid="review-open"
+                  title="Inspect what changed before deciding"
+                  onClick={() => void store.openReview()}
+                >
+                  🔍 Review
+                </button>
+                <button
+                  className="btn danger"
+                  data-testid="task-rollback"
+                  title="Restore every touched file to its pre-task state"
+                  onClick={() => void store.rollbackTask()}
+                >
+                  Roll back
+                </button>
+              </>
+            ) : null}
             <button
               className="btn"
               data-testid="replay-open"

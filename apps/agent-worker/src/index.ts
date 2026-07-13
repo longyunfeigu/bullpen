@@ -193,4 +193,21 @@ port.on('message', (event) => {
   });
 });
 
+// Orphan guards (M10/REL): if the main process dies — even by SIGKILL — this
+// process must not linger. The port closes when the remote end disconnects;
+// the ppid watchdog covers platforms/paths where 'close' never fires
+// (an orphaned process is reparented, so ppid drops to 1/launchd).
+// MessagePortMain emits 'close' when the remote end disconnects; Electron's
+// parentPort typings only declare 'message', so widen for this one listener.
+(port as unknown as NodeJS.EventEmitter).on('close', () => {
+  void runtime?.dispose().catch(() => undefined);
+  process.exit(0);
+});
+setInterval(() => {
+  if (process.ppid === 1) {
+    void runtime?.dispose().catch(() => undefined);
+    process.exit(0);
+  }
+}, 5000).unref();
+
 send({ type: 'ready', pid: process.pid, node: process.version });

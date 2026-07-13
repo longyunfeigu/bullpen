@@ -10,7 +10,7 @@ import {
   shell,
 } from 'electron';
 import { join, normalize } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { productError, toProductError, type Logger, type ProductError } from '@pi-ide/foundation';
@@ -39,6 +39,7 @@ import { NotificationService } from './services/notification-service.js';
 import { detectProjectKind } from './services/project-kind.js';
 import { registerActivityHandlers } from './ipc/activity-handlers.js';
 import { registerImageHandlers } from './ipc/image-handlers.js';
+import { buildSupportBundle } from './services/support-bundle.js';
 import { join as joinPath } from 'node:path';
 
 const DEV_SERVER_URL = process.env.PI_IDE_DEV_SERVER_URL;
@@ -64,6 +65,7 @@ let mainWindow: BrowserWindow | null = null;
 let m4Ref: M4Services | null = null;
 let m5Ref: M5Services | null = null;
 let agentHostRef: AgentHost | null = null;
+let taskServiceRef: TaskService | null = null;
 export function getM5(): M5Services | null {
   return m5Ref;
 }
@@ -232,6 +234,11 @@ function createMainWindow(bootstrap: Bootstrap): BrowserWindow {
       }),
     );
     if (details.reason === 'clean-exit') return;
+    // E2E/soak (M10): recover without a blocking dialog — reload immediately.
+    if (process.env.PI_IDE_E2E) {
+      win.webContents.reload();
+      return;
+    }
     const choice = dialog.showMessageBoxSync({
       type: 'error',
       buttons: ['Reload Window', 'Quit'],
@@ -409,6 +416,7 @@ if (!gotLock) {
         m5Ref,
         logger.child('tasks'),
       );
+      taskServiceRef = taskService;
       taskService.markOrphanedRunsInterrupted();
       const modelCatalog = new ModelCatalogService(
         (providerId) =>
@@ -452,6 +460,58 @@ if (!gotLock) {
         },
       });
       taskService.onStateChanged((info) => notifications.onTaskState(info));
+
+      // M10/E2E-022: redacted support bundle export.
+      registerHandlers(
+        {
+          'diagnostics.supportBundle': async () => {
+            const info = getAppInfo();
+            const ws = workspaceHost.current;
+            const json = await buildSupportBundle({
+              app: {
+                appVersion: info.appVersion,
+                electron: info.electron,
+                node: info.node,
+                chrome: info.chrome,
+                platform: info.platform,
+                arch: info.arch,
+                commit: info.commit,
+                updateChannel: info.updateChannel,
+                agentEngine: info.piSdkVersion,
+              },
+              settingsEffective: settings.effective,
+              db: state.db,
+              appliedMigrations: state.appliedMigrations ?? null,
+              recentErrors: state.recentErrors() as Array<Record<string, unknown>>,
+              workspace: ws
+                ? {
+                    id: ws.id,
+                    isGitRepo: ws.isGitRepo,
+                    trustState: ws.trustState,
+                    path: ws.canonicalPath,
+                  }
+                : null,
+              providers: secretService
+                .list()
+                .map((p) => ({ providerId: p.providerId, configured: p.configured })),
+              worker: {
+                alive: agentHostRef?.alive ?? false,
+                restarts: agentHostRef?.restartCount ?? 0,
+                degraded: agentHostRef?.degraded ?? false,
+              },
+              logsDir: paths.logsDir,
+              userDataDir: paths.userData,
+            });
+            const dir = join(paths.userData, 'support');
+            mkdirSync(dir, { recursive: true });
+            const file = join(dir, `charter-support-${Date.now()}.json`);
+            writeFileSync(file, json, 'utf8');
+            if (!process.env.PI_IDE_E2E) shell.showItemInFolder(file);
+            return { path: file };
+          },
+        },
+        logger.child('ipc'),
+      );
     }
 
     // E2E hook: open a workspace directly from the environment.
@@ -482,10 +542,36 @@ if (!gotLock) {
     forceQuit = true;
   });
 
-  app.on('quit', () => {
+  // Ordered teardown (M10/REL): resolve every pending gate first, stop the
+  // agent worker fully, and close the database LAST — a late worker-exit
+  // abort callback must never write to a closed database (fixes the
+  // "database is not open" uncaught exception on quit).
+  let cleanupDone = false;
+  app.on('will-quit', (event) => {
+    if (cleanupDone) return;
+    event.preventDefault();
+    taskServiceRef?.shutdown();
     m4Ref?.dispose();
-    void agentHostRef?.dispose();
-    boot?.state?.close();
+    const disposal = agentHostRef?.dispose() ?? Promise.resolve();
+    void disposal
+      .catch(() => undefined)
+      .finally(() => {
+        // Re-quitting from inside the canceled quit's unwind is silently
+        // ignored by Electron (bites exactly when disposal resolves in the
+        // same tick, i.e. no worker was running) — defer one macrotask.
+        setTimeout(() => {
+          boot?.state?.close();
+          cleanupDone = true;
+          boot?.logger.info('teardown complete, quitting');
+          app.quit();
+        }, 0);
+      });
+  });
+  app.on('quit', () => {
+    if (!cleanupDone) {
+      cleanupDone = true;
+      boot?.state?.close();
+    }
   });
 
   app.on('activate', () => {

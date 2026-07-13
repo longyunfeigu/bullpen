@@ -44,9 +44,16 @@ export class SqlPermissionStore implements PermissionStore {
   }
 
   resolveRequest(requestId: string, state: string, resolvedAt: string): void {
-    this.db
-      .prepare('UPDATE permission_requests SET state = ?, resolved_at = ? WHERE id = ?')
-      .run(state, resolvedAt, requestId);
+    // Teardown belt (M10/REL): late abort callbacks (worker exit during quit)
+    // may land after the database closed. Losing this bookkeeping row is fine;
+    // crashing the main process is not.
+    try {
+      this.db
+        .prepare('UPDATE permission_requests SET state = ?, resolved_at = ? WHERE id = ?')
+        .run(state, resolvedAt, requestId);
+    } catch {
+      // database closed mid-teardown — best-effort persistence only
+    }
   }
 
   saveDecision(decision: StoredPermissionDecision): void {

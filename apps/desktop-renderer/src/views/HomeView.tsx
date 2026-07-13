@@ -22,6 +22,7 @@ const ATTENTION_STATES = [
   'AWAITING_PERMISSION',
   'AWAITING_PLAN_APPROVAL',
   'REVIEW_READY',
+  'INTERRUPTED',
   'FAILED',
 ];
 
@@ -329,7 +330,9 @@ export function HomeView(): React.JSX.Element {
             ? 'Plan approval'
             : t.state === 'AWAITING_PERMISSION'
               ? 'Permission'
-              : 'Review'}
+              : t.state === 'INTERRUPTED'
+                ? 'Interrupted'
+                : 'Review'}
         </span>
       ) : (
         <span className="hm-stchip run">Running</span>
@@ -341,9 +344,11 @@ export function HomeView(): React.JSX.Element {
           ? 'Approve'
           : t.state === 'REVIEW_READY'
             ? 'Review'
-            : t.state === 'FAILED'
-              ? 'Open'
-              : 'Watch';
+            : t.state === 'INTERRUPTED'
+              ? 'Recover'
+              : t.state === 'FAILED'
+                ? 'Open'
+                : 'Watch';
     const meta: React.ReactNode[] = [];
     if (action) {
       meta.push(<span key="a">{action.label}</span>);

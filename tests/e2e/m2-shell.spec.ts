@@ -21,7 +21,10 @@ test.describe('M2 shell, settings and persistence', () => {
       .toBe('light');
 
     // Toggle bottom panel via palette; hide agent panel via keyboard.
+    // Wait for the palette to actually open before typing (else the first
+    // keystrokes race the dialog and the command never runs).
     await page.getByTestId('palette-chip').click();
+    await page.getByRole('dialog', { name: 'Command palette' }).waitFor();
     await page.keyboard.type('Toggle Bottom Panel');
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('bottom-panel')).toBeVisible();
@@ -34,8 +37,28 @@ test.describe('M2 shell, settings and persistence', () => {
     await fontInput.fill('15');
     await page.keyboard.press('Escape');
 
-    // Give the debounced layout save a moment, then quit.
-    await page.waitForTimeout(700);
+    // Wait until the debounced layout save has actually reached the database
+    // (deterministic — proves the write happened rather than racing the 400ms
+    // debounce against quit; if persistence were broken this poll would fail
+    // here, on the write, not after restart).
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(async () => {
+            const bridge = (
+              window as never as {
+                product: {
+                  rpc: Record<string, (p: unknown) => Promise<{ ok: boolean; data?: unknown }>>;
+                };
+              }
+            ).product;
+            const res = await bridge.rpc['layout.get']!({});
+            return (res.data as { layout: { bottomPanelVisible?: boolean } | null }).layout
+              ?.bottomPanelVisible;
+          }),
+        { timeout: 15000 },
+      )
+      .toBe(true);
     await first.app.close();
 
     // Relaunch with the same user-data dir.

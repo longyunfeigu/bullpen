@@ -1,13 +1,14 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import {
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-  readFileSync,
-  existsSync,
   chmodSync,
-  statSync,
+  existsSync,
   mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -227,5 +228,32 @@ describe('rollback engine (CHG-009..012)', () => {
     const forced = await service.rollback('t1', { force: true });
     expect(forced.ok).toBe(true);
     expect(readFileSync(join(root, 'a.txt'), 'utf8')).toBe('line1\nline2\nline3\n');
+  });
+});
+
+describe('disk write failure (M10/REL)', () => {
+  it('a read-only target directory yields a structured failure and no partial file', async () => {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/locked.ts'), 'export const a = 1;\n');
+    const before = readFileSync(join(root, 'src/locked.ts'), 'utf8');
+    const hash = createHash('sha256').update(before).digest('hex');
+    chmodSync(join(root, 'src'), 0o500); // no write permission
+    try {
+      await expect(
+        service.applyPatch('task-ro', null, {
+          path: 'src/locked.ts',
+          patch:
+            '--- src/locked.ts\n+++ src/locked.ts\n@@ -1,1 +1,1 @@\n-export const a = 1;\n+export const a = 2;\n',
+          baseHash: hash,
+          reason: 'test',
+        }),
+      ).rejects.toThrow(); // structured failure, not a crash or silent success
+      // Nothing was overwritten and no temp litter remains.
+      expect(readFileSync(join(root, 'src/locked.ts'), 'utf8')).toBe(before);
+      const leftovers = readdirSync(join(root, 'src')).filter((f) => f.includes('.pi-ide-chg.'));
+      expect(leftovers).toEqual([]);
+    } finally {
+      chmodSync(join(root, 'src'), 0o755);
+    }
   });
 });

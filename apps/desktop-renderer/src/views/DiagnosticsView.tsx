@@ -7,6 +7,8 @@ type Diag = ChannelResponse<'diagnostics.get'>;
 export function DiagnosticsView(): React.JSX.Element {
   const [diag, setDiag] = useState<Diag | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [bundlePath, setBundlePath] = useState<string | null>(null);
+  const [bundleError, setBundleError] = useState<string | null>(null);
 
   const refresh = () => {
     void rpcResult('diagnostics.get', {}).then((res) => {
@@ -15,6 +17,15 @@ export function DiagnosticsView(): React.JSX.Element {
     });
   };
   useEffect(refresh, []);
+
+  const exportBundle = () => {
+    setBundlePath(null);
+    setBundleError(null);
+    void rpcResult('diagnostics.supportBundle', {}).then((res) => {
+      if (res.ok) setBundlePath(res.data.path);
+      else setBundleError(res.error.userMessage);
+    });
+  };
 
   if (error) return <div className="empty-state text-danger">{error}</div>;
   if (!diag) return <div className="empty-state">Collecting diagnostics…</div>;
@@ -72,14 +83,35 @@ export function DiagnosticsView(): React.JSX.Element {
           </table>
         )}
       </section>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button className="btn" onClick={() => void rpcResult('diagnostics.openLogsFolder', {})}>
           Open logs folder
         </button>
         <button className="btn" onClick={refresh}>
           Refresh
         </button>
+        <button
+          className="btn primary"
+          data-testid="support-bundle-export"
+          title="Redacted: no secrets, code, prompts or absolute user paths"
+          onClick={exportBundle}
+        >
+          Export support bundle
+        </button>
       </div>
+      {bundlePath ? (
+        <p className="text-success" style={{ fontSize: 12 }}>
+          Bundle saved:{' '}
+          <span className="mono" data-testid="support-bundle-path">
+            {bundlePath}
+          </span>
+        </p>
+      ) : null}
+      {bundleError ? (
+        <p className="text-danger" style={{ fontSize: 12 }}>
+          {bundleError}
+        </p>
+      ) : null}
       <p className="text-muted" style={{ fontSize: 12 }}>
         Logs directory: <span className="mono">{diag.logsDir}</span>
       </p>

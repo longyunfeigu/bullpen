@@ -47,6 +47,8 @@ interface TaskStore {
   }): Promise<boolean>;
   send(text: string, during: 'steer' | 'followUp'): Promise<void>;
   stop(): Promise<void>;
+  /** Restart an INTERRUPTED/FAILED task's run (M10 recovery). */
+  resumeTask(): Promise<void>;
   decidePermission(input: {
     requestId: string;
     kind: 'allow' | 'deny';
@@ -239,6 +241,16 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     const taskId = get().activeTaskId;
     if (!taskId) return;
     await rpcResult('task.stop', { taskId });
+  },
+
+  async resumeTask() {
+    const taskId = get().activeTaskId;
+    if (!taskId) return;
+    const res = await rpcResult('task.start', { taskId });
+    if (!res.ok) useAppStore.getState().pushToast('error', res.error.userMessage);
+    else if (res.data.queued) {
+      useAppStore.getState().pushToast('info', 'Queued: all agent slots are busy.');
+    }
   },
 
   async decidePermission(input) {

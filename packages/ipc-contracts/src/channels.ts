@@ -128,6 +128,12 @@ export const CHANNELS = {
     z.object({}).strict(),
     z.object({ opened: z.boolean() }),
   ),
+  'diagnostics.supportBundle': ch(
+    'diagnostics.supportBundle',
+    1,
+    z.object({}).strict(),
+    z.object({ path: z.string() }),
+  ),
   'app.reportClientError': ch(
     'app.reportClientError',
     1,
