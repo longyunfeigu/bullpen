@@ -18,6 +18,7 @@ import { registerWorkspaceHandlers } from './ipc/workspace-handlers.js';
 import { M4Services, registerM4Handlers } from './ipc/m4-handlers.js';
 import { M5Services, registerM5Handlers } from './ipc/m5-handlers.js';
 import { registerM6Handlers } from './ipc/m6-handlers.js';
+import { registerM7Handlers } from './ipc/m7-handlers.js';
 import { SecretService } from './services/secret-service.js';
 import { AgentHost } from './services/agent-host.js';
 import { TaskService } from './services/task-service.js';
@@ -387,6 +388,7 @@ if (!gotLock) {
       );
       taskService.markOrphanedRunsInterrupted();
       registerM6Handlers(taskService, agentHostRef, secretService, settings, logger.child('ipc'));
+      registerM7Handlers(taskService, logger.child('ipc'));
     }
 
     // E2E hook: open a workspace directly from the environment.

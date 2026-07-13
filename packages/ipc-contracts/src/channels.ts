@@ -6,8 +6,10 @@ import { LayoutStateSchema } from './layout.js';
 import { DirEntrySchema, DocumentDtoSchema, EolSchema, OpenTabsStateSchema } from './documents.js';
 import {
   AgentModeSchema,
+  AskUserPromptDtoSchema,
   ModelDescriptorDtoSchema,
   ModelRefSchema,
+  PermissionCardDtoSchema,
   TaskDtoSchema,
   TimelineEventDtoSchema,
   VerificationCommandSchema,
@@ -488,6 +490,36 @@ export const CHANNELS = {
     1,
     z.object({ taskId: z.string() }).strict(),
     z.object({ task: TaskDtoSchema }),
+  ),
+  'task.permissionDecision': ch(
+    'task.permissionDecision',
+    1,
+    z
+      .object({
+        requestId: z.string(),
+        kind: z.enum(['allow', 'deny']),
+        scope: z.enum(['once', 'task', 'workspace', 'always']),
+        expectedParamsHash: z.string(),
+        reason: z.string().max(2000).optional(),
+        applyToSimilar: z.boolean().default(false),
+      })
+      .strict(),
+    z.object({ resolvedRequestIds: z.array(z.string()) }),
+  ),
+  'task.pendingPermissions': ch(
+    'task.pendingPermissions',
+    1,
+    z.object({ taskId: z.string() }).strict(),
+    z.object({
+      permissions: z.array(PermissionCardDtoSchema),
+      asks: z.array(AskUserPromptDtoSchema),
+    }),
+  ),
+  'task.answerUser': ch(
+    'task.answerUser',
+    1,
+    z.object({ callId: z.string(), answer: z.string().max(20000) }).strict(),
+    z.object({ ok: z.boolean() }),
   ),
   'models.list': ch(
     'models.list',

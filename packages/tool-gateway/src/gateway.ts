@@ -18,6 +18,8 @@ export type RiskLevel = 'R0' | 'R1' | 'R2' | 'R3' | 'R4';
 export interface RiskAssessment {
   level: RiskLevel;
   reasons: string[];
+  /** Recognized verification command — eligible for auto-allow in Auto mode. */
+  recognized?: boolean;
 }
 
 export interface ToolPreview {
@@ -26,6 +28,8 @@ export interface ToolPreview {
   diff?: string | null;
   command?: { executable: string; args: string[]; cwd: string } | null;
   targets?: string[];
+  /** Stable "same kind of action" key used by scoped permission grants (PERM-002). */
+  ruleKey?: string;
 }
 
 export interface ToolExecuteOutput {
@@ -69,7 +73,7 @@ export interface ToolAuditRecord {
 }
 
 export type PermissionDecision =
-  | { kind: 'allow'; scope: 'once' | 'task' | 'workspace' | 'auto' }
+  | { kind: 'allow'; scope: 'once' | 'task' | 'workspace' | 'auto'; paramsHash?: string }
   | { kind: 'deny'; reason: string; permanent: boolean };
 
 export interface PermissionDecider {
@@ -79,6 +83,10 @@ export interface PermissionDecider {
     risk: RiskAssessment;
     preview: ToolPreview;
     mode: AgentMode;
+    /** Aborting the run must release any pending user prompt. */
+    signal: AbortSignal;
+    /** Invoked when the decision starts waiting on the user (audit WAITING_PERMISSION). */
+    onWaiting?: () => void;
   }): Promise<PermissionDecision>;
 }
 
@@ -283,6 +291,8 @@ export class ToolGateway {
       risk,
       preview,
       mode: this.mode,
+      signal,
+      onWaiting: () => auditRecord('WAITING_PERMISSION', risk.level, null, null),
     });
     if (decision.kind === 'deny') {
       auditRecord('DENIED', risk.level, decision.reason, false);

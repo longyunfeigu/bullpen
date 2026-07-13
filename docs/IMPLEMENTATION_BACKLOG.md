@@ -79,13 +79,13 @@
 
 | 任务 | 交付 | 依赖 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| M7-01 | Tool registry/schema/result contracts | M1-04 | NOT_STARTED |  |
-| M7-02 | read/list/search/symbol/diagnostic tools | M3,M4,M7-01 | NOT_STARTED |  |
-| M7-03 | path policy 与 symlink/TOCTOU tests | M7-02 | NOT_STARTED |  |
-| M7-04 | risk evaluator 与 permission state machine | M7-01 | NOT_STARTED |  |
-| M7-05 | 权限卡、一次/任务/Workspace scope | M7-04 | NOT_STARTED |  |
-| M7-06 | structured command runner 与 classifier | M4-07,M7-04 | NOT_STARTED |  |
-| M7-07 | R3/R4 security matrix 与 audit events | M7-03,M7-06 | NOT_STARTED |  |
+| M7-01 | Tool registry/schema/result contracts | M1-04 | VERIFIED | gateway registry + zod-strict + versioned catalog (M6, 9 tests) |
+| M7-02 | read/list/search/symbol/diagnostic tools | M3,M4,M7-01 | VERIFIED | read/list/search/git R0 tools; get_symbols/get_diagnostics deferred P1 (LSP-007) |
+| M7-03 | path policy 与 symlink/TOCTOU tests | M7-02 | VERIFIED | security-matrix.test.ts: symlink/dir-symlink/TOCTOU-swap/cwd-escape all fail closed (9 tests) |
+| M7-04 | risk evaluator 与 permission state machine | M7-01 | VERIFIED | PermissionEngine once/task/workspace/always + R3-no-persist + PERM-007 rebind (15 tests) |
+| M7-05 | 权限卡、一次/任务/Workspace scope | M7-04 | VERIFIED | PermissionCard §13.3 UI + AWAITING_PERMISSION flow + SQL store persistence (E2E-012 green) |
+| M7-06 | structured command runner 与 classifier | M4-07,M7-04 | VERIFIED | classifier R2-R4 (17 tests) + runner tree-kill/timeout/minimal-env/redaction (11 tests) |
+| M7-07 | R3/R4 security matrix 与 audit events | M7-03,M7-06 | VERIFIED | E2E-013 zero-side-effect refusal; audit rows for every DENIED/FAILED lifecycle |
 
 ## Milestone 8: Agent 写入与 Review
 

@@ -34,6 +34,15 @@ interface TaskStore {
   }): Promise<boolean>;
   send(text: string, during: 'steer' | 'followUp'): Promise<void>;
   stop(): Promise<void>;
+  decidePermission(input: {
+    requestId: string;
+    kind: 'allow' | 'deny';
+    scope: 'once' | 'task' | 'workspace' | 'always';
+    expectedParamsHash: string;
+    reason?: string;
+    applyToSimilar?: boolean;
+  }): Promise<void>;
+  answerUser(callId: string, answer: string): Promise<void>;
 }
 
 export const useTaskStore = create<TaskStore>((set, get) => ({
@@ -156,6 +165,31 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     const taskId = get().activeTaskId;
     if (!taskId) return;
     await rpcResult('task.stop', { taskId });
+  },
+
+  async decidePermission(input) {
+    const res = await rpcResult('task.permissionDecision', {
+      requestId: input.requestId,
+      kind: input.kind,
+      scope: input.scope,
+      expectedParamsHash: input.expectedParamsHash,
+      ...(input.reason ? { reason: input.reason } : {}),
+      applyToSimilar: input.applyToSimilar ?? false,
+    });
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+    } else if (res.data.resolvedRequestIds.length === 0) {
+      useAppStore
+        .getState()
+        .pushToast('info', 'That approval is no longer valid — the request was refreshed.');
+    }
+  },
+
+  async answerUser(callId, answer) {
+    const res = await rpcResult('task.answerUser', { callId, answer });
+    if (!res.ok) useAppStore.getState().pushToast('error', res.error.userMessage);
+    else if (!res.data.ok)
+      useAppStore.getState().pushToast('info', 'This question is no longer waiting.');
   },
 }));
 

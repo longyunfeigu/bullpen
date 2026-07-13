@@ -1,19 +1,250 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { TimelineEventDto } from '@pi-ide/ipc-contracts';
+import type { AskUserPromptDto, PermissionCardDto, TimelineEventDto } from '@pi-ide/ipc-contracts';
 import { useTaskStore, activeTask, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { NewTaskDialog } from './NewTaskDialog.js';
 
+const RISK_COLORS: Record<string, string> = {
+  R0: 'var(--fg-muted)',
+  R1: 'var(--info)',
+  R2: 'var(--info)',
+  R3: 'var(--warning)',
+  R4: 'var(--danger)',
+};
+
+const RISK_POLICY =
+  'R0 read-only · R1 reversible workspace write · R2 local execution · ' +
+  'R3 external/hard-to-reverse (always asks, never granted permanently) · R4 forbidden by product policy';
+
+/** Approval card (§13.3, PERM-004): tool, why, exact target, diff/command, scoped decisions. */
+function PermissionCard(props: {
+  card: PermissionCardDto;
+  resolution: { outcome: string; scope?: string | null } | null;
+}): React.JSX.Element {
+  const store = useTaskStore();
+  const { card, resolution } = props;
+  const [reason, setReason] = useState('');
+  const riskColor = RISK_COLORS[card.risk.level] ?? 'var(--fg)';
+
+  if (resolution) {
+    const allowed = resolution.outcome === 'allowed';
+    return (
+      <Card
+        icon={allowed ? '✅' : resolution.outcome === 'denied' ? '🚫' : '⌛'}
+        title={`Permission ${resolution.outcome}${resolution.scope ? ` (${resolution.scope})` : ''} — ${card.toolName}`}
+        tone={allowed ? 'success' : 'warning'}
+        testid="perm-card-resolved"
+        collapsible
+      >
+        <div className="text-muted">{card.preview.summary}</div>
+      </Card>
+    );
+  }
+
+  const decide = (
+    kind: 'allow' | 'deny',
+    scope: 'once' | 'task' | 'workspace' | 'always',
+  ): void => {
+    void store.decidePermission({
+      requestId: card.requestId,
+      kind,
+      scope,
+      expectedParamsHash: card.paramsHash,
+      ...(kind === 'deny' && reason.trim() ? { reason: reason.trim() } : {}),
+    });
+  };
+
+  return (
+    <Card icon="🛡" title={`Permission needed — ${card.toolName}`} tone="warning" testid="perm-card">
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+        <span
+          style={{
+            border: `1px solid ${riskColor}`,
+            color: riskColor,
+            borderRadius: 4,
+            padding: '0 6px',
+            fontSize: 11,
+          }}
+          data-testid="perm-risk"
+        >
+          {card.risk.level}
+        </span>
+        <span className="text-muted" style={{ fontSize: 11 }}>
+          {card.risk.reasons.join('; ')}
+        </span>
+      </div>
+      <div style={{ marginBottom: 4 }}>{card.preview.summary}</div>
+      {card.preview.command ? (
+        <pre className="mono" style={{ fontSize: 11, whiteSpace: 'pre-wrap', margin: '4px 0' }}>
+          $ {card.preview.command.executable} {card.preview.command.args.join(' ')}
+          {'\n'}cwd: {card.preview.command.cwd}
+        </pre>
+      ) : null}
+      {card.preview.targets && card.preview.targets.length > 0 ? (
+        <div className="text-muted" style={{ fontSize: 11 }}>
+          targets: {card.preview.targets.join(', ')}
+        </div>
+      ) : null}
+      {card.preview.diff ? (
+        <pre
+          className="mono"
+          style={{ fontSize: 11, maxHeight: 160, overflow: 'auto', whiteSpace: 'pre-wrap' }}
+        >
+          {card.preview.diff}
+        </pre>
+      ) : (
+        <div className="text-muted" style={{ fontSize: 11 }}>
+          No diff — this action does not modify files directly.
+        </div>
+      )}
+      {card.preview.detail ? (
+        <div className="text-muted" style={{ fontSize: 11 }}>
+          {card.preview.detail}
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+        {card.options.allowScopes.includes('once') ? (
+          <button
+            className="btn primary"
+            data-testid="perm-allow-once"
+            onClick={() => decide('allow', 'once')}
+          >
+            Allow once
+          </button>
+        ) : null}
+        {card.options.allowScopes.includes('task') ? (
+          <button
+            className="btn"
+            data-testid="perm-allow-task"
+            onClick={() => decide('allow', 'task')}
+          >
+            Allow for this task
+          </button>
+        ) : null}
+        {card.options.allowScopes.includes('workspace') ? (
+          <button
+            className="btn"
+            data-testid="perm-allow-workspace"
+            onClick={() => decide('allow', 'workspace')}
+            title="Allow this kind of action in this workspace from now on"
+          >
+            Allow in workspace
+          </button>
+        ) : null}
+        <button
+          className="btn danger"
+          data-testid="perm-deny"
+          onClick={() => decide('deny', 'once')}
+        >
+          Deny
+        </button>
+        <button
+          className="btn danger"
+          data-testid="perm-deny-always"
+          onClick={() => decide('deny', 'always')}
+          title="Always deny this kind of action in this workspace"
+        >
+          Always deny
+        </button>
+      </div>
+      <input
+        data-testid="perm-reason"
+        placeholder="Optional reason shown to the agent when denying…"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        style={{
+          width: '100%',
+          marginTop: 6,
+          background: 'var(--bg-input)',
+          border: '1px solid var(--border)',
+          borderRadius: 4,
+          padding: '4px 6px',
+          fontSize: 12,
+        }}
+      />
+      <details style={{ marginTop: 6, fontSize: 11 }} className="text-muted">
+        <summary style={{ cursor: 'pointer' }}>View risk policy</summary>
+        <div style={{ paddingTop: 4 }}>{RISK_POLICY}</div>
+      </details>
+    </Card>
+  );
+}
+
+/** ask_user question card — the run is paused until the user answers. */
+function QuestionCard(props: { prompt: AskUserPromptDto; answered: boolean }): React.JSX.Element {
+  const store = useTaskStore();
+  const [text, setText] = useState('');
+  const { prompt, answered } = props;
+  if (answered) {
+    return (
+      <Card icon="❓" title="Question (answered)" testid="q-card-answered" collapsible>
+        <div className="text-muted">{prompt.question}</div>
+      </Card>
+    );
+  }
+  return (
+    <Card icon="❓" title="The agent has a question" tone="warning" testid="q-card">
+      <div style={{ marginBottom: 6, whiteSpace: 'pre-wrap' }}>{prompt.question}</div>
+      {prompt.options.length > 0 ? (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+          {prompt.options.map((option, i) => (
+            <button
+              key={option}
+              className="btn"
+              data-testid={`q-option-${i}`}
+              onClick={() => void store.answerUser(prompt.callId, option)}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {prompt.allowFreeForm ? (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            data-testid="q-input"
+            placeholder="Type an answer…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && text.trim()) {
+                void store.answerUser(prompt.callId, text.trim());
+              }
+            }}
+            style={{
+              flex: 1,
+              background: 'var(--bg-input)',
+              border: '1px solid var(--border)',
+              borderRadius: 4,
+              padding: '4px 6px',
+              fontSize: 12,
+            }}
+          />
+          <button
+            className="btn primary"
+            data-testid="q-submit"
+            disabled={!text.trim()}
+            onClick={() => void store.answerUser(prompt.callId, text.trim())}
+          >
+            Answer
+          </button>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 function StateBadge({ state }: { state: string }): React.JSX.Element {
-  const color = RUNNING_TASK_STATES.has(state)
-    ? 'var(--info)'
-    : state === 'REVIEW_READY'
+  const color =
+    state === 'AWAITING_PERMISSION' || state === 'REVIEW_READY'
       ? 'var(--warning)'
-      : state === 'ACCEPTED'
-        ? 'var(--success)'
-        : state === 'FAILED'
-          ? 'var(--danger)'
-          : 'var(--fg-muted)';
+      : RUNNING_TASK_STATES.has(state)
+        ? 'var(--info)'
+        : state === 'ACCEPTED'
+          ? 'var(--success)'
+          : state === 'FAILED'
+            ? 'var(--danger)'
+            : 'var(--fg-muted)';
   return (
     <span
       data-testid="task-state"
@@ -88,9 +319,35 @@ function Card(props: {
   );
 }
 
-function TimelineCard({ event }: { event: TimelineEventDto }): React.JSX.Element | null {
+interface TimelineContext {
+  permissionResolutions: Map<string, { outcome: string; scope?: string | null }>;
+  answeredCallIds: Set<string>;
+}
+
+function TimelineCard({
+  event,
+  context,
+}: {
+  event: TimelineEventDto;
+  context: TimelineContext;
+}): React.JSX.Element | null {
   const payload = event.payload as Record<string, unknown>;
   switch (event.type) {
+    case 'permission.requested': {
+      const card = payload.card as PermissionCardDto;
+      return (
+        <PermissionCard
+          card={card}
+          resolution={context.permissionResolutions.get(card.requestId) ?? null}
+        />
+      );
+    }
+    case 'permission.decided':
+      return null; // shown as the resolved state of its request card
+    case 'agent.question': {
+      const prompt = payload.prompt as AskUserPromptDto;
+      return <QuestionCard prompt={prompt} answered={context.answeredCallIds.has(prompt.callId)} />;
+    }
     case 'user.message':
       return (
         <Card icon="🧑" title="You" testid="tl-user">
@@ -232,6 +489,26 @@ export function AgentPanel(): React.JSX.Element {
     if (el) el.scrollTop = el.scrollHeight;
   }, [store.timeline.length, store.streaming?.text.length]);
 
+  // Cross-event context: which permission requests are decided, which questions answered.
+  // Computed before any early return so hook order stays stable (rules of hooks).
+  const timelineContext: TimelineContext = React.useMemo(() => {
+    const permissionResolutions = new Map<string, { outcome: string; scope?: string | null }>();
+    const answeredCallIds = new Set<string>();
+    for (const event of store.timeline) {
+      const payload = event.payload as Record<string, unknown>;
+      if (event.type === 'permission.decided' && typeof payload.requestId === 'string') {
+        permissionResolutions.set(payload.requestId, {
+          outcome: String(payload.outcome ?? ''),
+          scope: (payload.scope as string | null) ?? null,
+        });
+      }
+      if (event.type === 'user.message' && typeof payload.callId === 'string') {
+        answeredCallIds.add(payload.callId);
+      }
+    }
+    return { permissionResolutions, answeredCallIds };
+  }, [store.timeline]);
+
   if (!workspace) {
     return (
       <div className="empty-state">
@@ -315,7 +592,11 @@ export function AgentPanel(): React.JSX.Element {
         ) : (
           <>
             {store.timeline.map((event) => (
-              <TimelineCard key={`${event.id}-${event.sequence}`} event={event} />
+              <TimelineCard
+                key={`${event.id}-${event.sequence}`}
+                event={event}
+                context={timelineContext}
+              />
             ))}
             {store.streaming ? (
               <Card icon="🤖" title="Agent (streaming…)" testid="tl-streaming">

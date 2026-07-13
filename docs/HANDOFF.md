@@ -1,7 +1,9 @@
 # HANDOFF — 自主构建会话交接文档
 
 > 目的：上下文 compact/新会话后，从这里无损接续。规范源仍是 `docs/PRODUCT_ENGINEERING_SPEC.md` + `docs/IMPLEMENTATION_BACKLOG.md`；本文件只记录"规范里没有、但接续必须知道"的事实。
-> 最后更新：2026-07-13 凌晨，M6 完成并提交后。
+> 最后更新：2026-07-13，M7 完成并提交后。
+>
+> **M8 起的细粒度待办已单列到 `docs/TODO_M8_M12.md`——新会话读完本文件后从那里执行。**
 
 ## 当前进度（真实状态，全部有 commit 与测试证据）
 
@@ -13,9 +15,11 @@
 | M4 搜索/LSP/终端 | VERIFIED | 0f03e92 |
 | M5 Git/ChangeService | VERIFIED | c704edd |
 | M6 Pi Runtime/只读 Agent | VERIFIED | 931e167 |
-| M7–M12 | NOT_STARTED | — |
+| M7 Tool Gateway/权限系统 | VERIFIED | (本轮提交) |
+| M8–M12 | NOT_STARTED | 见 `docs/TODO_M8_M12.md` |
 
-证据基线（M6 提交时）：**137 个单元/集成测试**、**17 个 E2E** 全绿；`npm run check` 干净。
+证据基线（M7 提交时）：**201+ 个单元/集成测试**、**22 个 E2E** 全绿；`npm run check` 干净。
+M7 交付与接续点详见 `docs/TODO_M8_M12.md` 顶部"已完成状态"。
 测试命令：`npm test`、`npx playwright test --config tests/e2e/playwright.config.ts`、`npm run check`、`node scripts/build.mjs`。
 
 ## 关键架构事实（新会话必读）
@@ -31,11 +35,8 @@
 
 ## M7–M12 待办与已铺垫的接续点
 
-- **M7（下一个）Tool Gateway 与权限**：网关核心已在 M6 落地（`packages/tool-gateway`，schema/风险/审计/取消/输出上限/ask=R0 全部就绪，9 单测）。M7 需要：
-  - PermissionEngine：PERM-001..010（决定作用域 once/task/workspace、持久决定存 permission_decisions 表、R3 不可永久放行、审批卡 UI + AWAITING_PERMISSION 状态、审批↔执行间参数变化失效 PERM-007）。接入点：`gateway.ts` 的 `PermissionDecider` 接口（现在是 readOnlyDecider）。
-  - 写/执行工具：apply_patch/create_file/delete_file 经 `M5Services.changeService`（已实例化，`getM5()` 在 main/index.ts）；run_command 结构化 spawn + 命令分类器（CMD-001..006、§10.4）；get_symbols/get_diagnostics（renderer markers 需通道回传或暂缓并记录）；ask_user 工具。
-  - 路径/symlink/TOCTOU 安全矩阵测试 + R3/R4 故障注入（E2E-012/013/021 的单元级）。
-  - 权限卡 UI（§13.3）+ 事件通道（permission.requested/decided）。
+- **M7 Tool Gateway 与权限：已完成（VERIFIED）**。PermissionEngine（PERM-001..010）、命令分类器/运行器、run_command/ask_user、权限卡 UI、安全矩阵、SQL 持久化全部落地。细节见 `docs/TODO_M8_M12.md` 顶部。**M8 起从 `docs/TODO_M8_M12.md` 执行。**
+  - 仍未做（挪到 M8/M11 记录）：get_symbols/get_diagnostics（LSP-007，P1）未注册；写工具 apply_patch/create_file/delete_file 尚未注册（M8-02 的任务，ChangeService 已就绪）。
 - **M8**：计划批准流（AWAITING_PLAN_APPROVAL + plan 编辑）、Edit/Auto 默认策略、Review 页（changeSet 已能产净 diff，需逐文件/hunk 接受拒绝 UI + `structuredPatch` 已从 change-service 导出）、三方冲突视图、E2E-010/011/014/015。
 - **M9**：VerificationService（runner/stale/superseded）、真实 Final Report（现在 TaskService.buildFinalReport 是骨架，标注 unverified）、E2E-016/017/018。
 - **M10**：恢复页（markOrphanedRunsInterrupted 已有）、DB 备份恢复演练、支持包脱敏导出（redact 基建在 foundation）、soak、无孤儿进程（E2E-007 已测一部分）。

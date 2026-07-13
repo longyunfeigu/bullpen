@@ -95,6 +95,82 @@ export const SCENARIOS: Record<string, Scenario> = {
     { kind: 'assistant', text: 'Starting…', chunkSize: 8 },
     { kind: 'fail', code: 'AG_PROVIDER_ERROR', message: 'Deterministic provider failure (mock).' },
   ],
+  // E2E-012: agent wants to install a dependency (R3). User will decide.
+  'command-install': () => [
+    { kind: 'assistant', text: 'This needs a new dependency. Let me install it.', chunkSize: 16 },
+    {
+      kind: 'tool',
+      toolName: 'run_command',
+      input: { executable: 'npm', args: ['install', 'left-pad'], purpose: 'other' },
+      reason: 'install the left-pad dependency',
+    },
+    {
+      kind: 'assistant',
+      text: 'If installation is not allowed, I can vendor a tiny helper instead — no dependency needed. (deterministic mock answer)',
+      chunkSize: 16,
+    },
+    { kind: 'usage', inputTokens: 500, outputTokens: 140 },
+  ],
+  // E2E-013: model attempts forbidden commands; product refuses with zero side effects.
+  'command-highrisk': () => [
+    { kind: 'assistant', text: 'Attempting a privileged operation.', chunkSize: 16 },
+    {
+      kind: 'tool',
+      toolName: 'run_command',
+      input: { executable: 'sudo', args: ['npm', 'install', '-g', 'x'], purpose: 'other' },
+      reason: 'install globally',
+    },
+    {
+      kind: 'tool',
+      toolName: 'run_command',
+      input: { executable: 'git', args: ['push', 'origin', 'main'], purpose: 'other' },
+      reason: 'push changes',
+    },
+    {
+      kind: 'assistant',
+      text: 'Both actions were refused by product policy, as expected. (deterministic mock answer)',
+      chunkSize: 16,
+    },
+    { kind: 'usage', inputTokens: 320, outputTokens: 90 },
+  ],
+  // Recognized verification command (R2) — auto-allowed in Auto, asked in Edit.
+  'command-test': (ctx) => {
+    const target = promptParam(ctx.prompt, 'cmd') ?? 'test';
+    return [
+      {
+        kind: 'assistant',
+        text: 'Running the test suite to check the current state.',
+        chunkSize: 16,
+      },
+      {
+        kind: 'tool',
+        toolName: 'run_command',
+        input: { executable: 'npm', args: [target], purpose: 'test' },
+        reason: 'run the tests',
+      },
+      { kind: 'assistant', text: 'Test run complete. (deterministic mock answer)', chunkSize: 16 },
+      { kind: 'usage', inputTokens: 260, outputTokens: 80 },
+    ];
+  },
+  // ask_user flow — clarifying question pauses the run until answered.
+  'ask-clarify': () => [
+    { kind: 'assistant', text: 'I need one detail before continuing.', chunkSize: 16 },
+    {
+      kind: 'tool',
+      toolName: 'ask_user',
+      input: {
+        question: 'Which package manager should I assume — npm or pnpm?',
+        options: ['npm', 'pnpm'],
+      },
+      reason: 'clarify package manager',
+    },
+    {
+      kind: 'assistant',
+      text: 'Thanks — proceeding with your choice. (deterministic mock answer)',
+      chunkSize: 16,
+    },
+    { kind: 'usage', inputTokens: 220, outputTokens: 70 },
+  ],
 };
 
 export function resolveScenario(ctx: ScenarioContext): { name: string; steps: ScenarioStep[] } {

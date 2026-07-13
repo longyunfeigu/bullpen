@@ -66,6 +66,50 @@ export const TimelineEventDtoSchema = z.object({
 });
 export type TimelineEventDto = z.infer<typeof TimelineEventDtoSchema>;
 
+export const RiskLevelSchema = z.enum(['R0', 'R1', 'R2', 'R3', 'R4']);
+
+/** Approval card shown to the user (§13.3, PERM-004). */
+export const PermissionCardDtoSchema = z.object({
+  requestId: z.string(),
+  callId: z.string(),
+  runId: z.string(),
+  taskId: z.string(),
+  toolName: z.string(),
+  toolDescription: z.string(),
+  reason: z.string().nullable(),
+  risk: z.object({ level: RiskLevelSchema, reasons: z.array(z.string()) }),
+  preview: z.object({
+    summary: z.string(),
+    detail: z.string().optional(),
+    diff: z.string().nullable().optional(),
+    command: z
+      .object({ executable: z.string(), args: z.array(z.string()), cwd: z.string() })
+      .nullable()
+      .optional(),
+    targets: z.array(z.string()).optional(),
+  }),
+  input: z.unknown(),
+  paramsHash: z.string(),
+  options: z.object({
+    allowScopes: z.array(z.enum(['once', 'task', 'workspace'])),
+    denyScopes: z.array(z.enum(['once', 'always'])),
+  }),
+  createdAt: z.string(),
+});
+export type PermissionCardDto = z.infer<typeof PermissionCardDtoSchema>;
+
+/** Clarifying question raised by the ask_user tool. */
+export const AskUserPromptDtoSchema = z.object({
+  callId: z.string(),
+  taskId: z.string(),
+  runId: z.string(),
+  question: z.string(),
+  options: z.array(z.string()),
+  allowFreeForm: z.boolean(),
+  createdAt: z.string(),
+});
+export type AskUserPromptDto = z.infer<typeof AskUserPromptDtoSchema>;
+
 export const ModelDescriptorDtoSchema = z.object({
   providerId: z.string(),
   providerName: z.string(),

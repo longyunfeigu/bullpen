@@ -15,15 +15,30 @@ import type {
   RuntimeSessionRef,
   ToolCallRequest,
 } from '@pi-ide/agent-contract';
-import type { TaskDto, TimelineEventDto, VerificationCommandSchema } from '@pi-ide/ipc-contracts';
+import type {
+  AskUserPromptDto,
+  PermissionCardDto,
+  TaskDto,
+  TimelineEventDto,
+  VerificationCommandSchema,
+} from '@pi-ide/ipc-contracts';
 import type { z } from 'zod';
 import type { SqlDatabase } from '@pi-ide/persistence';
-import { ToolGateway, registerReadOnlyTools, type ToolAuditRecord } from '@pi-ide/tool-gateway';
+import {
+  ToolGateway,
+  registerReadOnlyTools,
+  registerCommandTools,
+  PermissionEngine,
+  type AskUserPrompt,
+  type PermissionRequestCard,
+  type ToolAuditRecord,
+} from '@pi-ide/tool-gateway';
 import { SearchService } from '@pi-ide/search-service';
 import { GitService } from '@pi-ide/git-service';
 import type { AgentHost, RuntimeKind } from './agent-host.js';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { SettingsService } from './settings-service.js';
+import { SqlPermissionStore } from './permission-store.js';
 import { broadcast } from '../broadcast.js';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
@@ -63,6 +78,12 @@ export class TaskService {
   private readonly runsByTask = new Map<string, string>();
   private readonly startQueue: Array<{ taskId: string; prompt: string | undefined }> = [];
   private gateway: ToolGateway | null = null;
+  private permissionEngine: PermissionEngine | null = null;
+  /** Open ask_user questions waiting for an answer, keyed by callId. */
+  private readonly pendingAsks = new Map<
+    string,
+    { prompt: AskUserPromptDto; resolve: (answer: string) => void; cleanup: () => void }
+  >();
 
   constructor(
     private readonly db: SqlDatabase,
@@ -79,7 +100,10 @@ export class TaskService {
       onToolLifecycle: (taskId, call, result) => this.onToolLifecycle(taskId, call, result),
     };
     workspace.onDidChangeWorkspace((ws) => {
+      this.permissionEngine?.cancelAll('workspace changed');
+      this.cancelAllAsks('workspace changed');
       this.gateway = null;
+      this.permissionEngine = null;
       if (ws) this.buildGateway();
     });
   }
@@ -87,9 +111,18 @@ export class TaskService {
   private buildGateway(): void {
     const ws = this.workspace.current;
     if (!ws) return;
+    const engine = new PermissionEngine({
+      workspaceId: ws.id,
+      store: new SqlPermissionStore(this.db, ws.id),
+      events: {
+        onPending: (card) => this.onPermissionPending(card),
+        onResolved: (info) => this.onPermissionResolved(info),
+      },
+    });
     const gateway = new ToolGateway({
       root: ws.canonicalPath,
       mode: 'ask',
+      permission: engine,
       audit: (record) => this.persistToolAudit(record),
     });
     registerReadOnlyTools(gateway, {
@@ -99,7 +132,158 @@ export class TaskService {
         new SearchService(ws.canonicalPath, this.settings.effective.workspace.ignoreGlobs),
       git: () => (ws.isGitRepo ? new GitService(ws.canonicalPath) : null),
     });
+    registerCommandTools(gateway, {
+      root: ws.canonicalPath,
+      userGate: { ask: (prompt, signal) => this.askUser(prompt, signal) },
+    });
     this.gateway = gateway;
+    this.permissionEngine = engine;
+  }
+
+  // ---------- permissions (PERM-001..010) ----------
+
+  private cardToDto(card: PermissionRequestCard): PermissionCardDto {
+    return {
+      requestId: card.requestId,
+      callId: card.callId,
+      runId: card.runId,
+      taskId: card.taskId,
+      toolName: card.tool.name,
+      toolDescription: card.tool.description,
+      reason: null,
+      risk: { level: card.risk.level, reasons: card.risk.reasons },
+      preview: {
+        summary: card.preview.summary,
+        ...(card.preview.detail !== undefined ? { detail: card.preview.detail } : {}),
+        ...(card.preview.diff !== undefined ? { diff: card.preview.diff } : {}),
+        ...(card.preview.command !== undefined ? { command: card.preview.command } : {}),
+        ...(card.preview.targets !== undefined ? { targets: card.preview.targets } : {}),
+      },
+      input: card.input,
+      paramsHash: card.paramsHash,
+      options: card.options,
+      createdAt: card.createdAt,
+    };
+  }
+
+  private onPermissionPending(card: PermissionRequestCard): void {
+    this.recordEvent(card.taskId, 'permission.requested', { card: this.cardToDto(card) });
+    this.safeTransition(card.taskId, 'AWAITING_PERMISSION');
+  }
+
+  private onPermissionResolved(info: {
+    requestId: string;
+    taskId: string;
+    outcome: 'allowed' | 'denied' | 'cancelled' | 'invalidated';
+    scope?: 'once' | 'task' | 'workspace' | 'always';
+    actor?: string;
+    reason?: string;
+    card: PermissionRequestCard;
+    pendingLeftForTask: number;
+  }): void {
+    this.recordEvent(info.taskId, 'permission.decided', {
+      requestId: info.requestId,
+      outcome: info.outcome,
+      scope: info.scope ?? null,
+      actor: info.actor ?? null,
+      reason: info.reason ?? null,
+      toolName: info.card.tool.name,
+      risk: info.card.risk.level,
+      summary: info.card.preview.summary,
+    });
+    if (info.pendingLeftForTask === 0) {
+      const task = this.getTask(info.taskId);
+      if (task.state === 'AWAITING_PERMISSION') this.setState(info.taskId, 'IN_PROGRESS');
+    }
+  }
+
+  decidePermission(input: {
+    requestId: string;
+    kind: 'allow' | 'deny';
+    scope: 'once' | 'task' | 'workspace' | 'always';
+    expectedParamsHash: string;
+    reason?: string;
+    applyToSimilar?: boolean;
+  }): { resolvedRequestIds: string[] } {
+    if (!this.permissionEngine) return { resolvedRequestIds: [] };
+    return this.permissionEngine.resolve({
+      requestId: input.requestId,
+      kind: input.kind,
+      scope: input.scope,
+      expectedParamsHash: input.expectedParamsHash,
+      ...(input.reason !== undefined ? { reason: input.reason } : {}),
+      ...(input.applyToSimilar !== undefined ? { applyToSimilar: input.applyToSimilar } : {}),
+      actor: 'user',
+    });
+  }
+
+  pendingPermissions(taskId: string): {
+    permissions: PermissionCardDto[];
+    asks: AskUserPromptDto[];
+  } {
+    return {
+      permissions: (this.permissionEngine?.pendingForTask(taskId) ?? []).map((c) =>
+        this.cardToDto(c),
+      ),
+      asks: [...this.pendingAsks.values()].map((a) => a.prompt).filter((p) => p.taskId === taskId),
+    };
+  }
+
+  // ---------- ask_user gate ----------
+
+  private askUser(prompt: AskUserPrompt, signal: AbortSignal): Promise<string> {
+    const dto: AskUserPromptDto = {
+      callId: prompt.callId,
+      taskId: prompt.taskId,
+      runId: prompt.runId,
+      question: prompt.question,
+      options: prompt.options,
+      allowFreeForm: prompt.allowFreeForm,
+      createdAt: new Date().toISOString(),
+    };
+    this.recordEvent(prompt.taskId, 'agent.question', { prompt: dto });
+    return new Promise<string>((resolve, reject) => {
+      const onAbort = () => {
+        this.pendingAsks.delete(prompt.callId);
+        reject(
+          new ProductFailure(
+            productError('CANCELLED', { userMessage: 'The run stopped before an answer arrived.' }),
+          ),
+        );
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      this.pendingAsks.set(prompt.callId, {
+        prompt: dto,
+        resolve,
+        cleanup: () => signal.removeEventListener('abort', onAbort),
+      });
+      if (signal.aborted) onAbort();
+    });
+  }
+
+  answerUser(callId: string, answer: string): boolean {
+    const entry = this.pendingAsks.get(callId);
+    if (!entry) return false;
+    this.pendingAsks.delete(callId);
+    entry.cleanup();
+    this.recordEvent(entry.prompt.taskId, 'user.message', {
+      text: answer,
+      kind: 'answer',
+      callId,
+    });
+    entry.resolve(answer);
+    return true;
+  }
+
+  private cancelAllAsks(reason: string): void {
+    for (const [callId, entry] of [...this.pendingAsks]) {
+      this.pendingAsks.delete(callId);
+      entry.cleanup();
+      // Resolving with a cancellation marker unblocks the tool executor; the
+      // run that owned it is being torn down anyway.
+      entry.resolve(`(no answer: ${reason})`);
+      this.logger.info('ask_user cancelled', { callId, reason });
+    }
   }
 
   get toolGateway(): ToolGateway | null {
@@ -393,8 +577,8 @@ export class TaskService {
       task.mode === 'ask'
         ? 'You are in ASK mode: strictly read-only. You cannot modify files or run commands; if asked to, explain what you WOULD change instead.'
         : task.mode === 'edit'
-          ? 'You are in EDIT mode: propose a plan before the first write; workspace writes and commands go through user approval.'
-          : 'You are in AUTO mode: low-risk actions may run automatically; high-risk actions pause for the user.';
+          ? 'You are in EDIT mode: workspace writes and commands require user approval — a denied permission is final for that call; adapt instead of retrying it verbatim.'
+          : 'You are in AUTO mode: recognized low-risk actions run automatically; higher-risk actions pause for user approval. A denial is final for that call.';
     return [
       `You are the coding agent inside Pi IDE working on the workspace at ${ws.canonicalPath}.`,
       modeRules,
@@ -671,6 +855,13 @@ export class TaskService {
 
   /** Restart-time scan (M10 expands): mark previously-running tasks interrupted. */
   markOrphanedRunsInterrupted(): void {
+    // Permission requests left PENDING by a previous process can never be
+    // answered — the waiting tool call died with that process.
+    this.db
+      .prepare(
+        "UPDATE permission_requests SET state = 'CANCELLED', resolved_at = ? WHERE state = 'PENDING'",
+      )
+      .run(new Date().toISOString());
     const ws = this.workspace.current;
     const rows = this.db
       .prepare(

@@ -98,10 +98,21 @@ test.describe('M4 search, intelligence, terminal', () => {
       for (let i = 0; i < 19; i++) await page.keyboard.press('ArrowRight');
       await page.keyboard.press('F12');
       await expect(page.getByTestId('tab-src/util.ts')).toBeVisible({ timeout: 15000 });
+      // F12 navigation swaps the editor model asynchronously; wait until util.ts is
+      // actually rendered (its `sub` helper is unique to this file) so keystrokes
+      // land in the util.ts model, not the previous one.
+      await expect(page.locator('.monaco-editor').first()).toContainText('function sub', {
+        timeout: 15000,
+      });
+      // The TS worker re-analyses the newly-focused file before it can return a
+      // complete cross-file rename set; give it a moment so the rename resolves all
+      // locations (product works for a human — this only guards sub-second automation).
+      await page.waitForTimeout(1500);
 
       // Rename with preview: place the cursor deterministically on the `add`
       // identifier in util.ts (line 1: `export function add(`).
       await page.locator('.monaco-editor').first().click();
+      await page.waitForTimeout(300);
       await page.keyboard.press('Control+g');
       await page.keyboard.type('1');
       await page.keyboard.press('Enter');
@@ -111,7 +122,10 @@ test.describe('M4 search, intelligence, terminal', () => {
       await expect(page.getByTestId('rename-input-dialog')).toBeVisible({ timeout: 15000 });
       await page.getByTestId('rename-input').fill('addNumbers');
       await page.keyboard.press('Enter');
+      // Preview must resolve cross-file before we apply (proves the worker was ready).
       await expect(page.getByTestId('rename-preview')).toBeVisible();
+      await expect(page.getByTestId('rename-preview')).toContainText('src/util.ts');
+      await expect(page.getByTestId('rename-preview')).toContainText('src/index.ts');
       await page.getByTestId('rename-apply').click();
       await expect
         .poll(() => readFileSync(join(fixture, 'src/util.ts'), 'utf8'), { timeout: 15000 })
