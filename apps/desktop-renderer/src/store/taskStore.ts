@@ -91,6 +91,15 @@ interface TaskStore {
   }): Promise<boolean>;
 }
 
+/** callId of a tool-lifecycle timeline event, or '' for everything else. */
+function timelineCallId(event: TimelineEventDto): string {
+  if (event.type !== 'tool.call' && event.type !== 'agent.toolProposed') return '';
+  const payload = event.payload as
+    { callId?: unknown; call?: { callId?: unknown } } | null | undefined;
+  const raw = payload?.callId ?? payload?.call?.callId;
+  return typeof raw === 'string' ? raw : '';
+}
+
 /** Derive a task title from free-form intent (first line, cleaned, ≤64 chars). */
 export function titleFromIntent(intent: string): string {
   const firstLine = intent.split('\n')[0]?.trim() ?? '';
@@ -119,7 +128,14 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       const timeline = get().timeline;
       // Ephemeral events have sequence 0; persisted ones are monotonic.
       if (event.sequence > 0 && timeline.some((e) => e.id === event.id)) return;
-      const next = [...timeline, event].sort((a, b) =>
+      // Tool lifecycle: one timeline entry per callId. Live states
+      // (PROPOSED → WAITING_PERMISSION → RUNNING, ADR-0006) replace each other
+      // in place, and the persisted terminal event replaces them all.
+      const callId = timelineCallId(event);
+      const base = callId
+        ? timeline.filter((e) => e.sequence > 0 || timelineCallId(e) !== callId)
+        : timeline;
+      const next = [...base, event].sort((a, b) =>
         a.sequence === 0 || b.sequence === 0 ? 0 : a.sequence - b.sequence,
       );
       // Completed agent message replaces the streaming bubble.

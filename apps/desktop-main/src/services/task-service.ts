@@ -17,6 +17,7 @@ import type {
   ToolCallRequest,
 } from '@pi-ide/agent-contract';
 import type {
+  ActivityItem,
   AskUserPromptDto,
   ChangeSetDto,
   ChangeSetFileDto,
@@ -26,6 +27,7 @@ import type {
   TimelineEventDto,
   VerificationCommandSchema,
 } from '@pi-ide/ipc-contracts';
+import { projectActivity } from '@pi-ide/ipc-contracts';
 import type { z } from 'zod';
 import type { SqlDatabase } from '@pi-ide/persistence';
 import {
@@ -66,6 +68,17 @@ import { SqlVerificationRepo } from './verification-store.js';
 import { broadcast } from '../broadcast.js';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
+
+function countPatchLines(patch: string | null): { additions: number; deletions: number } {
+  if (!patch) return { additions: 0, deletions: 0 };
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
+    else if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+  }
+  return { additions, deletions };
+}
 
 export interface CreateTaskInput {
   title: string;
@@ -126,6 +139,10 @@ export class TaskService {
       reject: (error: unknown) => void;
       cleanup: () => void;
     }
+  >();
+  /** State-transition observers (notifications, PIVOT-014). */
+  private readonly stateChangeListeners = new Set<
+    (info: { taskId: string; from: TaskState; to: TaskState; title: string }) => void
   >();
 
   constructor(
@@ -1018,6 +1035,134 @@ export class TaskService {
       });
   }
 
+  /**
+   * Activity stream (ADR-0006): projection of the persisted event log,
+   * enriched with tool durations and per-change diffstats. Read-only; used by
+   * the mission-control dashboard (tail) and by session replay (full).
+   */
+  activity(taskId: string, tail?: number): { items: ActivityItem[]; total: number } {
+    const rows = this.db
+      .prepare(
+        'SELECT id, sequence, type, schema_version, payload_json, created_at FROM task_events WHERE task_id = ? ORDER BY sequence LIMIT 5000',
+      )
+      .all(taskId) as Array<{
+      id: string;
+      sequence: number;
+      type: string;
+      schema_version: number;
+      payload_json: string;
+      created_at: string;
+    }>;
+    const events: TimelineEventDto[] = rows.map((row) => ({
+      id: row.id,
+      taskId,
+      sequence: row.sequence,
+      type: row.type,
+      schemaVersion: row.schema_version,
+      at: row.created_at,
+      payload: JSON.parse(row.payload_json) as unknown,
+    }));
+    const items = projectActivity(events);
+
+    const calls = this.db
+      .prepare('SELECT id, started_at, ended_at FROM tool_calls WHERE task_id = ?')
+      .all(taskId) as Array<{ id: string; started_at: string | null; ended_at: string | null }>;
+    const durationByCall = new Map<string, number | null>(
+      calls.map((c) => [
+        c.id,
+        c.started_at && c.ended_at ? Date.parse(c.ended_at) - Date.parse(c.started_at) : null,
+      ]),
+    );
+    const changes = this.db
+      .prepare(
+        'SELECT id, tool_call_id, relative_path, patch FROM file_changes WHERE task_id = ? ORDER BY created_at, id',
+      )
+      .all(taskId) as Array<{
+      id: string;
+      tool_call_id: string | null;
+      relative_path: string;
+      patch: string | null;
+    }>;
+    const changesByCall = new Map<string, typeof changes>();
+    for (const change of changes) {
+      if (!change.tool_call_id) continue;
+      const list = changesByCall.get(change.tool_call_id) ?? [];
+      list.push(change);
+      changesByCall.set(change.tool_call_id, list);
+    }
+
+    for (const item of items) {
+      if (!item.callId) continue;
+      const duration = durationByCall.get(item.callId);
+      if (duration !== undefined) item.durationMs = duration;
+      const linked = changesByCall.get(item.callId);
+      if (linked && linked.length > 0) {
+        item.changeIds = linked.map((c) => c.id);
+        let additions = 0;
+        let deletions = 0;
+        for (const change of linked) {
+          const stats = countPatchLines(change.patch);
+          additions += stats.additions;
+          deletions += stats.deletions;
+          if (!item.paths.includes(change.relative_path)) item.paths.push(change.relative_path);
+        }
+        item.diffstat = { additions, deletions };
+      }
+    }
+    return { items: tail && tail < items.length ? items.slice(-tail) : items, total: items.length };
+  }
+
+  /** One recorded change (stored patch text) for the replay diff pane. */
+  changeRecord(
+    taskId: string,
+    changeId: string,
+  ): {
+    id: string;
+    taskId: string;
+    path: string;
+    kind: 'created' | 'modified' | 'deleted' | 'renamed';
+    beforeHash: string | null;
+    afterHash: string | null;
+    patch: string | null;
+    renameTo: string | null;
+    author: 'agent' | 'user' | 'system';
+    toolCallId: string | null;
+    createdAt: string;
+  } | null {
+    const row = this.db
+      .prepare(
+        'SELECT id, relative_path, kind, before_hash, after_hash, patch, rename_to, author, tool_call_id, created_at FROM file_changes WHERE id = ? AND task_id = ?',
+      )
+      .get(changeId, taskId) as
+      | {
+          id: string;
+          relative_path: string;
+          kind: string;
+          before_hash: string | null;
+          after_hash: string | null;
+          patch: string | null;
+          rename_to: string | null;
+          author: string;
+          tool_call_id: string | null;
+          created_at: string;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      id: row.id,
+      taskId,
+      path: row.relative_path,
+      kind: row.kind as 'created' | 'modified' | 'deleted' | 'renamed',
+      beforeHash: row.before_hash,
+      afterHash: row.after_hash,
+      patch: row.patch,
+      renameTo: row.rename_to,
+      author: row.author as 'agent' | 'user' | 'system',
+      toolCallId: row.tool_call_id,
+      createdAt: row.created_at,
+    };
+  }
+
   timeline(taskId: string, afterSequence: number): TimelineEventDto[] {
     const rows = this.db
       .prepare(
@@ -1084,7 +1229,24 @@ export class TaskService {
       .run(to, new Date().toISOString(), taskId);
     this.recordEvent(taskId, 'task.stateChanged', { from, to, ...context });
     broadcast('task.stateChanged', { taskId, state: to });
+    for (const listener of this.stateChangeListeners) {
+      try {
+        listener({ taskId, from, to, title: row.title });
+      } catch (e) {
+        this.logger.warn('state listener failed', {
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
     return this.getTask(taskId);
+  }
+
+  /** Observe task state transitions (edge-triggered; used by notifications). */
+  onStateChanged(
+    listener: (info: { taskId: string; from: TaskState; to: TaskState; title: string }) => void,
+  ): () => void {
+    this.stateChangeListeners.add(listener);
+    return () => this.stateChangeListeners.delete(listener);
   }
 
   // ---------- lifecycle ----------
@@ -1621,6 +1783,30 @@ export class TaskService {
           ok: record.ok,
           summary: record.resultSummary,
           input: record.input,
+        });
+      } else {
+        // ADR-0006: live "current action" — non-terminal audit states stream as
+        // ephemeral events (sequence 0, never persisted); the terminal event
+        // above replaces them by callId in the activity projection.
+        broadcast('task.event', {
+          taskId: record.taskId,
+          event: {
+            id: newId('evt'),
+            taskId: record.taskId,
+            sequence: 0,
+            type: 'tool.call',
+            schemaVersion: 1,
+            at: record.at,
+            payload: {
+              callId: record.callId,
+              name: record.name,
+              risk: record.risk,
+              state: record.state,
+              ok: null,
+              summary: null,
+              input: redactObject(record.input),
+            },
+          },
         });
       }
       // VER-008: a successful write moves the code revision — older verification

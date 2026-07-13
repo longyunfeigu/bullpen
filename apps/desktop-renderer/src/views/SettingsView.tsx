@@ -262,6 +262,17 @@ export function SettingsView(): React.JSX.Element {
                 onChange={(e) => set({ general: { uiScale: Number(e.target.value) } })}
               />
             </Row>
+            <Row
+              label="System notifications"
+              hint="Plan approval · permission · review ready · failed (silent while a window is focused)"
+            >
+              <input
+                type="checkbox"
+                data-testid="settings-notifications"
+                checked={settings.notifications.enabled}
+                onChange={(e) => set({ notifications: { enabled: e.target.checked } })}
+              />
+            </Row>
           </>
         ) : null}
 

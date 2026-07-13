@@ -1,0 +1,593 @@
+/* Home surface v2 (ADR-0005/0006, PIVOT-011..015) — mockup docs/design/home-v2-mockup.html */
+
+.hm-root {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  background: var(--bg-editor);
+  color: var(--fg);
+}
+
+/* ---------- sidebar ---------- */
+
+.hm-side {
+  width: 264px;
+  flex: none;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 10px 10px;
+  overflow-y: auto;
+}
+.hm-side-drag {
+  height: 34px;
+  flex: none;
+  -webkit-app-region: drag;
+}
+.hm-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 12px;
+}
+.hm-brand b {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.hm-brand .hm-sp {
+  flex: 1;
+}
+
+.hm-nav-item,
+.hm-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+.hm-nav-item svg,
+.hm-row > svg {
+  color: var(--fg-muted);
+}
+.hm-nav-item:hover,
+.hm-row:hover {
+  background: var(--bg-hover);
+}
+.hm-row.active {
+  background: var(--bg-active);
+}
+.hm-badge {
+  margin-left: auto;
+  font-size: 11px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 7px;
+  color: var(--fg-muted);
+}
+.hm-kind {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0 5px;
+  color: var(--fg-muted);
+}
+.hm-row.active .hm-kind {
+  margin-left: 6px;
+}
+.hm-sec {
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  padding: 14px 10px 4px;
+  font-weight: 500;
+}
+.hm-row .hm-tt {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.hm-row .hm-check {
+  margin-left: auto;
+  color: var(--fg-muted);
+}
+.hm-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  margin: 0 4px 0 5px;
+}
+.hm-dot.ok {
+  background: var(--success);
+}
+.hm-dot.run {
+  background: var(--info);
+  animation: hm-pulse 1.6s infinite;
+}
+.hm-dot.warn {
+  background: var(--warning);
+}
+.hm-dot.err {
+  background: var(--danger);
+}
+.hm-dot.done {
+  background: var(--fg-faint);
+}
+@keyframes hm-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(117, 190, 255, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(117, 190, 255, 0);
+  }
+}
+.hm-grow {
+  flex: 1;
+}
+.hm-side-bottom {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+  margin-top: 6px;
+}
+.hm-side-bottom .hm-row {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+
+/* ---------- main ---------- */
+
+.hm-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.hm-main-top {
+  height: 38px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 6px 10px 0;
+  -webkit-app-region: drag;
+}
+.hm-main-top button {
+  -webkit-app-region: no-drag;
+}
+.hm-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 24px;
+  min-height: 160px;
+}
+.hm-hero .hm-mark {
+  color: var(--fg-faint);
+  margin-bottom: 8px;
+}
+.hm-hero h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.hm-hero .hm-sub {
+  font-size: 13px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.hm-composer {
+  padding: 0 28px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: none;
+}
+.hm-card {
+  width: 100%;
+  max-width: 740px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.1);
+}
+.hm-card.drop {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.hm-chiprow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 0;
+  flex-wrap: wrap;
+  position: relative;
+}
+.hm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+  font-family: inherit;
+  max-width: 100%;
+}
+.hm-chip:hover {
+  background: var(--bg-hover);
+}
+.hm-chip.lite {
+  border-color: transparent;
+}
+.hm-chip .hm-sep {
+  opacity: 0.5;
+}
+.hm-chip span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hm-refchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--fg);
+  max-width: 260px;
+}
+.hm-refchip span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hm-refchip button {
+  border: none;
+  background: transparent;
+  color: var(--fg-faint);
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+}
+.hm-refchip button:hover {
+  color: var(--fg);
+}
+
+.hm-ta {
+  display: block;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 14.5px;
+  line-height: 1.55;
+  padding: 10px 16px 4px;
+  min-height: 62px;
+}
+.hm-ta::placeholder {
+  color: var(--fg-faint);
+}
+
+.hm-adv {
+  padding: 2px 16px 6px;
+  display: grid;
+  gap: 10px;
+}
+.hm-field label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+.hm-field input,
+.hm-field textarea {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--fg);
+  outline: none;
+  font-family: inherit;
+  resize: vertical;
+}
+.hm-field input:focus,
+.hm-field textarea:focus {
+  border-color: var(--fg-muted);
+}
+.hm-vchips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.hm-vchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  background: transparent;
+  font-family: var(--font-mono);
+}
+.hm-vchip.on {
+  background: var(--bg-active);
+  border-color: transparent;
+  color: var(--fg);
+}
+.hm-vchip-add {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: transparent;
+  color: var(--fg);
+  outline: none;
+  min-width: 180px;
+}
+
+.hm-btmrow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px 10px;
+}
+.hm-btmrow .hm-spacer {
+  flex: 1;
+}
+.hm-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.hm-iconbtn:hover {
+  background: var(--bg-hover);
+}
+.hm-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 5px 9px;
+  cursor: pointer;
+  font-family: inherit;
+  max-width: 230px;
+}
+.hm-select:hover {
+  background: var(--bg-hover);
+}
+.hm-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-hover);
+  color: var(--fg-faint);
+  cursor: pointer;
+  margin-left: 6px;
+}
+.hm-send.ready {
+  background: var(--fg);
+  color: var(--fg-inverse);
+}
+.hm-send:disabled {
+  cursor: default;
+}
+.hm-hint {
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  padding: 10px 0 0;
+  text-align: center;
+}
+
+/* ---------- dropdown menus (project picker / file picker) ---------- */
+
+.hm-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 10px;
+  z-index: 6;
+  min-width: 340px;
+  max-width: 480px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  padding: 5px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.hm-menu .hm-row {
+  border-radius: 7px;
+}
+.hm-menu .hm-mono {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-faint);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hm-menu input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 9px;
+  font-size: 12.5px;
+  color: var(--fg);
+  outline: none;
+  font-family: inherit;
+  margin-bottom: 5px;
+}
+
+/* ---------- mission control ---------- */
+
+.hm-mc {
+  width: 100%;
+  max-width: 740px;
+  margin: 14px auto 0;
+  padding: 0 28px 26px;
+  box-sizing: content-box;
+  flex: none;
+  align-self: center;
+}
+.hm-mc-label {
+  font-size: 10px;
+  color: var(--fg-faint);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 10px 2px 8px;
+}
+.hm-tcard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  padding: 11px 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  color: var(--fg);
+}
+.hm-tcard:hover {
+  background: var(--bg-hover);
+}
+.hm-tcard.attention {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+.hm-tcard .hm-tinfo {
+  min-width: 0;
+  flex: 1;
+}
+.hm-tcard .hm-ttitle {
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hm-tcard .hm-tmeta {
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.hm-tcard .hm-tmeta code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  background: var(--bg-hover);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.hm-stchip {
+  flex: none;
+  font-size: 10.5px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-weight: 550;
+}
+.hm-stchip.warn {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
+}
+.hm-stchip.run {
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  color: var(--info);
+}
+.hm-stchip.err {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+.hm-act {
+  flex: none;
+  font-size: 11.5px;
+  border-radius: 999px;
+  padding: 6px 13px;
+  border: none;
+  cursor: pointer;
+  background: var(--fg);
+  color: var(--fg-inverse);
+  font-family: inherit;
+}
+.hm-act.ghost {
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+}
+
+/* Composer focus lives on the card, not the raw textarea outline. */
+.hm-ta:focus-visible {
+  outline: none;
+}
+.hm-card:focus-within {
+  border-color: var(--fg-muted);
+}

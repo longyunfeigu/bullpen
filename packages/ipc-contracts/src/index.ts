@@ -6,3 +6,4 @@ export * from './settings.js';
 export * from './layout.js';
 export * from './documents.js';
 export * from './agent-dto.js';
+export * from './activity.js';

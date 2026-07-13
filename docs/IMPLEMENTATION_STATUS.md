@@ -25,7 +25,8 @@ Last verified commit: (pivot pending commit)
 | 7. Tools and permissions | VERIFIED | E2E-012/013 + approve-and-run + ask_user (4 E2E green), permission engine 15 tests, classifier 17, runner 11, command tools 9, security matrix 9, SQL store 3 | R3 never granted permanently; R4 refused pre-prompt; PERM-007 param-binding enforced |
 | 8. Agent editing and review | VERIFIED | E2E-010/011/014/015 all green (m8-review.spec, full suite 26/26), 25 new unit tests (review hunks 10, write tools 10, plan utils 5) | Plan approval flows through the propose_plan tool channel (works for real Pi too); write gate denies first write until plan approved (AG-007); hunk keys are content-derived so decisions fail closed on staleness |
 | 9. Verification and history | VERIFIED | E2E-016/017/018 green (m9-verification.spec, full suite 29/29 twice), VerificationService 7 unit tests, rename tool test | Final report separates agent narrative from system evidence; stale/superseded semantics on verification_runs; unverified accept needs explicit confirm; rollback preflight stops on external-change conflicts |
-| PIVOT. Dual-form shell (ADR-0004) | VERIFIED | pivot-shell.spec 3 E2E (PIVOT-001..009), full suite 32/32 twice, model-catalog 4 unit tests | Charter branding (no Pi in UI); Home task launcher default entry; Settings provider keys + live model fetch; M10–M12 resume next |
+| PIVOT. Dual-form shell (ADR-0004) | VERIFIED | pivot-shell.spec 3 E2E (PIVOT-001..009), full suite 32/32 twice, model-catalog 4 unit tests | Charter branding (no Pi in UI); Home task launcher default entry; Settings provider keys + live model fetch |
+| HOME-V2 P1. Activity stream + mission control (ADR-0006) | VERIFIED | home-v2.spec 3 E2E (PIVOT-011..015), full suite 35/35 twice, activity projection 9 + notification 4 unit tests | Pure-projection activity stream (live = replay source); mission-control cards with live current action; macOS notifications on attention edges (focused-window suppressed); drag/@ context refs; clickable paths; tool lifecycle renders as one in-place card (callId dedupe) |
 | 10. Recovery and diagnostics | NOT_STARTED | | |
 | 11. Security and quality hardening | NOT_STARTED | | |
 | 12. Packaging and Stable release | NOT_STARTED | | |
@@ -38,6 +39,8 @@ None.
 
 | Date | Commit | Command | Result | Artifact |
 | --- | --- | --- | --- | --- |
+| 2026-07-13 | (home-v2 P1) | `npm test` | 251 unit/integration passed (34 files) | vitest |
+| 2026-07-13 | (home-v2 P1) | `playwright test` (full) | 35 E2E passed, twice consecutively | playwright |
 | 2026-07-13 | (pivot) | `npm test` | 238 unit/integration passed (32 files) | vitest |
 | 2026-07-13 | (pivot) | `playwright test` (full) | 32 E2E passed, twice consecutively | playwright |
 | 2026-07-13 | (M9) | `npm test` | 234 unit/integration passed (31 files) | vitest |

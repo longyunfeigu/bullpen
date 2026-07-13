@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import {
   CHANNELS,
   EVENT_CHANNELS,
@@ -51,6 +51,13 @@ const api = {
   platform: process.platform,
   rpc,
   events,
+  /**
+   * Absolute path of a File dropped from the OS (PIVOT-015). Sandboxed
+   * renderers have no File.path; this is the documented Electron bridge for it.
+   */
+  pathForFile(file: File): string {
+    return webUtils.getPathForFile(file);
+  },
 };
 
 contextBridge.exposeInMainWorld('product', api);

@@ -89,6 +89,7 @@ export class StateService {
       lastOpenedAt: r.last_opened_at,
       pinned: r.pinned === 1,
       exists: existsSync(r.canonical_path),
+      kind: null, // project-type badge is detected at the IPC layer (cheap fs checks)
     }));
   }
 

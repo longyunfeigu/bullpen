@@ -19,6 +19,8 @@ export const RecentWorkspaceSchema = z.object({
   lastOpenedAt: z.string(),
   pinned: z.boolean(),
   exists: z.boolean(),
+  /** Cheap project-type badge (node/py/rust/go/web/…), null when undetected. */
+  kind: z.string().nullable().default(null),
 });
 export type RecentWorkspaceDto = z.infer<typeof RecentWorkspaceSchema>;
 

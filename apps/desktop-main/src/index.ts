@@ -1,4 +1,14 @@
-import { app, BrowserWindow, dialog, nativeTheme, net, protocol, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  nativeTheme,
+  net,
+  Notification,
+  protocol,
+  session,
+  shell,
+} from 'electron';
 import { join, normalize } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -25,6 +35,9 @@ import { SecretService } from './services/secret-service.js';
 import { ModelCatalogService } from './services/model-catalog.js';
 import { AgentHost } from './services/agent-host.js';
 import { TaskService } from './services/task-service.js';
+import { NotificationService } from './services/notification-service.js';
+import { detectProjectKind } from './services/project-kind.js';
+import { registerActivityHandlers } from './ipc/activity-handlers.js';
 import { join as joinPath } from 'node:path';
 
 const DEV_SERVER_URL = process.env.PI_IDE_DEV_SERVER_URL;
@@ -305,7 +318,12 @@ function registerCoreHandlers(bootstrap: Bootstrap): void {
           state.saveLayout(null, layout);
           return { saved: true };
         },
-        'workspace.recent': async () => ({ items: state.recentWorkspaces() }),
+        'workspace.recent': async () => ({
+          items: state.recentWorkspaces().map((item) => ({
+            ...item,
+            kind: item.exists ? detectProjectKind(item.path) : null,
+          })),
+        }),
       },
       logger,
     );
@@ -408,6 +426,29 @@ if (!gotLock) {
       registerM7Handlers(taskService, logger.child('ipc'));
       registerM8Handlers(taskService, logger.child('ipc'));
       registerM9Handlers(taskService, logger.child('ipc'));
+      registerActivityHandlers(taskService, workspaceHost, logger.child('ipc'));
+
+      // PIVOT-014: system notifications on attention-worthy task states.
+      const notifications = new NotificationService({
+        enabled: () => settings.effective.notifications.enabled,
+        anyWindowFocused: () => BrowserWindow.getFocusedWindow() !== null,
+        show: (n, onClick) => {
+          if (!Notification.isSupported()) return;
+          const note = new Notification({ title: n.title, body: n.body });
+          note.on('click', onClick);
+          note.show();
+        },
+        focusTask: (taskId) => {
+          const win = mainWindow ?? BrowserWindow.getAllWindows()[0] ?? null;
+          if (win) {
+            if (win.isMinimized()) win.restore();
+            win.show();
+            win.focus();
+          }
+          broadcast('app.focusTask', { taskId });
+        },
+      });
+      taskService.onStateChanged((info) => notifications.onTaskState(info));
     }
 
     // E2E hook: open a workspace directly from the environment.

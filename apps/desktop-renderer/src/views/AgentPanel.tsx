@@ -5,11 +5,13 @@ import type {
   TaskPlanDto,
   TimelineEventDto,
 } from '@pi-ide/ipc-contracts';
+import { toolPaths } from '@pi-ide/ipc-contracts';
 import { useTaskStore, activeTask, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useEditorStore } from '../store/editorStore.js';
 import { NewTaskDialog } from './NewTaskDialog.js';
 import { ReviewView } from './ReviewView.js';
+import { PathChips } from './PathLinks.js';
 
 const RISK_COLORS: Record<string, string> = {
   R0: 'var(--fg-muted)',
@@ -662,19 +664,26 @@ function TimelineCard({
       const ok = payload.ok === true;
       const state = String(payload.state ?? '');
       const denied = state === 'DENIED';
+      // Live lifecycle states (ADR-0006) render as one neutral in-progress card
+      // that the terminal event replaces in place (taskStore dedupes by callId).
+      const terminal = ['SUCCEEDED', 'FAILED', 'DENIED', 'CANCELLED', 'TIMED_OUT'].includes(state);
       // Version conflicts get a dedicated card: user content is protected (M8-06).
       if (state === 'FAILED' && String(payload.summary ?? '') === 'CHG_VERSION_CONFLICT') {
         return <ConflictCard payload={payload} />;
       }
       return (
         <Card
-          icon={denied ? '⛔' : ok ? '🔧' : '⚠️'}
+          icon={denied ? '⛔' : !terminal ? '⏳' : ok ? '🔧' : '⚠️'}
           title={`${String(payload.name)} — ${state}`}
-          tone={denied ? 'warning' : ok ? 'default' : 'danger'}
+          tone={denied ? 'warning' : !terminal || ok ? 'default' : 'danger'}
           testid={`tl-tool-${String(payload.name)}`}
           collapsible
         >
           <div className="text-muted">{String(payload.summary ?? '')}</div>
+          <PathChips
+            paths={toolPaths(String(payload.name), payload.input)}
+            testidPrefix="tl-path"
+          />
           <pre
             className="mono"
             style={{ fontSize: 11, overflow: 'auto', maxHeight: 160, whiteSpace: 'pre-wrap' }}
@@ -807,6 +816,15 @@ function TimelineCard({
               Changed: {changed.files} file{changed.files === 1 ? '' : 's'},{' '}
               <span style={{ color: 'var(--success)' }}>+{changed.additions}</span> /{' '}
               <span style={{ color: 'var(--danger)' }}>-{changed.deletions}</span>
+              <PathChips
+                paths={(Array.isArray((payload.changed as { list?: unknown })?.list)
+                  ? ((payload.changed as { list: Array<{ path?: unknown }> }).list ?? [])
+                  : []
+                )
+                  .map((f) => String(f.path ?? ''))
+                  .filter(Boolean)}
+                testidPrefix="report-path"
+              />
             </div>
           ) : null}
           {verification && verification.runs.length > 0 ? (

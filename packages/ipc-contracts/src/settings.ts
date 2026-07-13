@@ -45,6 +45,14 @@ export const SettingsSchema = z.object({
       /** Auto mode may auto-approve recognized verification commands (R2). */
       autoApproveKnownR2: z.boolean().default(false),
       maxOutputKb: z.number().int().min(64).max(4096).default(1024),
+      /** Concurrent agent runs in the open workspace; extra starts queue FIFO (ADR-0006; 1 = pre-ADR behavior). */
+      maxConcurrentRuns: z.number().int().min(1).max(8).default(3),
+    })
+    .prefault({}),
+  notifications: z
+    .object({
+      /** System notifications on plan-approval / permission / review-ready / failed (PIVOT-014). */
+      enabled: z.boolean().default(true),
     })
     .prefault({}),
   models: z

@@ -91,6 +91,8 @@ export const EVENT_CHANNELS = {
     1,
     z.object({ alive: z.boolean(), restarts: z.number(), degraded: z.boolean() }),
   ),
+  /** A system notification was clicked — bring this task into view (PIVOT-014). */
+  'app.focusTask': ev('app.focusTask', 1, z.object({ taskId: z.string() })),
   'lsp.pythonDiagnostics': ev(
     'lsp.pythonDiagnostics',
     1,

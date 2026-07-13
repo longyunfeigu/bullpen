@@ -13,6 +13,7 @@ interface ProductBridgeShape {
   platform: string;
   rpc: Record<string, (payload: unknown, workspaceId?: string) => Promise<IpcResponse>>;
   events: { on(channel: string, listener: (payload: unknown) => void): () => void };
+  pathForFile?: (file: File) => string;
 }
 
 declare global {
@@ -73,4 +74,13 @@ export function onEvent<N extends EventChannelName>(
 
 export function platform(): string {
   return window.product?.platform ?? 'unknown';
+}
+
+/** Absolute path of an OS-dropped File (sandbox-safe, PIVOT-015); null when unavailable. */
+export function pathForDroppedFile(file: File): string | null {
+  try {
+    return window.product?.pathForFile?.(file) ?? null;
+  } catch {
+    return null;
+  }
 }

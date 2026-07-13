@@ -17,6 +17,7 @@ import {
   VerificationCommandSchema,
   VerificationRunDtoSchema,
 } from './agent-dto.js';
+import { ActivityItemSchema } from './activity.js';
 
 const SettingsStateSchema = z.object({
   effective: SettingsSchema,
@@ -593,6 +594,49 @@ export const CHANNELS = {
     1,
     z.object({}).strict(),
     z.object({ suggestions: z.array(VerificationCommandSchema) }),
+  ),
+  'task.activity': ch(
+    'task.activity',
+    1,
+    z
+      .object({
+        taskId: z.string(),
+        /** Return only the last N items (dashboard hydration); omit for full replay. */
+        tail: z.number().int().min(1).max(500).optional(),
+      })
+      .strict(),
+    z.object({ items: z.array(ActivityItemSchema), total: z.number().int() }),
+  ),
+  'task.changeRecord': ch(
+    'task.changeRecord',
+    1,
+    z.object({ taskId: z.string(), changeId: z.string() }).strict(),
+    z.object({
+      record: z
+        .object({
+          id: z.string(),
+          taskId: z.string(),
+          path: z.string(),
+          kind: z.enum(['created', 'modified', 'deleted', 'renamed']),
+          beforeHash: z.string().nullable(),
+          afterHash: z.string().nullable(),
+          patch: z.string().nullable(),
+          renameTo: z.string().nullable(),
+          author: z.enum(['agent', 'user', 'system']),
+          toolCallId: z.string().nullable(),
+          createdAt: z.string(),
+        })
+        .nullable(),
+    }),
+  ),
+  'workspace.relativize': ch(
+    'workspace.relativize',
+    1,
+    z.object({ paths: z.array(z.string().min(1).max(2000)).min(1).max(50) }).strict(),
+    z.object({
+      inside: z.array(z.object({ abs: z.string(), rel: z.string() })),
+      outside: z.array(z.string()),
+    }),
   ),
   'models.list': ch(
     'models.list',
