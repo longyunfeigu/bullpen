@@ -77,9 +77,7 @@ test.describe('M6 read-only agent with deterministic runtime', () => {
             product: {
               rpc: Record<
                 string,
-                (
-                  p: unknown,
-                ) => Promise<{
+                (p: unknown) => Promise<{
                   ok: boolean;
                   data?: { components: Array<{ name: string; detail: string }> };
                 }>
