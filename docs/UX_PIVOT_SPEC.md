@@ -49,6 +49,32 @@ Phases: P1 = 011..015, P2 = 016..018, P3 = 019..020.
 | PIVOT-019 | Light edit — Markdown: Notion-style WYSIWYG for `.md` with the same dirty-guard/conflict semantics as the Monaco path (editor dependency requires its own ADR before adoption). |
 | PIVOT-020 | Light edit — images: annotation editor (arrows, rectangles, mosaic/redaction) that saves a copy (never overwrites the original in place without an explicit action) and offers "attach to task". |
 
+## Shell v3 — task-centric shell (ADR-0008, PIVOT-021..025)
+
+Mockup: `docs/design/direction-picker.html` (IA option B + Studio direction,
+product-owner approved). Three layers: **Home → Task Room → Editor**. The
+workbench keeps every capability but demotes to an on-demand tool named
+"Editor" in UI copy.
+
+Revisions to earlier acceptance (authoritative where they conflict):
+
+| ID | Revision |
+| --- | --- |
+| PIVOT-005 | Submit creates/starts the task but **stays on Home**; the task appears in mission control immediately. Empty intent / no project remain guided no-ops. |
+| PIVOT-006 | Editor reachable via sidebar "Editor" row, ⌘E, and Task Room "Open in editor"; "⌂ Home" returns; state preserved both ways; the main-area workspace chip is removed. |
+| PIVOT-007 | Clicking a task (sidebar, mission control, ⌘K) opens its **Task Room**. |
+| PIVOT-013 | Mission-control cards jump to the Task Room (review states may deep-link to the review overlay). |
+
+New acceptance:
+
+| ID | Requirement |
+| --- | --- |
+| PIVOT-021 | Task Room: per-task page (timeline, plan/permission/question cards, changes + verification rail, decision panel, reply composer) with human state chip and "Open in editor"; plan approval, permission grants, review, accept and rollback all work without entering the Editor. |
+| PIVOT-022 | Entry consolidation: no "Open IDE workspace" chips; sidebar "Editor" row + ⌘E + Task Room header are the only Editor entries; submitting never auto-switches surfaces. |
+| PIVOT-023 | Humane language: no raw state enums, transition rows, or tool-status strings user-visible anywhere; one shared state-label dictionary; no emoji iconography in chrome/cards. |
+| PIVOT-024 | Studio theme (light + dark, system-following) from shared tokens on both surfaces; review overlay renders without chrome collisions. |
+| PIVOT-025 | Live Board: while tasks run, per-project boards show per-file tiles with write ripples, 60s-decay heat, rhythm bars and a "writing" beacon; tiles open a read-only diff-so-far lens; driven by change events only (no fs polling); pauses on unfocus/reduced-motion; collapses when idle. |
+
 ## Notes
 
 - Fast path vs full form: the Home input is the primary path; the Workspace
@@ -57,3 +83,5 @@ Phases: P1 = 011..015, P2 = 016..018, P3 = 019..020.
 - Phase 2 (unchanged, from ADR-0004): meta-agent drafts acceptance criteria and
   verification commands from the intent for one-tap confirmation; task budgets
   (steps/tokens/time); auto-iterate-until-verification-green loop mode.
+- "Workspace" naming: user-visible copy says **project** (folder) and
+  **Editor** (workbench surface); engine identifiers keep `workspace`.
