@@ -8,15 +8,10 @@ import { useTaskStore, titleFromIntent, RUNNING_TASK_STATES } from '../store/tas
 import { useActivityStore, currentActionLine } from '../store/activityStore.js';
 import { useGlowTasks } from './useGlow.js';
 import { Ic } from './home-icons.js';
+import { MODE_META, stateShort, stateTone } from './labels.js';
 import '../styles/home.css';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
-
-const MODE_LABELS: Array<{ id: 'ask' | 'edit' | 'auto'; label: string; hint: string }> = [
-  { id: 'ask', label: 'Read-only', hint: 'Answers questions; never writes or runs anything' },
-  { id: 'edit', label: 'Approve changes', hint: 'Plans first; every write/command asks you' },
-  { id: 'auto', label: 'Auto · pause on risk', hint: 'Low-risk actions run; risky ones ask' },
-];
 
 const ATTENTION_STATES = [
   'AWAITING_PERMISSION',
@@ -26,18 +21,11 @@ const ATTENTION_STATES = [
   'FAILED',
 ];
 
-const TASK_DOT: Record<string, string> = {
-  EXPLORING: 'run',
-  PLANNING: 'run',
-  IN_PROGRESS: 'run',
-  AWAITING_PERMISSION: 'warn',
-  AWAITING_PLAN_APPROVAL: 'warn',
-  VERIFYING: 'run',
-  REVIEW_READY: 'ok',
-  FAILED: 'err',
-  INTERRUPTED: 'warn',
-  CANCELLED: 'warn',
-};
+/** Sidebar dot class from the shared tone (PIVOT-023). */
+function dotClass(state: string): string {
+  const tone = stateTone(state);
+  return tone === 'idle' ? 'done' : tone;
+}
 
 function parseCustomCommand(raw: string): VerificationCommand | null {
   const parts = raw.trim().split(/\s+/);
@@ -321,22 +309,14 @@ export function HomeView(): React.JSX.Element {
     const attention = ATTENTION_STATES.includes(t.state);
     const activity = perTask[t.id];
     const action = currentActionLine(activity);
-    const chip =
-      t.state === 'FAILED' ? (
-        <span className="hm-stchip err">Failed</span>
-      ) : attention ? (
-        <span className="hm-stchip warn">
-          {t.state === 'AWAITING_PLAN_APPROVAL'
-            ? 'Plan approval'
-            : t.state === 'AWAITING_PERMISSION'
-              ? 'Permission'
-              : t.state === 'INTERRUPTED'
-                ? 'Interrupted'
-                : 'Review'}
-        </span>
-      ) : (
-        <span className="hm-stchip run">Running</span>
-      );
+    const chip = (
+      <span
+        className={`hm-stchip ${t.state === 'FAILED' ? 'err' : attention ? 'warn' : 'run'}`}
+        data-state={t.state}
+      >
+        {attention ? stateShort(t.state) : 'Running'}
+      </span>
+    );
     const button =
       t.state === 'AWAITING_PLAN_APPROVAL'
         ? 'Review plan'
@@ -355,7 +335,7 @@ export function HomeView(): React.JSX.Element {
       if (action.status === 'running')
         meta.unshift(<span key="d" className="hm-dot run" style={{ margin: 0 }} />);
     } else {
-      meta.push(<span key="s">{t.state}</span>);
+      meta.push(<span key="s">{stateShort(t.state)}</span>);
     }
     const touched = activity?.filesTouched.length ?? 0;
     if (touched > 0)
@@ -384,7 +364,7 @@ export function HomeView(): React.JSX.Element {
     );
   };
 
-  const activeModeHint = MODE_LABELS.find((m) => m.id === mode)?.hint;
+  const activeModeHint = MODE_META.find((m) => m.id === mode)?.hint;
 
   return (
     <div className="hm-root" data-testid="home-view">
@@ -468,10 +448,10 @@ export function HomeView(): React.JSX.Element {
             key={t.id}
             className={`hm-row ${glowTasks.has(t.id) ? 'glow-pulse' : ''}`}
             data-testid={`home-task-${t.id}`}
-            title={`${t.title} — ${t.state}`}
+            title={`${t.title} — ${stateShort(t.state)}`}
             onClick={() => openTask(t.id)}
           >
-            <span className={`hm-dot ${TASK_DOT[t.state] ?? 'done'}`} />
+            <span className={`hm-dot ${dotClass(t.state)}`} />
             <span className="hm-tt">{t.title}</span>
           </button>
         ))}
@@ -754,7 +734,7 @@ export function HomeView(): React.JSX.Element {
                 title={activeModeHint}
                 onChange={(e) => setMode(e.target.value as 'ask' | 'edit' | 'auto')}
               >
-                {MODE_LABELS.map((m) => (
+                {MODE_META.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.label}
                   </option>

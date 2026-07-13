@@ -5,6 +5,7 @@ import { useEditorStore } from '../store/editorStore.js';
 import { useAppStore } from '../store/appStore.js';
 import { rpcResult } from '../bridge.js';
 import { useGlowPaths } from './useGlow.js';
+import { Ic } from './home-icons.js';
 
 interface Row {
   path: string;
@@ -202,7 +203,7 @@ export function ExplorerView(): React.JSX.Element {
           onClick={() => setShowIgnored(!showIgnored)}
           style={{ opacity: showIgnored ? 1 : 0.6 }}
         >
-          👁
+          <Ic name="eye" size={13} />
         </button>
       </div>
       {editing && editing.parentDir === '' && editing.kind !== 'rename' ? (
@@ -272,7 +273,9 @@ export function ExplorerView(): React.JSX.Element {
                   <span style={{ width: 12, textAlign: 'center' }} aria-hidden>
                     {isDir ? (row.expanded ? '▾' : '▸') : ''}
                   </span>
-                  <span aria-hidden>{isDir ? '📁' : '📄'}</span>
+                  <span aria-hidden style={{ color: 'var(--fg-muted)', display: 'flex' }}>
+                    <Ic name={isDir ? 'folder' : 'file'} size={13} />
+                  </span>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.name}</span>
                 </div>
                 {editing &&

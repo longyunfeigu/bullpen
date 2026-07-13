@@ -44,7 +44,9 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
 
       // The charter carries everything into the run's opening message.
       await expect(page.getByTestId('home-view')).toHaveCount(0);
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
       const userCard = page.getByTestId('tl-user').first();
       await expect(userCard).toContainText('Constraints:');
       await expect(userCard).toContainText('Do not change public API signatures');
@@ -72,7 +74,7 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
       await page.getByTestId('surface-home').click();
       const needs = page.getByTestId('home-mc-needs');
       await expect(needs).toBeVisible();
-      await expect(needs).toContainText('Plan approval');
+      await expect(needs).toContainText('Plan ready');
       await expect(needs).toContainText('refactor utils');
       await expect(needs).toContainText('Proposed a plan'); // live activity line
 
@@ -81,7 +83,9 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
       await expect(page.getByTestId('home-view')).toHaveCount(0);
       await expect(page.getByTestId('plan-card')).toBeVisible();
       await page.getByTestId('plan-approve').click();
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
 
       // Review-ready tasks surface in Needs you and behind the Reviews badge.
       await page.getByTestId('surface-home').click();

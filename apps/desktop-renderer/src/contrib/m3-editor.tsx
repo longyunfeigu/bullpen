@@ -8,6 +8,7 @@ import {
 } from '../workbench/Workbench.js';
 import { ExplorerView } from '../views/ExplorerView.js';
 import { EditorArea } from '../workbench/EditorArea.js';
+import { Ic } from '../views/home-icons.js';
 import { registerCommands } from '../commands.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useEditorStore } from '../store/editorStore.js';
@@ -28,10 +29,10 @@ function WorkspaceChip(): React.JSX.Element | null {
   if (!workspace) return null;
   return (
     <span className="tb-chip" title={workspace.path} data-testid="workspace-chip">
-      📁 {workspace.displayName}
+      <Ic name="folder" size={12} /> {workspace.displayName}
       {workspace.trustState === 'untrusted' && workspace.hasPiProjectResources ? (
         <span className="text-warning" title="Project agent resources are not loaded (untrusted)">
-          ⛨
+          <Ic name="shield" size={11} />
         </span>
       ) : null}
     </span>

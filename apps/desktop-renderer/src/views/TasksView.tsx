@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTaskStore, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { useAppStore } from '../store/appStore.js';
+import { stateShort, stateTone, TONE_COLOR, modeLabel } from './labels.js';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -101,8 +102,10 @@ export function TasksView(): React.JSX.Element {
                 </span>
               </div>
               <div className="text-muted" style={{ fontSize: 11, display: 'flex', gap: 8 }}>
-                <span>{task.state}</span>
-                <span>{task.mode}</span>
+                <span style={{ color: TONE_COLOR[stateTone(task.state)] }} data-state={task.state}>
+                  {stateShort(task.state)}
+                </span>
+                <span>{modeLabel(task.mode)}</span>
                 <span>{new Date(task.updatedAt).toLocaleTimeString()}</span>
               </div>
             </button>

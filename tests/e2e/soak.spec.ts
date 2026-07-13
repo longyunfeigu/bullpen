@@ -61,11 +61,16 @@ test('soak: 50 consecutive tasks, one worker, zero restarts, clean exit', async 
       await page.getByTestId('home-mode').selectOption('auto');
       await page.getByTestId('home-intent').fill(`[scenario:edit-basic] soak run ${i}`);
       await page.getByTestId('home-submit').click();
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
       // Roll back so the next run patches a pristine file (and rollback itself
       // gets 50 reps).
       await page.getByTestId('report-rollback').click();
-      await expect(page.getByTestId('task-state')).toHaveText('ROLLED_BACK', { timeout: 15000 });
+      await page.getByTestId('report-rollback-confirm').click();
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'ROLLED_BACK', {
+        timeout: 15000,
+      });
 
       const worker = await diagWorker(page);
       expect(worker.restarts).toBe(0);

@@ -31,11 +31,13 @@ test.describe('M6 read-only agent with deterministic runtime', () => {
       // Timeline: user message → streaming → tool call → final agent message.
       await expect(page.getByTestId('tl-user')).toBeVisible({ timeout: 20000 });
       await expect(page.getByTestId('tl-tool-read_file')).toBeVisible({ timeout: 20000 });
-      await expect(page.getByTestId('tl-tool-read_file')).toContainText('SUCCEEDED');
+      await expect(page.getByTestId('tl-tool-read_file')).toHaveAttribute('data-state', 'SUCCEEDED');
       await expect(page.getByTestId('tl-agent').last()).toContainText('package.json', {
         timeout: 20000,
       });
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 20000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 20000,
+      });
       await expect(page.getByTestId('tl-report')).toBeVisible();
       // Usage recorded (MOD-001).
       await expect(page.getByTestId('tl-usage').last()).toContainText('tokens');
@@ -54,8 +56,10 @@ test.describe('M6 read-only agent with deterministic runtime', () => {
       // read_file succeeds; apply_patch must NOT execute (unknown/denied in ask catalog).
       await expect(page.getByTestId('tl-tool-apply_patch')).toBeVisible({ timeout: 20000 });
       const card = page.getByTestId('tl-tool-apply_patch');
-      await expect(card).not.toContainText('SUCCEEDED');
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 20000 });
+      await expect(card).not.toHaveAttribute('data-state', 'SUCCEEDED');
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 20000,
+      });
     } finally {
       await app.close();
     }
@@ -94,7 +98,9 @@ test.describe('M6 read-only agent with deterministic runtime', () => {
       process.kill(pid!, 'SIGKILL');
 
       await expect(page.getByTestId('tl-crash')).toBeVisible({ timeout: 20000 });
-      await expect(page.getByTestId('task-state')).toHaveText('INTERRUPTED', { timeout: 20000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'INTERRUPTED', {
+        timeout: 20000,
+      });
       // Window is still fully alive: open the palette.
       await page.getByTestId('palette-chip').click();
       await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
@@ -111,9 +117,13 @@ test.describe('M6 read-only agent with deterministic runtime', () => {
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
     });
     await createAskTask(first.page, '[scenario:ask-basic] describe the repo', 'History task');
-    await expect(first.page.getByTestId('task-state')).toHaveText('REVIEW_READY', {
-      timeout: 20000,
-    });
+    await expect(first.page.getByTestId('task-state')).toHaveAttribute(
+      'data-state',
+      'REVIEW_READY',
+      {
+        timeout: 20000,
+      },
+    );
     await first.app.close();
 
     const second = await launchApp({

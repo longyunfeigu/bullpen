@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import type { ChangeSetFileDto, ReviewHunkDto } from '@pi-ide/ipc-contracts';
 import { useTaskStore, activeTask } from '../store/taskStore.js';
 import { useEditorStore } from '../store/editorStore.js';
+import { ConfirmDangerButton } from './ui.js';
+import { stateLabel } from './labels.js';
 
 const STATUS_LABEL: Record<ChangeSetFileDto['status'], string> = {
   created: 'A',
@@ -252,7 +254,9 @@ export function ReviewView(): React.JSX.Element | null {
         position: 'fixed',
         inset: 0,
         zIndex: 60,
-        background: 'var(--bg)',
+        // Opaque surface: a transparent overlay let the workbench chrome and
+        // its empty states bleed through (PIVOT-024 collision fix).
+        background: 'var(--bg-editor)',
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -279,7 +283,7 @@ export function ReviewView(): React.JSX.Element | null {
         <span style={{ flex: 1 }} />
         {!canDecide ? (
           <span className="text-muted" style={{ fontSize: 12 }}>
-            Read-only: task is {task.state}
+            Read-only — {stateLabel(task.state)}
           </span>
         ) : null}
         <button
@@ -289,14 +293,6 @@ export function ReviewView(): React.JSX.Element | null {
           onClick={() => void store.acceptTask()}
         >
           Accept all changes
-        </button>
-        <button
-          className="btn danger"
-          data-testid="review-rollback"
-          disabled={!canDecide}
-          onClick={() => void store.rollbackTask()}
-        >
-          Roll back all
         </button>
         <button className="btn" data-testid="review-close" onClick={() => store.closeReview()}>
           Close
@@ -315,6 +311,29 @@ export function ReviewView(): React.JSX.Element | null {
         ) : (
           cs.files.map((file) => <FileSection key={file.path} file={file} />)
         )}
+      </div>
+      {/* Danger zone (ADR-0008 §3): rollback never sits beside Accept. */}
+      <div
+        style={{
+          borderTop: '1px solid var(--border)',
+          padding: '8px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <ConfirmDangerButton
+          label="Roll back everything…"
+          confirmLabel="Confirm — restore all files"
+          testid="review-rollback"
+          quiet
+          disabled={!canDecide}
+          title="Restore every touched file to its pre-task state"
+          onConfirm={() => void store.rollbackTask()}
+        />
+        <span className="text-muted" style={{ fontSize: 11 }}>
+          Restores every touched file to its pre-task state. Asks once more before running.
+        </span>
       </div>
     </div>
   );

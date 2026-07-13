@@ -41,7 +41,9 @@ test.describe('M9 verification, final report and rollback (E2E-016/017/018)', ()
       await expect(page.getByTestId('perm-risk')).toHaveText('R3');
       await page.getByTestId('perm-allow-once').click();
 
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
 
       // All four change kinds really happened on disk.
       expect(existsSync(join(fixture, 'rollback-note.txt'))).toBe(true);
@@ -54,8 +56,11 @@ test.describe('M9 verification, final report and rollback (E2E-016/017/018)', ()
       await page.getByTestId('review-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible();
       await page.getByTestId('review-rollback').click();
+      await page.getByTestId('review-rollback-confirm').click();
 
-      await expect(page.getByTestId('task-state')).toHaveText('ROLLED_BACK', { timeout: 20000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'ROLLED_BACK', {
+        timeout: 20000,
+      });
       await expect(page.getByTestId('tl-rolledback')).toBeVisible();
 
       // Byte-exact restoration (CHG-009/012).
@@ -82,7 +87,9 @@ test.describe('M9 verification, final report and rollback (E2E-016/017/018)', ()
       // First run fails, second passes — both cards stay in the timeline (VER-005).
       await expect(page.getByTestId('tl-verification-failed')).toBeVisible({ timeout: 30000 });
       await expect(page.getByTestId('tl-verification-passed')).toBeVisible({ timeout: 30000 });
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
 
       // The fix really landed.
       expect(readFileSync(join(fixture, 'check-target.txt'), 'utf8').trim()).toBe('RIGHT');
@@ -109,17 +116,23 @@ test.describe('M9 verification, final report and rollback (E2E-016/017/018)', ()
       });
 
       await createTask(page, '[scenario:edit-basic] small fix', 'auto', 'Unverified accept');
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
 
       // The report clearly flags the missing verification (VER-007).
       await expect(page.getByTestId('report-unverified')).toBeVisible();
-      await expect(page.getByTestId('report-unverified')).toContainText('UNVERIFIED_BY_USER');
+      await expect(page.getByTestId('report-unverified')).toContainText(
+        'no verification commands were run',
+      );
 
       await page.getByTestId('review-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible();
       await page.getByTestId('review-accept-all').click();
 
-      await expect(page.getByTestId('task-state')).toHaveText('ACCEPTED', { timeout: 20000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'ACCEPTED', {
+        timeout: 20000,
+      });
       expect(dialogMessages.some((m) => m.includes('No verification was run'))).toBe(true);
     } finally {
       await app.close();

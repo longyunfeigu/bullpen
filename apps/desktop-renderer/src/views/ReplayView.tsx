@@ -3,24 +3,26 @@ import type { ActivityItem } from '@pi-ide/ipc-contracts';
 import { rpcResult } from '../bridge.js';
 import { useTaskStore, activeTask } from '../store/taskStore.js';
 import { PathChips } from './PathLinks.js';
+import { Ic } from './home-icons.js';
 
+/** Ic icon per activity kind (PIVOT-023: no emoji in chrome). */
 const KIND_ICON: Record<string, string> = {
-  message: '💬',
-  question: '❓',
-  answer: '🗣',
-  plan: '🗺',
-  'plan-decision': '✅',
-  read: '📄',
-  search: '🔎',
-  command: '⌨️',
-  write: '✏️',
-  permission: '🛡️',
-  verification: '🧪',
-  review: '👀',
-  state: '·',
-  report: '📋',
-  system: '⚙️',
-  user: '🧑',
+  message: 'bot',
+  question: 'help',
+  answer: 'user',
+  plan: 'map',
+  'plan-decision': 'check',
+  read: 'file',
+  search: 'search',
+  command: 'terminal',
+  write: 'pencil',
+  permission: 'shield',
+  verification: 'checkCircle',
+  review: 'eye',
+  state: 'info',
+  report: 'clipboard',
+  system: 'sliders',
+  user: 'user',
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -243,7 +245,7 @@ export function ReplayView(): React.JSX.Element | null {
                 aria-label={playing ? 'Pause' : 'Play'}
                 onClick={() => setPlaying(!playing)}
               >
-                {playing ? '⏸' : '▶'}
+                <Ic name={playing ? 'pause' : 'play'} size={13} />
               </button>
               <button
                 className="btn"
@@ -296,7 +298,9 @@ export function ReplayView(): React.JSX.Element | null {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span aria-hidden>{KIND_ICON[current.kind] ?? '·'}</span>
+                  <span aria-hidden style={{ color: 'var(--fg-muted)', display: 'flex' }}>
+                    <Ic name={KIND_ICON[current.kind] ?? 'info'} size={13} />
+                  </span>
                   <span style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{current.label}</span>
                   <span
                     className="text-muted"

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
+import { Ic } from './home-icons.js';
 
 type Tool = 'arrow' | 'rect' | 'mosaic';
 
@@ -298,7 +299,7 @@ export function ImageView(props: { path: string }): React.JSX.Element {
             data-testid="annotate-open"
             onClick={() => setAnnotating(true)}
           >
-            ✏️ Annotate
+            <Ic name="pencil" size={13} /> Annotate
           </button>
         ) : null}
       </div>

@@ -25,7 +25,9 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
       await page.getByTestId('home-mode').selectOption('auto');
       await page.getByTestId('home-intent').fill('[scenario:edit-hunks] task B in parallel');
       await page.getByTestId('home-submit').click();
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
 
       // Mission control: B needs review, A still running.
       await page.getByTestId('surface-home').click();
@@ -36,7 +38,9 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
       await page.getByTestId('home-mc-running').locator('button.hm-tcard').first().click();
       await expect(page.getByTestId('q-card')).toBeVisible();
       await page.getByTestId('q-option-0').click();
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
     } finally {
       await app.close();
     }
@@ -58,7 +62,9 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
       await expect(page.getByTestId('tree-item-src')).toHaveClass(/glow-pulse/, {
         timeout: 15000,
       });
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
 
       // Replay (PIVOT-017): action-centric scrubber over the recorded log.
       await page.getByTestId('replay-open').click();

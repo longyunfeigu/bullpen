@@ -35,7 +35,10 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
 
       // Plan approval gate (AG-007): the run pauses until the user approves.
       await expect(page.getByTestId('plan-card')).toBeVisible({ timeout: 20000 });
-      await expect(page.getByTestId('task-state')).toHaveText('AWAITING_PLAN_APPROVAL');
+      await expect(page.getByTestId('task-state')).toHaveAttribute(
+        'data-state',
+        'AWAITING_PLAN_APPROVAL',
+      );
       await page.getByTestId('plan-approve').click();
 
       // First write asks for permission with a real diff preview (PERM-004).
@@ -55,7 +58,9 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
       await expect(page.getByTestId('perm-card')).toContainText('npm test');
       await page.getByTestId('perm-allow-once').click();
 
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
 
       // ≥3 files really changed on disk.
       expect(readFileSync(join(fixture, 'src/index.ts'), 'utf8')).toContain('add(3, 4)');
@@ -69,7 +74,9 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
       await expect(page.getByTestId('review-file-src/util.ts')).toBeVisible();
       await expect(page.getByTestId('review-file-src/created-by-agent.ts')).toBeVisible();
       await page.getByTestId('review-accept-all').click();
-      await expect(page.getByTestId('task-state')).toHaveText('ACCEPTED', { timeout: 20000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'ACCEPTED', {
+        timeout: 20000,
+      });
       await expect(page.getByTestId('tl-accepted')).toBeVisible();
     } finally {
       await app.close();
@@ -98,7 +105,9 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
       await expect(
         page.getByTestId('tl-agent').filter({ hasText: 'REWRITE the util module carefully' }),
       ).toHaveCount(1, { timeout: 20000 });
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 20000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 20000,
+      });
 
       // The original proposal remains in the timeline (history not overwritten):
       // the static card still shows plan v1; expanding reveals the original step.
@@ -150,7 +159,9 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
       });
 
       // The agent re-reads and retries; both the user's line and the change survive.
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
       const content = readFileSync(join(fixture, 'src/index.ts'), 'utf8');
       expect(content).toContain('// keep me');
       expect(content).toContain('add(3, 4)');
@@ -166,7 +177,9 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
     });
     try {
       await createTask(page, '[scenario:edit-hunks] two-block change', 'auto', 'Hunks');
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
 
       await page.getByTestId('review-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible();

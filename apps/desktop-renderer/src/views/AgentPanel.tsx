@@ -13,6 +13,9 @@ import { NewTaskDialog } from './NewTaskDialog.js';
 import { ReviewView } from './ReviewView.js';
 import { ReplayView } from './ReplayView.js';
 import { PathChips } from './PathLinks.js';
+import { Ic } from './home-icons.js';
+import { ConfirmDangerButton } from './ui.js';
+import { modeLabel, stateLabel, stateTone, TONE_COLOR, toolStateWord, toolVerb } from './labels.js';
 
 const RISK_COLORS: Record<string, string> = {
   R0: 'var(--fg-muted)',
@@ -40,7 +43,7 @@ function PermissionCard(props: {
     const allowed = resolution.outcome === 'allowed';
     return (
       <Card
-        icon={allowed ? '✅' : resolution.outcome === 'denied' ? '🚫' : '⌛'}
+        icon={allowed ? 'checkCircle' : resolution.outcome === 'denied' ? 'ban' : 'clock'}
         title={`Permission ${resolution.outcome}${resolution.scope ? ` (${resolution.scope})` : ''} — ${card.toolName}`}
         tone={allowed ? 'success' : 'warning'}
         testid="perm-card-resolved"
@@ -65,7 +68,12 @@ function PermissionCard(props: {
   };
 
   return (
-    <Card icon="🛡" title={`Permission needed — ${card.toolName}`} tone="warning" testid="perm-card">
+    <Card
+      icon="shield"
+      title={`Permission needed — ${card.toolName}`}
+      tone="warning"
+      testid="perm-card"
+    >
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
         <span
           style={{
@@ -202,7 +210,7 @@ function PlanCard(props: { plan: TaskPlanDto; open: boolean }): React.JSX.Elemen
     return (
       <Card
         key="plan-static"
-        icon="🗺"
+        icon="map"
         title={`Plan v${plan.version} — ${plan.summary.slice(0, 80)}`}
         testid="plan-card-static"
         collapsible
@@ -259,7 +267,7 @@ function PlanCard(props: { plan: TaskPlanDto; open: boolean }): React.JSX.Elemen
   return (
     <Card
       key="plan-interactive"
-      icon="🗺"
+      icon="map"
       title={`Plan proposed (v${plan.version}) — approval needed`}
       tone="warning"
       testid="plan-card"
@@ -344,23 +352,27 @@ function PlanCard(props: { plan: TaskPlanDto; open: boolean }): React.JSX.Elemen
           ＋ Add step
         </button>
       ) : null}
-      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+      <div
+        style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}
+      >
         <button className="btn primary" data-testid="plan-approve" onClick={approve}>
           Approve plan
         </button>
         <button className="btn" data-testid="plan-edit-toggle" onClick={() => setEditing(!editing)}>
           {editing ? 'Preview' : 'Edit plan'}
         </button>
+        <span style={{ flex: 1 }} />
         <button
-          className="btn danger"
+          className="btn quiet-danger"
           data-testid="plan-reject"
+          title="Rejecting the plan cancels this task"
           onClick={() => {
             if (window.confirm('Reject the plan? The task will be cancelled.')) {
               void store.decidePlan({ decision: 'reject' });
             }
           }}
         >
-          Reject (cancels task)
+          Cancel task…
         </button>
       </div>
     </Card>
@@ -374,7 +386,7 @@ function ConflictCard(props: { payload: Record<string, unknown> }): React.JSX.El
   const path = typeof input.path === 'string' ? input.path : null;
   return (
     <Card
-      icon="⚠️"
+      icon="alert"
       title={`Version conflict — ${path ?? 'file'}`}
       tone="danger"
       testid="tl-conflict"
@@ -405,13 +417,13 @@ function QuestionCard(props: { prompt: AskUserPromptDto; answered: boolean }): R
   const { prompt, answered } = props;
   if (answered) {
     return (
-      <Card icon="❓" title="Question (answered)" testid="q-card-answered" collapsible>
+      <Card icon="help" title="Question (answered)" testid="q-card-answered" collapsible>
         <div className="text-muted">{prompt.question}</div>
       </Card>
     );
   }
   return (
-    <Card icon="❓" title="The agent has a question" tone="warning" testid="q-card">
+    <Card icon="help" title="The agent has a question" tone="warning" testid="q-card">
       <div style={{ marginBottom: 6, whiteSpace: 'pre-wrap' }}>{prompt.question}</div>
       {prompt.options.length > 0 ? (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
@@ -462,39 +474,37 @@ function QuestionCard(props: { prompt: AskUserPromptDto; answered: boolean }): R
   );
 }
 
+/** Human state chip (PIVOT-023). Tests assert the machine state via data-state. */
 function StateBadge({ state }: { state: string }): React.JSX.Element {
-  const color =
-    state === 'AWAITING_PERMISSION' || state === 'REVIEW_READY'
-      ? 'var(--warning)'
-      : RUNNING_TASK_STATES.has(state)
-        ? 'var(--info)'
-        : state === 'ACCEPTED'
-          ? 'var(--success)'
-          : state === 'FAILED'
-            ? 'var(--danger)'
-            : 'var(--fg-muted)';
+  const color = TONE_COLOR[stateTone(state)];
   return (
     <span
       data-testid="task-state"
+      data-state={state}
+      title={stateLabel(state)}
       style={{
         border: `1px solid ${color}`,
         color,
-        borderRadius: 4,
-        padding: '1px 8px',
+        borderRadius: 999,
+        padding: '1px 9px',
         fontSize: 11,
+        fontWeight: 600,
         whiteSpace: 'nowrap',
       }}
     >
-      {state}
+      {stateLabel(state)}
     </span>
   );
 }
 
 function Card(props: {
+  /** Ic icon name (PIVOT-023: no emoji in chrome/cards). */
   icon: string;
   title: string;
   tone?: 'default' | 'danger' | 'warning' | 'success';
   testid?: string;
+  /** Machine-readable state for tests — the visible copy stays humane. */
+  dataState?: string;
   children?: React.ReactNode;
   collapsible?: boolean;
 }): React.JSX.Element {
@@ -516,6 +526,7 @@ function Card(props: {
   return (
     <div
       data-testid={props.testid}
+      {...(props.dataState ? { 'data-state': props.dataState } : {})}
       style={{
         border: `1px solid ${border}`,
         borderRadius: 8,
@@ -540,7 +551,9 @@ function Card(props: {
           textAlign: 'left',
         }}
       >
-        <span aria-hidden>{props.icon}</span>
+        <span aria-hidden style={{ color: 'var(--fg-muted)', display: 'flex' }}>
+          <Ic name={props.icon} size={14} />
+        </span>
         <span style={{ flex: 1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {props.title}
         </span>
@@ -580,22 +593,22 @@ function TimelineCard({
       const delta = (payload.delta ?? []) as Array<{ id: string; from: string; to: string }>;
       return (
         <div
-          className="text-muted"
+          className="text-muted tl-note"
           style={{ padding: '0 14px', fontSize: 11 }}
           data-testid="tl-plan-updated"
         >
-          🗺 plan updated: {delta.map((d) => `${d.id} → ${d.to}`).join(', ') || 'no changes'}
+          Plan updated: {delta.map((d) => `${d.id} → ${d.to}`).join(', ') || 'no changes'}
         </div>
       );
     }
     case 'user.planEdited':
       return (
         <div
-          className="text-muted"
+          className="text-muted tl-note"
           style={{ padding: '0 14px', fontSize: 11 }}
           data-testid="tl-plan-edited"
         >
-          ✏️ You edited the plan (v
+          You edited the plan (v
           {String((payload.plan as TaskPlanDto | undefined)?.version ?? '?')})
         </div>
       );
@@ -611,25 +624,25 @@ function TimelineCard({
           data-testid="tl-plan-decision"
         >
           {approved
-            ? `✔ Plan approved${payload.auto === true ? ' automatically (auto mode)' : ''}${payload.edited === true ? ' with edits' : ''}`
-            : '✘ Plan rejected — task cancelled'}
+            ? `✓ Plan approved${payload.auto === true ? ' automatically (auto mode)' : ''}${payload.edited === true ? ' with edits' : ''}`
+            : '✕ Plan rejected — task cancelled'}
         </div>
       );
     }
     case 'review.decision':
       return (
         <div
-          className="text-muted"
+          className="text-muted tl-note"
           style={{ padding: '0 14px', fontSize: 11 }}
           data-testid="tl-review-decision"
         >
-          🔍 review: {String(payload.decision)} {String(payload.scope)}{' '}
+          Review: {String(payload.decision)} {String(payload.scope)}{' '}
           <span className="mono">{String(payload.path)}</span>
         </div>
       );
     case 'task.accepted':
       return (
-        <Card icon="✅" title="Changes accepted" tone="success" testid="tl-accepted">
+        <Card icon="checkCircle" title="Changes accepted" tone="success" testid="tl-accepted">
           The task's changes were accepted into the workspace. Committing to git is a separate,
           manual action.
         </Card>
@@ -651,13 +664,13 @@ function TimelineCard({
     }
     case 'user.message':
       return (
-        <Card icon="🧑" title="You" testid="tl-user">
+        <Card icon="user" title="You" testid="tl-user">
           <div style={{ whiteSpace: 'pre-wrap' }}>{String(payload.text ?? '')}</div>
         </Card>
       );
     case 'agent.message':
       return (
-        <Card icon="🤖" title="Agent" testid="tl-agent">
+        <Card icon="bot" title="Agent" testid="tl-agent">
           <div style={{ whiteSpace: 'pre-wrap' }}>{String(payload.text ?? '')}</div>
         </Card>
       );
@@ -672,12 +685,14 @@ function TimelineCard({
       if (state === 'FAILED' && String(payload.summary ?? '') === 'CHG_VERSION_CONFLICT') {
         return <ConflictCard payload={payload} />;
       }
+      const stateWord = denied ? 'denied' : toolStateWord(state);
       return (
         <Card
-          icon={denied ? '⛔' : !terminal ? '⏳' : ok ? '🔧' : '⚠️'}
-          title={`${String(payload.name)} — ${state}`}
+          icon={denied ? 'ban' : !terminal ? 'clock' : ok ? 'wrench' : 'alert'}
+          title={`${toolVerb(String(payload.name))}${stateWord ? ` — ${stateWord}` : ''}`}
           tone={denied ? 'warning' : !terminal || ok ? 'default' : 'danger'}
           testid={`tl-tool-${String(payload.name)}`}
+          dataState={state}
           collapsible
         >
           <div className="text-muted">{String(payload.summary ?? '')}</div>
@@ -701,26 +716,33 @@ function TimelineCard({
         { inputTokens?: number; outputTokens?: number; costUsd?: number | null } | undefined;
       return (
         <div
-          className="text-muted"
+          className="text-muted tl-note"
           style={{ padding: '0 14px', fontSize: 11 }}
           data-testid="tl-usage"
         >
-          tokens: {usage?.inputTokens ?? '?'} in / {usage?.outputTokens ?? '?'} out
+          {usage?.inputTokens ?? '?'} in · {usage?.outputTokens ?? '?'} out tokens
           {usage?.costUsd != null ? ` · $${usage.costUsd.toFixed(4)}` : ''}
         </div>
       );
     }
-    case 'task.stateChanged':
+    case 'task.stateChanged': {
+      // Milestone row (PIVOT-023): plain language, machine state on data-state.
+      const to = String(payload.to);
       return (
-        <div className="text-muted" style={{ padding: '0 14px', fontSize: 11 }}>
-          → {String(payload.to)}
+        <div
+          className="text-muted tl-milestone"
+          data-state={to}
+          style={{ padding: '2px 14px', fontSize: 11, fontWeight: 600 }}
+        >
+          {stateLabel(to)}
         </div>
       );
+    }
     case 'run.failed': {
       const error = payload.error as { userMessage?: string; code?: string } | undefined;
       return (
         <Card
-          icon="✖"
+          icon="xCircle"
           title={`Run failed (${error?.code ?? 'unknown'})`}
           tone="danger"
           testid="tl-failed"
@@ -731,14 +753,14 @@ function TimelineCard({
     }
     case 'run.aborted':
       return (
-        <Card icon="⏹" title="Stopped" tone="warning" testid="tl-aborted">
+        <Card icon="square" title="Stopped" tone="warning" testid="tl-aborted">
           The run was stopped ({String(payload.reason)}). Nothing was rolled back automatically.
         </Card>
       );
     case 'verification.started':
       return (
-        <div className="text-muted" style={{ padding: '0 14px', fontSize: 11 }}>
-          ▶ verification started: {String(payload.label)}
+        <div className="text-muted tl-note" style={{ padding: '0 14px', fontSize: 11 }}>
+          Verification started: {String(payload.label)}
         </div>
       );
     case 'verification.completed': {
@@ -751,7 +773,7 @@ function TimelineCard({
       const passed = run.state === 'passed';
       return (
         <Card
-          icon={passed ? '✅' : '❌'}
+          icon={passed ? 'checkCircle' : 'xCircle'}
           title={`Verification "${run.label}" — ${run.state}${run.exitCode !== null ? ` (exit ${run.exitCode})` : ''}`}
           tone={passed ? 'success' : 'danger'}
           testid={`tl-verification-${run.state}`}
@@ -770,7 +792,7 @@ function TimelineCard({
       const conflicts = (payload.conflicts ?? []) as Array<{ path: string; reason: string }>;
       return (
         <Card
-          icon="🛑"
+          icon="ban"
           title="Rollback blocked by conflicts"
           tone="warning"
           testid="tl-rollback-blocked"
@@ -785,7 +807,7 @@ function TimelineCard({
     }
     case 'task.rolledBack':
       return (
-        <Card icon="↩️" title="Rolled back" tone="warning" testid="tl-rolledback">
+        <Card icon="undo" title="Rolled back" tone="warning" testid="tl-rolledback">
           {String((payload.restored as string[] | undefined)?.length ?? 0)} file(s) restored to
           their pre-task state.
         </Card>
@@ -806,7 +828,7 @@ function TimelineCard({
       const risks = (payload.unresolvedRisks ?? []) as string[];
       return (
         <Card
-          icon="📋"
+          icon="clipboard"
           title="Final report"
           tone={unverified || (verification?.failed ?? 0) > 0 ? 'warning' : 'success'}
           testid="tl-report"
@@ -844,7 +866,7 @@ function TimelineCard({
           ) : null}
           {unverified ? (
             <div className="text-warning" data-testid="report-unverified">
-              Unverified — no verification commands were run (UNVERIFIED_BY_USER).
+              Unverified — no verification commands were run.
             </div>
           ) : null}
           {risks.length > 0 ? (
@@ -865,7 +887,15 @@ function TimelineCard({
             agent. Check the Problems panel for live diagnostics before accepting.
           </div>
           {context.taskState === 'REVIEW_READY' ? (
-            <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: 6,
+                marginTop: 6,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+              }}
+            >
               <button
                 className="btn primary"
                 data-testid="report-review-open"
@@ -873,13 +903,15 @@ function TimelineCard({
               >
                 Review changes
               </button>
-              <button
-                className="btn danger"
-                data-testid="report-rollback"
-                onClick={() => void useTaskStore.getState().rollbackTask()}
-              >
-                Roll back all
-              </button>
+              <span style={{ flex: 1 }} />
+              <ConfirmDangerButton
+                label="Roll back all…"
+                confirmLabel="Confirm — roll back all"
+                testid="report-rollback"
+                quiet
+                title="Restore every touched file to its pre-task state"
+                onConfirm={() => void useTaskStore.getState().rollbackTask()}
+              />
             </div>
           ) : null}
         </Card>
@@ -887,20 +919,20 @@ function TimelineCard({
     }
     case 'system.workerCrashed':
       return (
-        <Card icon="💥" title="Agent worker crashed" tone="danger" testid="tl-crash">
+        <Card icon="zap" title="Agent worker crashed" tone="danger" testid="tl-crash">
           {String(payload.note ?? '')}
         </Card>
       );
     case 'system.interruptedByRestart':
       return (
-        <Card icon="🔁" title="Interrupted by restart" tone="warning" testid="tl-restart">
+        <Card icon="refresh" title="Interrupted by restart" tone="warning" testid="tl-restart">
           {String(payload.note ?? '')}
         </Card>
       );
     case 'system.diagnostic':
       return (
-        <div className="text-muted" style={{ padding: '0 14px', fontSize: 11 }}>
-          ⓘ {String(payload.detail ?? payload.code)}
+        <div className="text-muted tl-note" style={{ padding: '0 14px', fontSize: 11 }}>
+          {String(payload.detail ?? payload.code)}
         </div>
       );
     case 'task.created':
@@ -1003,7 +1035,7 @@ export function AgentPanel(): React.JSX.Element {
                 data-testid="review-open"
                 onClick={() => void store.openReview()}
               >
-                🔍 Review
+                Review
               </button>
             ) : null}
             {task.state === 'INTERRUPTED' || task.state === 'FAILED' ? (
@@ -1015,7 +1047,7 @@ export function AgentPanel(): React.JSX.Element {
                   title="Start a new run for this task"
                   onClick={() => void store.resumeTask()}
                 >
-                  ▶ Resume
+                  Resume
                 </button>
                 <button
                   className="btn"
@@ -1023,16 +1055,16 @@ export function AgentPanel(): React.JSX.Element {
                   title="Inspect what changed before deciding"
                   onClick={() => void store.openReview()}
                 >
-                  🔍 Review
+                  Review
                 </button>
-                <button
-                  className="btn danger"
-                  data-testid="task-rollback"
+                <ConfirmDangerButton
+                  label="Roll back…"
+                  confirmLabel="Confirm — roll back"
+                  testid="task-rollback"
+                  quiet
                   title="Restore every touched file to its pre-task state"
-                  onClick={() => void store.rollbackTask()}
-                >
-                  Roll back
-                </button>
+                  onConfirm={() => void store.rollbackTask()}
+                />
               </>
             ) : null}
             <button
@@ -1041,7 +1073,7 @@ export function AgentPanel(): React.JSX.Element {
               title="Replay what the agent did, step by step"
               onClick={() => store.openReplay()}
             >
-              ⏵ Replay
+              Replay
             </button>
             {running ? (
               <button
@@ -1049,7 +1081,7 @@ export function AgentPanel(): React.JSX.Element {
                 data-testid="agent-stop"
                 onClick={() => void store.stop()}
               >
-                ⏹ Stop
+                Stop
               </button>
             ) : null}
           </>
@@ -1063,7 +1095,7 @@ export function AgentPanel(): React.JSX.Element {
           data-testid="new-task-btn"
           onClick={() => store.setNewTaskOpen(true)}
         >
-          ＋ Task
+          + Task
         </button>
       </div>
 
@@ -1072,7 +1104,7 @@ export function AgentPanel(): React.JSX.Element {
           className="text-muted"
           style={{ padding: '4px 10px', fontSize: 11, borderBottom: '1px solid var(--border)' }}
         >
-          {task.mode.toUpperCase()} · {task.model.providerId}/{task.model.modelId}
+          {modeLabel(task.mode)} · {task.model.providerId}/{task.model.modelId}
         </div>
       ) : null}
 
@@ -1099,7 +1131,7 @@ export function AgentPanel(): React.JSX.Element {
               />
             ))}
             {store.streaming ? (
-              <Card icon="🤖" title="Agent (streaming…)" testid="tl-streaming">
+              <Card icon="bot" title="Agent (streaming…)" testid="tl-streaming">
                 <div style={{ whiteSpace: 'pre-wrap' }}>{store.streaming.text}</div>
               </Card>
             ) : null}

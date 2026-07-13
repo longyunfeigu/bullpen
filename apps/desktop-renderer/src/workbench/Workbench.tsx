@@ -7,13 +7,14 @@ import { CommandPalette } from './CommandPalette.js';
 import { WelcomeView } from '../views/WelcomeView.js';
 import { SettingsView } from '../views/SettingsView.js';
 import { DiagnosticsView } from '../views/DiagnosticsView.js';
+import { Ic } from '../views/home-icons.js';
 import type { BottomTab, SideBarView } from '@pi-ide/ipc-contracts';
 
 const SIDEBAR_VIEWS: Array<{ id: SideBarView; icon: string; label: string }> = [
-  { id: 'explorer', icon: '🗂', label: 'Explorer' },
-  { id: 'search', icon: '🔎', label: 'Search' },
-  { id: 'scm', icon: '⎇', label: 'Source Control' },
-  { id: 'tasks', icon: '🤖', label: 'Tasks' },
+  { id: 'explorer', icon: 'folder', label: 'Explorer' },
+  { id: 'search', icon: 'search', label: 'Search' },
+  { id: 'scm', icon: 'branch', label: 'Source Control' },
+  { id: 'tasks', icon: 'bot', label: 'Tasks' },
 ];
 
 const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
@@ -229,7 +230,7 @@ export function Workbench(): React.JSX.Element {
           title="Back to the task launcher"
           onClick={() => useAppStore.getState().setSurface('home')}
         >
-          ⌂ Home
+          <Ic name="home" size={12} /> Home
         </button>
         {titleBarRegistry.center.map((C, i) => (
           <C key={i} />
@@ -261,7 +262,7 @@ export function Workbench(): React.JSX.Element {
                 }
               }}
             >
-              <span aria-hidden>{v.icon}</span>
+              <Ic name={v.icon} size={19} strokeWidth={1.5} />
             </button>
           ))}
           <span className="ab-spacer" />
@@ -272,7 +273,7 @@ export function Workbench(): React.JSX.Element {
             data-testid="activity-settings"
             onClick={() => setOverlay('settings')}
           >
-            ⚙︎
+            <Ic name="sliders" size={19} strokeWidth={1.5} />
           </button>
         </nav>
 

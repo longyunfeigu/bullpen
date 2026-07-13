@@ -100,7 +100,7 @@ test.describe('M10 — crash recovery, reliability, diagnostics', () => {
       await expect(needs).toContainText('Crash victim');
       await needs.locator('button.hm-tcard').first().click();
 
-      await expect(page.getByTestId('task-state')).toHaveText('INTERRUPTED');
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'INTERRUPTED');
       await expect(page.getByTestId('tl-restart')).toBeVisible();
       // The pending permission died with the process — it must NOT resurrect
       // and NOTHING may execute on restart (REL-002: no tool replay).
@@ -112,7 +112,10 @@ test.describe('M10 — crash recovery, reliability, diagnostics', () => {
       // Recovery paths are one click away; roll back restores byte-exact.
       await expect(page.getByTestId('task-resume')).toBeVisible();
       await page.getByTestId('task-rollback').click();
-      await expect(page.getByTestId('task-state')).toHaveText('ROLLED_BACK', { timeout: 15000 });
+      await page.getByTestId('task-rollback-confirm').click();
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'ROLLED_BACK', {
+        timeout: 15000,
+      });
       expect(readFileSync(join(fixture, 'src/index.ts'), 'utf8')).toContain('add(2, 3)');
       expect(readFileSync(join(fixture, 'src/index.ts'), 'utf8')).not.toContain('add(3, 4)');
     } finally {
@@ -195,7 +198,9 @@ test.describe('M10 — crash recovery, reliability, diagnostics', () => {
         .getByTestId('home-intent')
         .fill('[scenario:edit-basic] SECRET-PROMPT-MARKER do a thing');
       await page.getByTestId('home-submit').click();
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
 
       // Export from Diagnostics (command palette route).
       await page.getByTestId('palette-chip').click();

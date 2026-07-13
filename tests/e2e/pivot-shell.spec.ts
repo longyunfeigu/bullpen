@@ -61,7 +61,9 @@ test.describe('Dual-form shell pivot (ADR-0004, PIVOT-001..010)', () => {
       await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('home-view')).toHaveCount(0);
       await expect(page.getByTestId('agent-panel-main')).toBeVisible();
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 30000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
       await expect(page.getByTestId('tl-report')).toBeVisible();
 
       // PIVOT-007: back on Home, the task shows up in recent tasks.

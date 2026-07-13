@@ -22,6 +22,7 @@ import {
 import { onEvent, rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { useEditorStore } from '../store/editorStore.js';
+import { Ic } from '../views/home-icons.js';
 
 function ProblemsStatusItem(): React.JSX.Element {
   const problems = useProblems();
@@ -31,10 +32,11 @@ function ProblemsStatusItem(): React.JSX.Element {
     <button
       className="sb-item"
       data-testid="status-problems"
-      title="Show problems"
+      title={`${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'} — show problems`}
+      aria-label={`${errors} errors, ${warnings} warnings`}
       onClick={() => showBottomTab('problems')}
     >
-      ✖ {errors} ▲ {warnings}
+      <Ic name="xCircle" size={11} /> {errors} <Ic name="alert" size={11} /> {warnings}
     </button>
   );
 }

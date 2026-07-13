@@ -425,6 +425,16 @@
   border-color: var(--danger);
   color: #fff;
 }
+/* Quiet destructive entry (ADR-0008 §3): text-level until armed. */
+.btn.quiet-danger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-muted);
+}
+.btn.quiet-danger:hover {
+  color: var(--danger);
+  background: transparent;
+}
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

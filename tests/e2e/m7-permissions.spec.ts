@@ -31,7 +31,10 @@ test.describe('M7 permission engine (PERM-001..010, §13.3)', () => {
       // The approval card appears; task is AWAITING_PERMISSION.
       await expect(page.getByTestId('perm-card')).toBeVisible({ timeout: 20000 });
       await expect(page.getByTestId('perm-risk')).toHaveText('R3');
-      await expect(page.getByTestId('task-state')).toHaveText('AWAITING_PERMISSION');
+      await expect(page.getByTestId('task-state')).toHaveAttribute(
+        'data-state',
+        'AWAITING_PERMISSION',
+      );
       // R3 offers no persistent grant (PERM-003): only "allow once" is present.
       await expect(page.getByTestId('perm-allow-task')).toHaveCount(0);
       await expect(page.getByTestId('perm-allow-workspace')).toHaveCount(0);
@@ -40,11 +43,13 @@ test.describe('M7 permission engine (PERM-001..010, §13.3)', () => {
       await page.getByTestId('perm-deny').click();
 
       // The tool call is DENIED and the run continues to a final message + REVIEW_READY.
-      await expect(page.getByTestId('tl-tool-run_command')).toContainText('DENIED', {
+      await expect(page.getByTestId('tl-tool-run_command')).toHaveAttribute('data-state', 'DENIED', {
         timeout: 20000,
       });
       await expect(page.getByTestId('tl-agent').last()).toContainText('vendor', { timeout: 20000 });
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 20000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 20000,
+      });
 
       // No node_modules/left-pad was created — the command never started.
       expect(existsSync(join(fixture, 'node_modules', 'left-pad'))).toBe(false);
@@ -62,14 +67,16 @@ test.describe('M7 permission engine (PERM-001..010, §13.3)', () => {
       await createTask(page, '[scenario:command-highrisk] do privileged things', 'edit', 'Danger');
 
       // No approval card is ever shown for R4 — the product refuses outright.
-      await expect(page.getByTestId('tl-tool-run_command').first()).toContainText('DENIED', {
+      await expect(page.getByTestId('tl-tool-run_command').first()).toHaveAttribute('data-state', 'DENIED', {
         timeout: 20000,
       });
       await expect(page.getByTestId('perm-card')).toHaveCount(0);
       await expect(page.getByTestId('tl-agent').last()).toContainText('refused', {
         timeout: 20000,
       });
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 20000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 20000,
+      });
     } finally {
       await app.close();
     }
@@ -90,10 +97,12 @@ test.describe('M7 permission engine (PERM-001..010, §13.3)', () => {
       );
       await expect(page.getByTestId('perm-card')).toBeVisible({ timeout: 20000 });
       await page.getByTestId('perm-allow-once').click();
-      await expect(page.getByTestId('tl-tool-run_command')).toContainText('SUCCEEDED', {
+      await expect(page.getByTestId('tl-tool-run_command')).toHaveAttribute('data-state', 'SUCCEEDED', {
         timeout: 20000,
       });
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 20000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 20000,
+      });
     } finally {
       await app.close();
     }
@@ -111,7 +120,9 @@ test.describe('M7 permission engine (PERM-001..010, §13.3)', () => {
       await expect(page.getByTestId('tl-agent').last()).toContainText('proceeding', {
         timeout: 20000,
       });
-      await expect(page.getByTestId('task-state')).toHaveText('REVIEW_READY', { timeout: 20000 });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 20000,
+      });
     } finally {
       await app.close();
     }
