@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useEditorStore } from '../store/editorStore.js';
 import { useAppStore } from '../store/appStore.js';
 import { rpcResult } from '../bridge.js';
+import { useGlowPaths } from './useGlow.js';
 
 interface Row {
   path: string;
@@ -63,6 +64,8 @@ export function ExplorerView(): React.JSX.Element {
   const setSelection = useWorkspaceStore((s) => s.setSelection);
   const openFile = useEditorStore((s) => s.openFile);
   const pushToast = useAppStore((s) => s.pushToast);
+  // PIVOT-016: agent writes make the touched rows glow while the change is fresh.
+  const glowPaths = useGlowPaths();
 
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(600);
@@ -237,6 +240,7 @@ export function ExplorerView(): React.JSX.Element {
                   aria-expanded={isDir ? row.expanded : undefined}
                   aria-selected={selection === row.path}
                   data-testid={`tree-item-${row.path}`}
+                  className={glowPaths.has(row.path) ? 'glow-pulse' : undefined}
                   title={row.path}
                   onClick={() => {
                     setSelection(row.path);

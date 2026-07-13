@@ -86,6 +86,10 @@ export class AgentHost {
     return this.activeRuns.size > 0;
   }
 
+  activeRunCount(): number {
+    return this.activeRuns.size;
+  }
+
   async ensure(kind: RuntimeKind): Promise<void> {
     if (this.disposed) {
       throw new ProductFailure(

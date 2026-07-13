@@ -1,5 +1,6 @@
-import { homeSurfaceRegistry, initRegistry } from '../workbench/Workbench.js';
+import { homeSurfaceRegistry, initRegistry, overlayRegistry } from '../workbench/Workbench.js';
 import { HomeView, registerHomeSurfaceListeners } from '../views/HomeView.js';
+import { QuickLauncher } from '../views/QuickLauncher.js';
 import { registerCommands } from '../commands.js';
 import { useAppStore } from '../store/appStore.js';
 
@@ -7,6 +8,7 @@ import { useAppStore } from '../store/appStore.js';
 export function registerPivotHome(): void {
   homeSurfaceRegistry.main = HomeView;
   initRegistry.push(registerHomeSurfaceListeners);
+  overlayRegistry.push(QuickLauncher);
   registerCommands([
     {
       id: 'surface.home',
@@ -19,6 +21,13 @@ export function registerPivotHome(): void {
       title: 'Open IDE Workspace',
       category: 'View',
       run: () => useAppStore.getState().setSurface('workspace'),
+    },
+    {
+      id: 'launcher.open',
+      title: 'Search Everything (Projects, Tasks, Files)',
+      category: 'View',
+      keybinding: 'mod+k',
+      run: () => useAppStore.getState().setLauncherOpen(true),
     },
   ]);
 }

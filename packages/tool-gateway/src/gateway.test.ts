@@ -133,3 +133,49 @@ describe('ToolGateway core (TOOL-001..007)', () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe('per-task mode resolution (ADR-0006 parallel runs)', () => {
+  it('resolves ask/auto per taskId on one shared gateway', async () => {
+    const { z } = await import('zod');
+    const modes: Record<string, 'ask' | 'edit' | 'auto'> = {
+      'task-ask': 'ask',
+      'task-auto': 'auto',
+    };
+    const shared = new ToolGateway({
+      root,
+      mode: 'ask',
+      modeForTask: (taskId) => modes[taskId] ?? 'ask',
+      // Auto-allow so the auto-mode call reaches execution.
+      permission: { decide: async () => ({ kind: 'allow', scope: 'auto' }) },
+    });
+    shared.register({
+      name: 'fake_write',
+      version: 1,
+      description: 'pretend write',
+      risk: () => ({ level: 'R1', reasons: ['writes'] }),
+      inputSchema: z.object({}).strict(),
+      preview: async () => ({ summary: 'write' }),
+      execute: async () => ({ code: 'OK', summary: 'wrote', data: {} }),
+    });
+
+    const denied = await shared.executeCall(
+      { callId: 'c1', runId: 'r1', taskId: 'task-ask', toolName: 'fake_write', input: {} },
+      new AbortController().signal,
+    );
+    expect(denied.ok).toBe(false);
+    expect(denied.code).toBe('PERMISSION_DENIED');
+
+    const allowed = await shared.executeCall(
+      { callId: 'c2', runId: 'r2', taskId: 'task-auto', toolName: 'fake_write', input: {} },
+      new AbortController().signal,
+    );
+    expect(allowed.ok).toBe(true);
+
+    // Unknown tasks fall back to the gateway-wide mode (ask ⇒ read-only).
+    const unknown = await shared.executeCall(
+      { callId: 'c3', runId: 'r3', taskId: 'task-mystery', toolName: 'fake_write', input: {} },
+      new AbortController().signal,
+    );
+    expect(unknown.ok).toBe(false);
+  });
+});

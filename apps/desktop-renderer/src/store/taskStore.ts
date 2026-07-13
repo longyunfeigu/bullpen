@@ -61,6 +61,10 @@ interface TaskStore {
   reviewOpen: boolean;
   changeSet: ChangeSetDto | null;
   loadingChangeSet: boolean;
+  // P2 (PIVOT-017): action-centric session replay
+  replayOpen: boolean;
+  openReplay(): void;
+  closeReplay(): void;
   decidePlan(input: {
     decision: 'approve' | 'reject';
     editedPlan?: PlanEditDto;
@@ -265,6 +269,14 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   reviewOpen: false,
   changeSet: null,
   loadingChangeSet: false,
+  replayOpen: false,
+
+  openReplay() {
+    set({ replayOpen: true });
+  },
+  closeReplay() {
+    set({ replayOpen: false });
+  },
 
   async decidePlan(input) {
     const taskId = get().activeTaskId;

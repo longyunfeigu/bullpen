@@ -11,6 +11,7 @@ import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useEditorStore } from '../store/editorStore.js';
 import { NewTaskDialog } from './NewTaskDialog.js';
 import { ReviewView } from './ReviewView.js';
+import { ReplayView } from './ReplayView.js';
 import { PathChips } from './PathLinks.js';
 
 const RISK_COLORS: Record<string, string> = {
@@ -1005,6 +1006,14 @@ export function AgentPanel(): React.JSX.Element {
                 🔍 Review
               </button>
             ) : null}
+            <button
+              className="btn"
+              data-testid="replay-open"
+              title="Replay what the agent did, step by step"
+              onClick={() => store.openReplay()}
+            >
+              ⏵ Replay
+            </button>
             {running ? (
               <button
                 className="btn danger"
@@ -1146,6 +1155,7 @@ export function AgentPanel(): React.JSX.Element {
 
       {store.newTaskOpen ? <NewTaskDialog /> : null}
       <ReviewView />
+      <ReplayView />
     </div>
   );
 }

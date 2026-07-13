@@ -186,6 +186,15 @@ export class TaskService {
     const gateway = new ToolGateway({
       root: ws.canonicalPath,
       mode: 'ask',
+      // ADR-0006: concurrent runs — every call resolves its own task's mode.
+      // Unknown task falls back to ask (fail closed = read-only).
+      modeForTask: (taskId) => {
+        try {
+          return this.getTask(taskId).mode;
+        } catch {
+          return 'ask';
+        }
+      },
       // AG-007: writes in edit/auto are refused until this task's plan is approved.
       permission: createPlanAwarePermission(engine, {
         planApproved: (taskId) => this.planStatus(taskId).status === 'approved',
@@ -1299,7 +1308,16 @@ export class TaskService {
     return 'pi';
   }
 
-  /** TASK-004: at most one active run; additional starts queue FIFO. */
+  /** Concurrency cap from settings (ADR-0006); 1 restores the original TASK-004 behavior. */
+  private runCapacity(): number {
+    const configured = this.settings.effective.agent.maxConcurrentRuns;
+    return Math.max(1, Math.min(8, configured ?? 3));
+  }
+
+  /**
+   * TASK-004 (as amended by ADR-0006): up to maxConcurrentRuns active runs;
+   * additional starts queue FIFO and drain as slots free up.
+   */
   async startTask(taskId: string, prompt?: string): Promise<{ task: TaskDto; queued: boolean }> {
     const task = this.getTask(taskId);
     if (!['READY', 'INTERRUPTED', 'REVIEW_READY', 'FAILED'].includes(task.state)) {
@@ -1309,16 +1327,28 @@ export class TaskService {
         }),
       );
     }
-    if (this.host.hasActiveRuns()) {
+    if (this.host.activeRunCount() + this.launching >= this.runCapacity()) {
       this.startQueue.push({ taskId, prompt });
-      this.recordEvent(taskId, 'task.queued', { reason: 'another agent run is active' });
+      this.recordEvent(taskId, 'task.queued', { reason: 'all agent slots are busy' });
       return { task, queued: true };
     }
     await this.launch(taskId, prompt);
     return { task: this.getTask(taskId), queued: false };
   }
 
+  /** Launches admitted but not yet registered with the host (capacity accounting). */
+  private launching = 0;
+
   private async launch(taskId: string, prompt?: string): Promise<void> {
+    this.launching += 1;
+    try {
+      await this.doLaunch(taskId, prompt);
+    } finally {
+      this.launching -= 1;
+    }
+  }
+
+  private async doLaunch(taskId: string, prompt?: string): Promise<void> {
     const task = this.getTask(taskId);
     const ws = this.workspace.mustActive();
     const kind = this.runtimeKind();
@@ -1327,7 +1357,6 @@ export class TaskService {
 
     await this.host.ensure(kind);
     if (!this.gateway) this.buildGateway();
-    this.gateway!.mode = task.mode;
 
     // Session: reuse existing ref when possible.
     let ref = this.sessionRefs.get(taskId);
@@ -1703,15 +1732,27 @@ export class TaskService {
     if (this.runsByTask.get(taskId) === runId) {
       this.runsByTask.delete(taskId);
     }
-    // Start the next queued task, if any.
-    const next = this.startQueue.shift();
-    if (next) {
-      void this.launch(next.taskId, next.prompt).catch((e) => {
-        this.logger.error('queued task launch failed', {
-          taskId: next.taskId,
-          error: e instanceof Error ? e.message : String(e),
+    this.drainQueue();
+  }
+
+  /** Start queued tasks while capacity remains (FIFO, ADR-0006). */
+  private drainQueue(): void {
+    while (
+      this.startQueue.length > 0 &&
+      this.host.activeRunCount() + this.launching < this.runCapacity()
+    ) {
+      const next = this.startQueue.shift()!;
+      this.launching += 1; // reserve the slot synchronously to avoid over-admission
+      void this.doLaunch(next.taskId, next.prompt)
+        .catch((e) => {
+          this.logger.error('queued task launch failed', {
+            taskId: next.taskId,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        })
+        .finally(() => {
+          this.launching -= 1;
         });
-      });
     }
   }
 

@@ -105,6 +105,11 @@ export const readOnlyDecider: PermissionDecider = {
 export interface ToolGatewayOptions {
   root: string;
   mode: AgentMode;
+  /**
+   * Per-call mode resolution (ADR-0006): with concurrent runs, each task keeps
+   * its own approval mode. Falls back to the gateway-wide `mode` field.
+   */
+  modeForTask?: (taskId: string) => AgentMode;
   permission?: PermissionDecider;
   audit?: (record: ToolAuditRecord) => void;
   maxOutputBytes?: number;
@@ -121,6 +126,7 @@ export class ToolGateway {
   private readonly tools = new Map<string, GatewayTool<never>>();
   readonly root: string;
   mode: AgentMode;
+  private readonly modeForTask: (taskId: string) => AgentMode;
   private readonly permission: PermissionDecider;
   private readonly audit: (record: ToolAuditRecord) => void;
   private readonly maxOutputBytes: number;
@@ -128,6 +134,7 @@ export class ToolGateway {
   constructor(options: ToolGatewayOptions) {
     this.root = options.root;
     this.mode = options.mode;
+    this.modeForTask = options.modeForTask ?? (() => this.mode);
     this.permission = options.permission ?? readOnlyDecider;
     this.audit = options.audit ?? (() => undefined);
     this.maxOutputBytes = options.maxOutputBytes ?? OUTPUT_LIMIT;
@@ -267,7 +274,9 @@ export class ToolGateway {
     }
 
     // Ask mode is a hard read-only boundary regardless of registration (AG-001).
-    if (this.mode === 'ask' && risk.level !== 'R0') {
+    // The mode is resolved per task so concurrent runs never share a mode (ADR-0006).
+    const mode = this.modeForTask(call.taskId);
+    if (mode === 'ask' && risk.level !== 'R0') {
       auditRecord('DENIED', risk.level, 'ask mode is read-only', false);
       return {
         callId: call.callId,
@@ -290,7 +299,7 @@ export class ToolGateway {
       tool: { name: tool.name, version: tool.version, description: tool.description },
       risk,
       preview,
-      mode: this.mode,
+      mode,
       signal,
       onWaiting: () => auditRecord('WAITING_PERMISSION', risk.level, null, null),
     });

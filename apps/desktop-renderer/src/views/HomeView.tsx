@@ -6,6 +6,7 @@ import { useAppStore } from '../store/appStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useTaskStore, titleFromIntent, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { useActivityStore, currentActionLine } from '../store/activityStore.js';
+import { useGlowTasks } from './useGlow.js';
 import { Ic } from './home-icons.js';
 import '../styles/home.css';
 
@@ -61,6 +62,8 @@ export function HomeView(): React.JSX.Element {
   const taskStore = useTaskStore();
   const perTask = useActivityStore((s) => s.perTask);
   const hydrate = useActivityStore((s) => s.hydrate);
+  // PIVOT-016: fresh agent writes make their task rows/cards glow.
+  const glowTasks = useGlowTasks();
 
   const [intent, setIntent] = useState('');
   const [mode, setMode] = useState<'ask' | 'edit' | 'auto'>('edit');
@@ -351,7 +354,7 @@ export function HomeView(): React.JSX.Element {
     return (
       <button
         key={t.id}
-        className={`hm-tcard ${attention ? 'attention' : ''}`}
+        className={`hm-tcard ${attention ? 'attention' : ''} ${glowTasks.has(t.id) ? 'glow-pulse' : ''}`}
         data-testid={`home-mc-card-${t.id}`}
         onClick={() => openTask(t.id, { review: t.state === 'REVIEW_READY' })}
       >
@@ -411,7 +414,7 @@ export function HomeView(): React.JSX.Element {
           return (
             <button
               key={r.path}
-              className={`hm-row ${active ? 'active' : ''}`}
+              className={`hm-row ${active ? 'active' : ''} ${active && glowTasks.size > 0 ? 'glow-pulse' : ''}`}
               data-testid={`home-recent-${r.path}`}
               title={r.path}
               onClick={() => {
@@ -449,7 +452,7 @@ export function HomeView(): React.JSX.Element {
         {recentTasks.map((t) => (
           <button
             key={t.id}
-            className="hm-row"
+            className={`hm-row ${glowTasks.has(t.id) ? 'glow-pulse' : ''}`}
             data-testid={`home-task-${t.id}`}
             title={`${t.title} — ${t.state}`}
             onClick={() => openTask(t.id)}

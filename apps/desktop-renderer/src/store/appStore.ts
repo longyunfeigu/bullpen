@@ -25,6 +25,8 @@ interface AppStore {
   settingsIssues: string[];
   layout: LayoutState;
   paletteOpen: boolean;
+  /** ⌘K quick launcher (PIVOT-018): projects, tasks, files, actions. */
+  launcherOpen: boolean;
   overlay: OverlayKind;
   toasts: Toast[];
   /** Dual-form shell (ADR-0004): Home task launcher vs full IDE workspace. */
@@ -42,6 +44,7 @@ interface AppStore {
   showSideBarView(view: SideBarView): void;
   showBottomTab(tab: BottomTab): void;
   setPaletteOpen(open: boolean): void;
+  setLauncherOpen(open: boolean): void;
   setOverlay(overlay: OverlayKind): void;
   updateSettings(scope: 'global' | 'workspace', patch: Record<string, unknown>): Promise<void>;
   refreshSettings(): Promise<void>;
@@ -93,6 +96,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   settingsIssues: [],
   layout: LayoutStateSchema.parse({}),
   paletteOpen: false,
+  launcherOpen: false,
   overlay: 'none',
   toasts: [],
   surface: 'home',
@@ -151,6 +155,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
   setPaletteOpen(open) {
     set({ paletteOpen: open });
+  },
+  setLauncherOpen(open) {
+    set({ launcherOpen: open });
   },
   setOverlay(overlay) {
     set({ overlay });

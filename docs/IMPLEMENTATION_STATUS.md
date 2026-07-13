@@ -27,6 +27,7 @@ Last verified commit: (pivot pending commit)
 | 9. Verification and history | VERIFIED | E2E-016/017/018 green (m9-verification.spec, full suite 29/29 twice), VerificationService 7 unit tests, rename tool test | Final report separates agent narrative from system evidence; stale/superseded semantics on verification_runs; unverified accept needs explicit confirm; rollback preflight stops on external-change conflicts |
 | PIVOT. Dual-form shell (ADR-0004) | VERIFIED | pivot-shell.spec 3 E2E (PIVOT-001..009), full suite 32/32 twice, model-catalog 4 unit tests | Charter branding (no Pi in UI); Home task launcher default entry; Settings provider keys + live model fetch |
 | HOME-V2 P1. Activity stream + mission control (ADR-0006) | VERIFIED | home-v2.spec 3 E2E (PIVOT-011..015), full suite 35/35 twice, activity projection 9 + notification 4 unit tests | Pure-projection activity stream (live = replay source); mission-control cards with live current action; macOS notifications on attention edges (focused-window suppressed); drag/@ context refs; clickable paths; tool lifecycle renders as one in-place card (callId dedupe) |
+| HOME-V2 P2. Parallel runs + replay + glow + ⌘K (ADR-0006) | VERIFIED | p2-parallel-replay.spec 3 E2E (PIVOT-016..018), full suite 38/38 ×3 consecutively, gateway modeForTask unit test (252 total) | maxConcurrentRuns (default 3, FIFO beyond); per-task mode resolution replaces the mutable gateway.mode; action-centric session replay (scrubber + stored per-step patches + file lens, read-only); presence glow on tree/task rows from change events (no polling); ⌘K over projects/tasks/files/actions. One unidentified flake in one full run (never reproduced across 3 subsequent runs; logs now retained per run) |
 | 10. Recovery and diagnostics | NOT_STARTED | | |
 | 11. Security and quality hardening | NOT_STARTED | | |
 | 12. Packaging and Stable release | NOT_STARTED | | |
@@ -39,6 +40,8 @@ None.
 
 | Date | Commit | Command | Result | Artifact |
 | --- | --- | --- | --- | --- |
+| 2026-07-13 | (home-v2 P2) | `npm test` | 252 unit/integration passed (34 files) | vitest |
+| 2026-07-13 | (home-v2 P2) | `playwright test` (full) | 38 E2E passed ×3 consecutively (one unidentified flake in an earlier run, not reproduced) | playwright |
 | 2026-07-13 | (home-v2 P1) | `npm test` | 251 unit/integration passed (34 files) | vitest |
 | 2026-07-13 | (home-v2 P1) | `playwright test` (full) | 35 E2E passed, twice consecutively | playwright |
 | 2026-07-13 | (pivot) | `npm test` | 238 unit/integration passed (32 files) | vitest |
