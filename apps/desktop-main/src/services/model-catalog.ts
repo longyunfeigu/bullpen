@@ -1,55 +1,76 @@
 import { productError, ProductFailure, type Logger } from '@pi-ide/foundation';
 import type { ModelDescriptor } from '@pi-ide/agent-contract';
+import type { ProviderApi } from '@pi-ide/ipc-contracts';
 
-export interface ProviderEndpoint {
+/** Full provider record needed to list models (resolved by SecretService). */
+export interface CatalogProvider {
   providerId: string;
-  providerName: string;
-  url: string;
-  /** Model-list path appended to a custom base URL (gateways/proxies). */
-  listPath: string;
-  headers(apiKey: string): Record<string, string>;
-  /** Map the provider's response body to model descriptors. */
-  map(body: unknown): Array<{ modelId: string; displayName: string; contextWindow?: number }>;
-}
-
-export interface ProviderCredential {
+  displayName: string;
+  api: ProviderApi;
   apiKey: string;
+  /** Effective endpoint (official API or gateway); null only when unknown. */
   baseUrl: string | null;
 }
 
-/** Public model-list endpoints for providers the runtime can execute against. */
-export const PROVIDER_ENDPOINTS: ProviderEndpoint[] = [
-  {
-    providerId: 'anthropic',
-    providerName: 'Anthropic',
-    url: 'https://api.anthropic.com/v1/models?limit=100',
-    listPath: '/v1/models',
+interface ParsedModel {
+  modelId: string;
+  displayName: string;
+  contextWindow?: number | null;
+}
+
+/** Anthropic protocol: GET <base>/v1/models, x-api-key auth. */
+function anthropicRequest(provider: CatalogProvider): {
+  url: string;
+  headers: Record<string, string>;
+} {
+  const base = (provider.baseUrl ?? 'https://api.anthropic.com').replace(/\/+$/, '');
+  // Page-size query only for the official API — gateways may reject params.
+  const query = base === 'https://api.anthropic.com' ? '?limit=100' : '';
+  return {
+    url: `${base}/v1/models${query}`,
     // Gateways commonly accept either header scheme; send both.
-    headers: (apiKey) => ({
-      'x-api-key': apiKey,
+    headers: {
+      'x-api-key': provider.apiKey,
       'anthropic-version': '2023-06-01',
-      Authorization: `Bearer ${apiKey}`,
-    }),
-    map: (body) => {
-      const data = (body as { data?: Array<{ id: string; display_name?: string }> }).data ?? [];
-      return data.map((m) => ({ modelId: m.id, displayName: m.display_name ?? m.id }));
+      Authorization: `Bearer ${provider.apiKey}`,
     },
-  },
-  {
-    providerId: 'openai',
-    providerName: 'OpenAI',
-    url: 'https://api.openai.com/v1/models',
-    listPath: '/v1/models',
-    headers: (apiKey) => ({ Authorization: `Bearer ${apiKey}` }),
-    map: (body) => {
-      const data = (body as { data?: Array<{ id: string }> }).data ?? [];
-      // The OpenAI list includes non-chat artifacts; keep model-ish ids only.
-      return data
-        .filter((m) => /^(gpt|o[0-9]|chatgpt)/i.test(m.id))
-        .map((m) => ({ modelId: m.id, displayName: m.id }));
-    },
-  },
-];
+  };
+}
+
+/** OpenAI protocol: GET <base>/models (bases include /v1 by convention). */
+function openaiRequest(provider: CatalogProvider): {
+  url: string;
+  headers: Record<string, string>;
+} {
+  const base = (provider.baseUrl ?? 'https://api.openai.com/v1').replace(/\/+$/, '');
+  return {
+    url: `${base}/models`,
+    headers: { Authorization: `Bearer ${provider.apiKey}` },
+  };
+}
+
+function parseAnthropic(body: unknown): ParsedModel[] {
+  const data = (body as { data?: Array<{ id: string; display_name?: string }> }).data ?? [];
+  return data.map((m) => ({ modelId: m.id, displayName: m.display_name ?? m.id }));
+}
+
+/** OpenAI-shaped list — OpenRouter adds name/context_length; LiteLLM id only. */
+function parseOpenAi(body: unknown, provider: CatalogProvider): ParsedModel[] {
+  const data =
+    (body as { data?: Array<{ id: string; name?: string; context_length?: number }> }).data ?? [];
+  const officialOpenAi = provider.providerId === 'openai' && provider.baseUrl === null;
+  return data
+    .filter((m) =>
+      // The official OpenAI list is full of non-chat artifacts; gateways and
+      // aggregators list exactly what they serve — keep everything there.
+      officialOpenAi ? /^(gpt|o[0-9]|chatgpt)/i.test(m.id) : true,
+    )
+    .map((m) => ({
+      modelId: m.id,
+      displayName: m.name ?? m.id,
+      contextWindow: m.context_length ?? null,
+    }));
+}
 
 export type FetchLike = (
   url: string,
@@ -57,26 +78,27 @@ export type FetchLike = (
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 /**
- * Live provider model catalog (PIVOT-009, ONB-002): fetches the provider's
- * public model list with the stored key, caches per session, and merges into
- * the registry-backed models.list. Runs entirely in the main process.
+ * Live provider model catalog (PIVOT-009/026/033): fetches each configured
+ * provider's model list with its stored key over its protocol, caches per
+ * session, and merges into the registry-backed models.list. Main process only.
  */
 export class ModelCatalogService {
   private readonly cache = new Map<string, ModelDescriptor[]>();
 
   constructor(
-    private readonly getCredential: (providerId: string) => ProviderCredential | null,
+    private readonly getProvider: (providerId: string) => CatalogProvider | null,
     private readonly logger: Logger,
     private readonly fetchImpl: FetchLike = (url, init) => fetch(url, init),
     private readonly timeoutMs = 12_000,
   ) {}
 
-  supportedProviders(): string[] {
-    return PROVIDER_ENDPOINTS.map((p) => p.providerId);
-  }
-
   cached(): ModelDescriptor[] {
     return [...this.cache.values()].flat();
+  }
+
+  /** Forget a provider's fetched models (credential deleted). */
+  evict(providerId: string): void {
+    this.cache.delete(providerId);
   }
 
   /** Merge registry models with remotely fetched ones (registry wins on id clashes). */
@@ -94,31 +116,28 @@ export class ModelCatalogService {
   }
 
   async fetchRemote(providerId: string): Promise<ModelDescriptor[]> {
-    const endpoint = PROVIDER_ENDPOINTS.find((p) => p.providerId === providerId);
-    if (!endpoint) {
-      throw new ProductFailure(
-        productError('MODELS_PROVIDER_UNSUPPORTED', {
-          userMessage: `Live model listing is not supported for "${providerId}" yet.`,
-        }),
-      );
-    }
-    const credential = this.getCredential(providerId);
-    if (!credential) {
+    const provider = this.getProvider(providerId);
+    if (!provider) {
       throw new ProductFailure(
         productError('MODELS_NO_CREDENTIAL', {
-          userMessage: `Add an API key for ${endpoint.providerName} first, then fetch models.`,
+          userMessage: `Add an API key for "${providerId}" first, then fetch models.`,
         }),
       );
     }
-    // Custom gateways list models under the same path relative to their base.
-    const url = credential.baseUrl
-      ? `${credential.baseUrl.replace(/\/+$/, '')}${endpoint.listPath}`
-      : endpoint.url;
+    if (provider.api === 'openai' && provider.baseUrl === null && providerId !== 'openai') {
+      throw new ProductFailure(
+        productError('MODELS_NO_BASE_URL', {
+          userMessage: `${provider.displayName} needs a Base URL before models can be listed.`,
+        }),
+      );
+    }
+    const request =
+      provider.api === 'anthropic' ? anthropicRequest(provider) : openaiRequest(provider);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await this.fetchImpl(url, {
-        headers: endpoint.headers(credential.apiKey),
+      const response = await this.fetchImpl(request.url, {
+        headers: request.headers,
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -126,16 +145,18 @@ export class ModelCatalogService {
           productError(response.status === 401 ? 'MODELS_BAD_CREDENTIAL' : 'MODELS_FETCH_FAILED', {
             userMessage:
               response.status === 401
-                ? `${endpoint.providerName} rejected the API key (401). Check the key in Settings.`
-                : `${endpoint.providerName} model list failed with HTTP ${response.status}.`,
+                ? `${provider.displayName} rejected the API key (401). Check the key in Settings.`
+                : `${provider.displayName} model list failed with HTTP ${response.status}.`,
             retryable: response.status !== 401,
           }),
         );
       }
       const body = await response.json();
-      const models: ModelDescriptor[] = endpoint.map(body).map((m) => ({
-        providerId: endpoint.providerId,
-        providerName: endpoint.providerName,
+      const parsed =
+        provider.api === 'anthropic' ? parseAnthropic(body) : parseOpenAi(body, provider);
+      const models: ModelDescriptor[] = parsed.map((m) => ({
+        providerId: provider.providerId,
+        providerName: provider.displayName,
         modelId: m.modelId,
         displayName: m.displayName,
         contextWindow: m.contextWindow ?? null,
@@ -150,7 +171,7 @@ export class ModelCatalogService {
       if (e instanceof ProductFailure) throw e;
       throw new ProductFailure(
         productError('MODELS_FETCH_FAILED', {
-          userMessage: `Could not reach ${endpoint.providerName} to list models (network error or timeout).`,
+          userMessage: `Could not reach ${provider.displayName} to list models (network error or timeout).`,
           technicalMessage: e instanceof Error ? e.message : String(e),
           retryable: true,
         }),

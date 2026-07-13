@@ -128,6 +128,20 @@ export function HomeView(): React.JSX.Element {
     () => taskStore.models.filter((m) => m.configured),
     [taskStore.models],
   );
+  // PIVOT-033: multiple providers — the picker groups models per provider.
+  const modelGroups = useMemo(() => {
+    const groups: Array<{
+      providerId: string;
+      providerName: string;
+      models: typeof configuredModels;
+    }> = [];
+    for (const m of configuredModels) {
+      const last = groups[groups.length - 1];
+      if (last && last.providerId === m.providerId) last.models.push(m);
+      else groups.push({ providerId: m.providerId, providerName: m.providerName, models: [m] });
+    }
+    return groups;
+  }, [configuredModels]);
   useEffect(() => {
     if (!modelKey && configuredModels.length > 0) {
       const preferred =
@@ -698,14 +712,27 @@ export function HomeView(): React.JSX.Element {
             >
               {configuredModels.length === 0 ? (
                 <option value="">No model — add a key in Settings</option>
-              ) : (
-                configuredModels.map((m) => (
+              ) : modelGroups.length === 1 ? (
+                modelGroups[0]!.models.map((m) => (
                   <option
                     key={`${m.providerId}::${m.modelId}`}
                     value={`${m.providerId}::${m.modelId}`}
                   >
                     {m.displayName}
                   </option>
+                ))
+              ) : (
+                modelGroups.map((g) => (
+                  <optgroup key={g.providerId} label={g.providerName}>
+                    {g.models.map((m) => (
+                      <option
+                        key={`${m.providerId}::${m.modelId}`}
+                        value={`${m.providerId}::${m.modelId}`}
+                      >
+                        {m.displayName}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))
               )}
             </select>

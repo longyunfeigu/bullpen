@@ -18,6 +18,7 @@ import {
   VerificationRunDtoSchema,
 } from './agent-dto.js';
 import { ActivityItemSchema } from './activity.js';
+import { ProviderApiSchema, ProviderInfoSchema } from './providers.js';
 
 const SettingsStateSchema = z.object({
   effective: SettingsSchema,
@@ -697,10 +698,14 @@ export const CHANNELS = {
   ),
   'secrets.set': ch(
     'secrets.set',
-    2,
+    3,
     z
       .object({
-        providerId: z.string().min(1).max(100),
+        providerId: z
+          .string()
+          .min(2)
+          .max(40)
+          .regex(/^[a-z0-9][a-z0-9-]*$/),
         apiKey: z.string().min(1).max(4000),
         // Optional endpoint override for gateways/proxies (http(s) only).
         baseUrl: z
@@ -708,6 +713,10 @@ export const CHANNELS = {
           .regex(/^https?:\/\/\S+$/)
           .max(2000)
           .optional(),
+        /** Wire protocol; defaults to the preset's, else 'anthropic'. */
+        api: ProviderApiSchema.optional(),
+        /** Human name for custom providers (presets have their own). */
+        displayName: z.string().min(1).max(60).optional(),
       })
       .strict(),
     z.object({ configured: z.boolean() }),
@@ -720,18 +729,9 @@ export const CHANNELS = {
   ),
   'secrets.list': ch(
     'secrets.list',
-    2,
+    3,
     z.object({}).strict(),
-    z.object({
-      items: z.array(
-        z.object({
-          providerId: z.string(),
-          configured: z.boolean(),
-          hint: z.string(),
-          baseUrl: z.string().nullable(),
-        }),
-      ),
-    }),
+    z.object({ items: z.array(ProviderInfoSchema) }),
   ),
   'lsp.status': ch(
     'lsp.status',

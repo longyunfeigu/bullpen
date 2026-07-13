@@ -115,16 +115,28 @@ export class PiAgentRuntime implements AgentRuntime {
     this.registry = ModelRegistry.inMemory(this.auth);
     // Gateway/proxy support: a credential base URL re-points every model of
     // that provider at the custom endpoint (pi keeps the provider's API shape).
+    // Providers unknown to the registry (openrouter/litellm/custom gateways)
+    // are created lazily in ensureModel() with their wire protocol.
     for (const credential of this.credentials) {
-      if (credential.baseUrl) {
+      if (credential.baseUrl && this.isKnownProvider(credential.providerId)) {
         this.registry.registerProvider(credential.providerId, { baseUrl: credential.baseUrl });
       }
     }
     return { runtimeId: 'pi', runtimeVersion: PI_VERSION };
   }
 
+  /** The registry ships models for this provider natively (builtin). */
+  private isKnownProvider(providerId: string): boolean {
+    return (this.registry.getAll() as Array<{ provider: string }>).some(
+      (m) => m.provider === providerId,
+    );
+  }
+
   /** API shape for a provider when synthesizing gateway-listed models. */
   private apiFor(providerId: string): 'anthropic-messages' | 'openai-completions' {
+    const credential = this.credentials.find((c) => c.providerId === providerId);
+    if (credential?.api === 'openai') return 'openai-completions';
+    if (credential?.api === 'anthropic') return 'anthropic-messages';
     return providerId === 'openai' ? 'openai-completions' : 'anthropic-messages';
   }
 
@@ -184,6 +196,9 @@ export class PiAgentRuntime implements AgentRuntime {
     this.registry.registerProvider(providerId, {
       baseUrl: credential.baseUrl,
       api: this.apiFor(providerId),
+      // Required by the registry when a provider defines models. The key
+      // stays inside this worker process — same trust domain as AuthStorage.
+      apiKey: credential.value,
       models,
     });
   }

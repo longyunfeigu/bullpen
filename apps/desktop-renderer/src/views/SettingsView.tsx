@@ -1,20 +1,30 @@
 import React, { useEffect, useState } from 'react';
+import { PROVIDER_PRESETS, providerPreset, type ProviderInfoDto } from '@pi-ide/ipc-contracts';
 import { rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { useTaskStore } from '../store/taskStore.js';
 import { Ic } from './home-icons.js';
 import '../styles/settings.css';
 
-/** Provider credentials + live model fetch (PIVOT-009/026, ONB-004/008). */
+const API_LABEL: Record<string, string> = {
+  anthropic: 'Claude API',
+  openai: 'OpenAI API',
+};
+
+/** Multi-provider credentials + live model fetch (PIVOT-009/026/033). */
 function ProvidersBlock(): React.JSX.Element {
   const pushToast = useAppStore((s) => s.pushToast);
-  const [items, setItems] = useState<
-    Array<{ providerId: string; configured: boolean; hint: string; baseUrl: string | null }>
-  >([]);
-  const [providerId, setProviderId] = useState('anthropic');
+  const [items, setItems] = useState<ProviderInfoDto[]>([]);
+  const [choice, setChoice] = useState('anthropic'); // preset id or 'custom'
+  const [customId, setCustomId] = useState('');
+  const [customName, setCustomName] = useState('');
+  const [customApi, setCustomApi] = useState<'anthropic' | 'openai'>('openai');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+
+  const preset = choice === 'custom' ? null : providerPreset(choice);
+  const isCustom = choice === 'custom';
 
   const refresh = async (): Promise<void> => {
     const res = await rpcResult('secrets.list', {});
@@ -32,16 +42,38 @@ function ProvidersBlock(): React.JSX.Element {
       pushToast('warning', 'Base URL must start with http:// or https://');
       return;
     }
+    const providerId = isCustom ? customId.trim().toLowerCase().replace(/\s+/g, '-') : choice;
+    if (isCustom && !/^[a-z0-9][a-z0-9-]{1,39}$/.test(providerId)) {
+      pushToast('warning', 'Custom provider id: lowercase letters, digits and dashes.');
+      return;
+    }
+    if (isCustom && !url) {
+      pushToast('warning', 'Custom providers need a Base URL.');
+      return;
+    }
+    if (preset?.baseUrlRequired && !url) {
+      pushToast(
+        'warning',
+        `${preset.displayName} needs its Base URL (e.g. ${preset.placeholder}).`,
+      );
+      return;
+    }
     setBusy('save');
     const res = await rpcResult('secrets.set', {
       providerId,
       apiKey: apiKey.trim(),
       ...(url ? { baseUrl: url } : {}),
+      ...(isCustom
+        ? { api: customApi, ...(customName.trim() ? { displayName: customName.trim() } : {}) }
+        : { api: preset!.api, displayName: preset!.displayName }),
     });
     setBusy(null);
     setApiKey('');
     if (res.ok) {
       pushToast('success', `Credential stored for ${providerId}.`);
+      setCustomId('');
+      setCustomName('');
+      setBaseUrl('');
       await refresh();
       await useTaskStore.getState().refreshModels();
     } else {
@@ -91,13 +123,40 @@ function ProvidersBlock(): React.JSX.Element {
         <select
           className="st-input"
           data-testid="provider-select"
-          value={providerId}
-          onChange={(e) => setProviderId(e.target.value)}
+          value={choice}
+          onChange={(e) => setChoice(e.target.value)}
           style={{ width: 130, flex: 'none' }}
         >
-          <option value="anthropic">Anthropic</option>
-          <option value="openai">OpenAI</option>
+          {PROVIDER_PRESETS.map((p) => (
+            <option key={p.providerId} value={p.providerId}>
+              {p.displayName}
+            </option>
+          ))}
+          <option value="custom">Custom…</option>
         </select>
+        {isCustom ? (
+          <>
+            <input
+              className="st-input mono"
+              data-testid="provider-custom-id"
+              placeholder="id (e.g. my-gateway)"
+              value={customId}
+              onChange={(e) => setCustomId(e.target.value)}
+              style={{ width: 140, flex: 'none' }}
+            />
+            <select
+              className="st-input"
+              data-testid="provider-custom-api"
+              value={customApi}
+              onChange={(e) => setCustomApi(e.target.value as 'anthropic' | 'openai')}
+              style={{ width: 170, flex: 'none' }}
+              title="Wire protocol the endpoint speaks"
+            >
+              <option value="openai">OpenAI-compatible</option>
+              <option value="anthropic">Anthropic-compatible</option>
+            </select>
+          </>
+        ) : null}
         <input
           className="st-input"
           data-testid="provider-key-input"
@@ -105,15 +164,19 @@ function ProvidersBlock(): React.JSX.Element {
           placeholder="API key"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          style={{ flex: 1, minWidth: 180 }}
+          style={{ flex: 1, minWidth: 160 }}
         />
         <input
           className="st-input mono"
           data-testid="provider-baseurl-input"
-          placeholder="Base URL (optional) — e.g. http://gateway:3000/api"
+          placeholder={
+            isCustom
+              ? 'Base URL (required) — e.g. http://gateway:4000/v1'
+              : `Base URL — ${preset?.placeholder ?? ''}`
+          }
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
-          style={{ flex: 1.2, minWidth: 220 }}
+          style={{ flex: 1.2, minWidth: 200 }}
         />
         <button
           className="btn primary"
@@ -124,9 +187,24 @@ function ProvidersBlock(): React.JSX.Element {
           Save
         </button>
       </div>
+      {isCustom ? (
+        <div className="st-provider-form" style={{ marginTop: 6 }}>
+          <input
+            className="st-input"
+            data-testid="provider-custom-name"
+            placeholder="Display name (optional — e.g. Team Gateway)"
+            value={customName}
+            onChange={(e) => setCustomName(e.target.value)}
+            style={{ flex: 1 }}
+          />
+        </div>
+      ) : null}
       <div className="st-hint">
-        Base URL points this provider at a gateway/proxy (Anthropic-compatible or OpenAI-compatible
-        endpoint). Leave empty for the official API.
+        {isCustom
+          ? 'Any Anthropic- or OpenAI-compatible endpoint works — LiteLLM, vLLM, Ollama, team gateways. OpenAI-compatible base URLs include /v1.'
+          : preset?.baseUrlRequired
+            ? `${preset.displayName} is self-hosted — point the Base URL at your instance.`
+            : 'Leave the Base URL empty for the official API, or point it at a compatible gateway/proxy.'}
       </div>
 
       {items.length === 0 ? (
@@ -140,19 +218,31 @@ function ProvidersBlock(): React.JSX.Element {
             className="st-provider-row"
             data-testid={`provider-row-${item.providerId}`}
           >
-            <span className="st-provider-name">{item.providerId}</span>
+            <span className="st-provider-name" title={item.providerId}>
+              {item.displayName}
+            </span>
+            <span className="st-provider-api" data-testid={`provider-api-${item.providerId}`}>
+              {API_LABEL[item.api] ?? item.api}
+            </span>
             <span className="mono st-provider-hint">{item.hint}</span>
-            {item.baseUrl ? (
-              <span
-                className="mono st-provider-url"
-                data-testid={`provider-baseurl-${item.providerId}`}
-                title={item.baseUrl}
-              >
-                {item.baseUrl}
-              </span>
-            ) : (
-              <span className="st-provider-url official">official API</span>
-            )}
+            {(() => {
+              // Presets with a default endpoint (OpenRouter) show it even when
+              // the user left the field empty — that IS where requests go.
+              const effective =
+                item.baseUrl ?? providerPreset(item.providerId)?.defaultBaseUrl ?? null;
+              return effective ? (
+                <span
+                  className="mono st-provider-url"
+                  data-testid={`provider-baseurl-${item.providerId}`}
+                  title={effective}
+                >
+                  {effective}
+                  {item.baseUrl === null ? ' (default)' : ''}
+                </span>
+              ) : (
+                <span className="st-provider-url official">official API</span>
+              );
+            })()}
             <button
               className="btn"
               data-testid={`provider-fetch-${item.providerId}`}

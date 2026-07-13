@@ -418,14 +418,10 @@ if (!gotLock) {
       );
       taskServiceRef = taskService;
       taskService.markOrphanedRunsInterrupted();
-      const modelCatalog = new ModelCatalogService((providerId) => {
-        const credential = secretService
-          .credentialsForWorker()
-          .find((c) => c.providerId === providerId);
-        return credential
-          ? { apiKey: credential.value, baseUrl: credential.baseUrl ?? null }
-          : null;
-      }, logger.child('models'));
+      const modelCatalog = new ModelCatalogService(
+        (providerId) => secretService.catalogProvider(providerId),
+        logger.child('models'),
+      );
       registerM6Handlers(
         taskService,
         agentHostRef,

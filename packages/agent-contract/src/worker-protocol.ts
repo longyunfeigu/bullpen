@@ -14,8 +14,10 @@ export interface WorkerCredential {
   providerId: string;
   kind: 'api-key';
   value: string;
-  /** Optional API endpoint override (gateways/proxies); null = provider default. */
+  /** Effective API endpoint (gateways/proxies resolved by main); null = provider default. */
   baseUrl?: string | null;
+  /** Wire protocol for non-builtin providers (openrouter/litellm/custom gateways). */
+  api?: 'anthropic' | 'openai' | null;
 }
 
 export type WorkerInbound =

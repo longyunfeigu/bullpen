@@ -450,7 +450,8 @@ function eventNode(
       return (
         <div key={event.id} className="rt-usage mono" data-testid="tl-usage">
           {usage?.inputTokens ?? '?'} in · {usage?.outputTokens ?? '?'} out
-          {usage?.costUsd != null ? ` · $${usage.costUsd.toFixed(4)}` : ''}
+          {/* Synthesized gateway models have no price table — hide a misleading $0. */}
+          {usage?.costUsd != null && usage.costUsd > 0 ? ` · $${usage.costUsd.toFixed(4)}` : ''}
         </div>
       );
     }

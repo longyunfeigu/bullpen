@@ -95,6 +95,30 @@ no system-prompt option). The preamble now also pins product identity (the agent
 introduces itself as Charter's agent and never mentions internal harness/vendor names) —
 a presentation instruction; message content itself remains exempt per PIVOT-008.
 
+## Amendment 1 — multi-provider registry (PIVOT-033)
+
+Providers become first-class records: `{ providerId, displayName, api:
+'anthropic' | 'openai', baseUrl, apiKey }` with presets for Anthropic, OpenAI,
+OpenRouter and LiteLLM plus free-form custom gateways. Decisions:
+
+- **Protocol over vendor**: the product only distinguishes wire protocols
+  (Anthropic Messages vs OpenAI Chat Completions). Presets are convenience
+  defaults (endpoints, display names, URL requirements) in
+  `ipc-contracts/providers.ts` — shared by UI, catalog and secret storage.
+- **Secrets vs meta**: the key stays in the OS-keychain-scoped store; protocol,
+  endpoint and display name are non-secret meta beside it. Legacy entries
+  (anthropic/openai only) infer their protocol on read — no migration step.
+- **Effective endpoints resolve in main**: the worker and the model catalog
+  receive resolved URLs (preset default when the user leaves the field empty);
+  builtin providers keep the runtime's native configuration unless explicitly
+  overridden (a gateway URL must never silently re-shape official OpenAI).
+- **Runtime synthesis**: non-builtin providers are registered lazily with
+  their protocol; the registry requires `apiKey` in the provider config when
+  models are defined — the key already lives in that worker's memory (same
+  trust domain as its AuthStorage), so this leaks nothing new.
+- Verified live against the user's gateway over BOTH protocols (Anthropic
+  Messages and OpenAI Chat Completions via the LiteLLM preset).
+
 ## Consequences
 
 - The renderer can finally show one truthful global control tower; the persistent-shell

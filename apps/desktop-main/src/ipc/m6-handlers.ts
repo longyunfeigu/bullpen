@@ -1,4 +1,5 @@
-import type { Logger } from '@pi-ide/foundation';
+import { productError, ProductFailure, type Logger } from '@pi-ide/foundation';
+import { providerPreset } from '@pi-ide/ipc-contracts';
 import { registerHandlers } from './router.js';
 import type { TaskService } from '../services/task-service.js';
 import type { AgentHost } from '../services/agent-host.js';
@@ -76,14 +77,43 @@ export function registerM6Handlers(
       'models.fetchRemote': async ({ providerId }) => ({
         models: await catalog.fetchRemote(providerId),
       }),
-      'secrets.set': async ({ providerId, apiKey, baseUrl }) => {
-        secrets.setApiKey(providerId, apiKey, baseUrl ?? null);
+      'secrets.set': async ({ providerId, apiKey, baseUrl, api, displayName }) => {
+        // Custom (non-preset) providers must say how to talk to them.
+        const preset = providerPreset(providerId);
+        const effectiveApi = api ?? preset?.api;
+        if (!preset && !effectiveApi) {
+          throw new ProductFailure(
+            productError('SEC_PROVIDER_NEEDS_API', {
+              userMessage: 'Custom providers need a protocol (Anthropic- or OpenAI-compatible).',
+            }),
+          );
+        }
+        if (!preset && !baseUrl) {
+          throw new ProductFailure(
+            productError('SEC_PROVIDER_NEEDS_URL', {
+              userMessage: 'Custom providers need a Base URL.',
+            }),
+          );
+        }
+        if (preset?.baseUrlRequired && !baseUrl) {
+          throw new ProductFailure(
+            productError('SEC_PROVIDER_NEEDS_URL', {
+              userMessage: `${preset.displayName} is a self-hosted proxy — set its Base URL (e.g. ${preset.placeholder}).`,
+            }),
+          );
+        }
+        secrets.setApiKey(providerId, apiKey, {
+          baseUrl: baseUrl ?? null,
+          ...(effectiveApi ? { api: effectiveApi } : {}),
+          ...(displayName ? { displayName } : {}),
+        });
         // Worker must be restarted to pick up new credentials.
         await host.stopWorker();
         return { configured: true };
       },
       'secrets.delete': async ({ providerId }) => {
         const deleted = secrets.delete(providerId);
+        catalog.evict(providerId);
         await host.stopWorker(); // ONB-008: invalidate immediately
         return { deleted };
       },
