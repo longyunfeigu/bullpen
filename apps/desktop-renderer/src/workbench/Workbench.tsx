@@ -50,7 +50,7 @@ function useRegisterCoreCommands(): void {
       },
       {
         id: 'app.about',
-        title: 'About Pi IDE',
+        title: 'About Charter',
         category: 'Help',
         run: () => store.getState().setOverlay('about'),
       },
@@ -146,6 +146,8 @@ export const statusBarRegistry: { left: React.ComponentType[]; right: React.Comp
 };
 export const titleBarRegistry: { center: React.ComponentType[] } = { center: [] };
 export const overlayRegistry: React.ComponentType[] = [];
+/** Dual-form shell (ADR-0004): the Home task launcher registered by contrib. */
+export const homeSurfaceRegistry: { main: React.ComponentType | null } = { main: null };
 export const editorBannerRegistry: React.ComponentType[] = [];
 export const initRegistry: Array<() => void> = [];
 
@@ -174,6 +176,7 @@ export function Workbench(): React.JSX.Element {
   const setOverlay = useAppStore((s) => s.setOverlay);
   const toasts = useAppStore((s) => s.toasts);
   const dismissToast = useAppStore((s) => s.dismissToast);
+  const surface = useAppStore((s) => s.surface);
   const pushToast = useAppStore((s) => s.pushToast);
   const appInfo = useAppStore((s) => s.appInfo);
 
@@ -219,7 +222,15 @@ export function Workbench(): React.JSX.Element {
   return (
     <div className="workbench" data-testid="workbench">
       <header className={`titlebar ${platform() === 'darwin' ? '' : 'not-mac'}`}>
-        <span className="tb-title">Pi IDE</span>
+        <span className="tb-title">Charter</span>
+        <button
+          className="tb-chip"
+          data-testid="surface-home"
+          title="Back to the task launcher"
+          onClick={() => useAppStore.getState().setSurface('home')}
+        >
+          ⌂ Home
+        </button>
         {titleBarRegistry.center.map((C, i) => (
           <C key={i} />
         ))}
@@ -420,12 +431,12 @@ export function Workbench(): React.JSX.Element {
               {overlay === 'diagnostics' ? <DiagnosticsView /> : null}
               {overlay === 'about' && appInfo ? (
                 <div style={{ padding: 20, lineHeight: 1.9 }}>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>Pi IDE {appInfo.appVersion}</div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>Charter {appInfo.appVersion}</div>
                   <div className="text-muted" style={{ fontSize: 12 }}>
                     Electron {appInfo.electron} · Node {appInfo.node} · Chrome {appInfo.chrome}
                     <br />
-                    Pi SDK {appInfo.piSdkVersion ?? 'n/a'} · Commit {appInfo.commit ?? 'n/a'} ·{' '}
-                    {appInfo.updateChannel}
+                    Agent engine {appInfo.piSdkVersion ?? 'n/a'} · Commit {appInfo.commit ?? 'n/a'}{' '}
+                    · {appInfo.updateChannel}
                   </div>
                   <div className="text-muted" style={{ fontSize: 12 }}>
                     MIT License · Local-first: your code and tasks stay on this machine.
@@ -440,6 +451,9 @@ export function Workbench(): React.JSX.Element {
       {overlayRegistry.map((C, i) => (
         <C key={i} />
       ))}
+
+      {/* Dual-form shell (ADR-0004): the Home surface covers the workbench. */}
+      {surface === 'home' && homeSurfaceRegistry.main ? <homeSurfaceRegistry.main /> : null}
 
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (

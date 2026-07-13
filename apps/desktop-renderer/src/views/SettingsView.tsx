@@ -1,5 +1,149 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
+import { useTaskStore } from '../store/taskStore.js';
+
+/** Provider credentials + live model fetch (PIVOT-009, ONB-004/008). */
+function ProvidersBlock(): React.JSX.Element {
+  const pushToast = useAppStore((s) => s.pushToast);
+  const [items, setItems] = useState<
+    Array<{ providerId: string; configured: boolean; hint: string }>
+  >([]);
+  const [providerId, setProviderId] = useState('anthropic');
+  const [apiKey, setApiKey] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const refresh = async (): Promise<void> => {
+    const res = await rpcResult('secrets.list', {});
+    if (res.ok) setItems(res.data.items);
+  };
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = async (): Promise<void> => {
+    if (!apiKey.trim()) return;
+    setBusy('save');
+    const res = await rpcResult('secrets.set', { providerId, apiKey: apiKey.trim() });
+    setBusy(null);
+    setApiKey('');
+    if (res.ok) {
+      pushToast('success', `Credential stored for ${providerId}.`);
+      await refresh();
+      await useTaskStore.getState().refreshModels();
+    } else {
+      pushToast('error', res.error.userMessage);
+    }
+  };
+
+  const remove = async (id: string): Promise<void> => {
+    if (!window.confirm(`Delete the ${id} credential? Running tasks lose access immediately.`)) {
+      return;
+    }
+    const res = await rpcResult('secrets.delete', { providerId: id });
+    if (res.ok) {
+      pushToast('info', `Credential for ${id} deleted.`);
+      await refresh();
+      await useTaskStore.getState().refreshModels();
+    } else {
+      pushToast('error', res.error.userMessage);
+    }
+  };
+
+  const fetchModels = async (id: string): Promise<void> => {
+    setBusy(`fetch-${id}`);
+    const res = await rpcResult('models.fetchRemote', { providerId: id });
+    setBusy(null);
+    if (res.ok) {
+      pushToast('success', `${res.data.models.length} models fetched from ${id}.`);
+      await useTaskStore.getState().refreshModels();
+    } else {
+      pushToast('error', res.error.userMessage);
+    }
+  };
+
+  return (
+    <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontWeight: 600 }}>Providers</div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select
+          data-testid="provider-select"
+          value={providerId}
+          onChange={(e) => setProviderId(e.target.value)}
+        >
+          <option value="anthropic">Anthropic</option>
+          <option value="openai">OpenAI</option>
+        </select>
+        <input
+          data-testid="provider-key-input"
+          type="password"
+          placeholder="API key (stored encrypted, never shown again)"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          style={{
+            flex: 1,
+            minWidth: 220,
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            padding: '6px 8px',
+          }}
+        />
+        <button
+          className="btn primary"
+          data-testid="provider-key-save"
+          disabled={!apiKey.trim() || busy === 'save'}
+          onClick={() => void save()}
+        >
+          Save key
+        </button>
+      </div>
+      {items.length === 0 ? (
+        <div className="text-muted" style={{ fontSize: 12 }} data-testid="providers-empty">
+          No provider credentials yet. Keys are stored in the encrypted OS keychain scope — never in
+          files, the renderer or logs.
+        </div>
+      ) : (
+        items.map((item) => (
+          <div
+            key={item.providerId}
+            data-testid={`provider-row-${item.providerId}`}
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              padding: '8px 10px',
+            }}
+          >
+            <span style={{ fontWeight: 600, minWidth: 90 }}>{item.providerId}</span>
+            <span className="mono text-muted" style={{ flex: 1, fontSize: 12 }}>
+              {item.hint}
+            </span>
+            <button
+              className="btn"
+              data-testid={`provider-fetch-${item.providerId}`}
+              disabled={busy === `fetch-${item.providerId}`}
+              onClick={() => void fetchModels(item.providerId)}
+              title="Pull the live model list from the provider with this key"
+            >
+              {busy === `fetch-${item.providerId}` ? 'Fetching…' : 'Fetch models'}
+            </button>
+            <button
+              className="btn danger"
+              data-testid={`provider-delete-${item.providerId}`}
+              onClick={() => void remove(item.providerId)}
+            >
+              Delete
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
 
 type Section =
   | 'general'
@@ -285,10 +429,7 @@ export function SettingsView(): React.JSX.Element {
                 onChange={(e) => set({ models: { useMockRuntime: e.target.checked } })}
               />
             </Row>
-            <div className="text-muted" style={{ padding: '10px 16px', fontSize: 12 }}>
-              Provider credentials are managed in the Agent panel when creating the first task (they
-              are stored encrypted in the OS keychain scope, never in this file).
-            </div>
+            <ProvidersBlock />
           </>
         ) : null}
 
@@ -356,12 +497,12 @@ export function SettingsView(): React.JSX.Element {
         {section === 'about' && appInfo ? (
           <div style={{ padding: 16, lineHeight: 2 }}>
             <div>
-              <strong>Pi IDE</strong> {appInfo.appVersion}
+              <strong>Charter</strong> {appInfo.appVersion}
             </div>
             <div className="mono text-muted" style={{ fontSize: 12 }}>
               Electron {appInfo.electron} · Node {appInfo.node} · Chrome {appInfo.chrome}
               <br />
-              Pi SDK {appInfo.piSdkVersion ?? 'not installed'}
+              Agent engine {appInfo.piSdkVersion ?? 'not installed'}
               <br />
               Commit {appInfo.commit ?? 'n/a'} · Channel {appInfo.updateChannel}
               <br />

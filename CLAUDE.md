@@ -7,9 +7,10 @@ Build the complete V1.0 desktop product defined in `docs/PRODUCT_ENGINEERING_SPE
 ## Source of truth
 
 1. `docs/PRODUCT_ENGINEERING_SPEC.md`
-2. `docs/IMPLEMENTATION_BACKLOG.md`
-3. Acceptance tests and state-machine invariants
-4. ADRs in `docs/DECISIONS.md`
+2. `docs/UX_PIVOT_SPEC.md` — shell/branding layer (ADR-0004): dual-form "Charter" supersedes spec §4 entry/branding; engine spec unchanged
+3. `docs/IMPLEMENTATION_BACKLOG.md`
+4. Acceptance tests and state-machine invariants
+5. ADRs in `docs/adr/` and `docs/DECISIONS.md`
 
 When requirements conflict, acceptance criteria take precedence. Record interpretations in an ADR; do not silently remove scope.
 

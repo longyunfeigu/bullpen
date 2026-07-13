@@ -1243,7 +1243,7 @@ export class TaskService {
         ? null
         : 'Before your FIRST file modification, call propose_plan with your step-by-step plan and wait for the decision. The user may edit the plan — follow the version returned in the tool result, and keep step statuses current with update_plan.';
     return [
-      `You are the coding agent inside Pi IDE working on the workspace at ${ws.canonicalPath}.`,
+      `You are the coding agent inside Charter working on the workspace at ${ws.canonicalPath}.`,
       modeRules,
       ...(planRule ? [planRule] : []),
       'Use only the provided tools. read_file returns a hash — pass it as baseHash when patching.',

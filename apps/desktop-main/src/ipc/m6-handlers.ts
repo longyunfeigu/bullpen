@@ -4,12 +4,14 @@ import type { TaskService } from '../services/task-service.js';
 import type { AgentHost } from '../services/agent-host.js';
 import type { SecretService } from '../services/secret-service.js';
 import type { SettingsService } from '../services/settings-service.js';
+import type { ModelCatalogService } from '../services/model-catalog.js';
 
 export function registerM6Handlers(
   tasks: TaskService,
   host: AgentHost,
   secrets: SecretService,
   settings: SettingsService,
+  catalog: ModelCatalogService,
   logger: Logger,
 ): void {
   registerHandlers(
@@ -45,7 +47,9 @@ export function registerM6Handlers(
         const useMock =
           process.env.PI_IDE_FORCE_MOCK === '1' || settings.effective.models.useMockRuntime;
         try {
-          const models = await host.listModels(useMock ? 'mock' : 'pi');
+          const registry = await host.listModels(useMock ? 'mock' : 'pi');
+          // PIVOT-009: remotely fetched models join the registry list.
+          const models = useMock ? registry : catalog.merge(registry);
           const configured = new Set(secrets.list().map((s) => s.providerId));
           return {
             models: models.map((m) => ({
@@ -67,6 +71,9 @@ export function registerM6Handlers(
           return { models: [], workerAlive: host.alive };
         }
       },
+      'models.fetchRemote': async ({ providerId }) => ({
+        models: await catalog.fetchRemote(providerId),
+      }),
       'secrets.set': async ({ providerId, apiKey }) => {
         secrets.setApiKey(providerId, apiKey);
         // Worker must be restarted to pick up new credentials.

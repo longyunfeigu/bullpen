@@ -13,7 +13,7 @@ export function installApplicationMenu(opts: { isDev: boolean }): void {
           {
             label: app.name,
             submenu: [
-              { label: 'About Pi IDE', click: send('app.about') },
+              { label: 'About Charter', click: send('app.about') },
               { type: 'separator' },
               { label: 'Settings…', accelerator: 'Cmd+,', click: send('app.openSettings') },
               { type: 'separator' },
@@ -137,7 +137,7 @@ export function installApplicationMenu(opts: { isDev: boolean }): void {
     {
       label: 'Help',
       submenu: [
-        { label: 'About Pi IDE', click: send('app.about') },
+        { label: 'About Charter', click: send('app.about') },
         { label: 'Diagnostics', click: send('app.openDiagnostics') },
       ],
     },

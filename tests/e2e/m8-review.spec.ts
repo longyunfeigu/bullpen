@@ -128,11 +128,19 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
       await expect(page.getByTestId('quickopen-item-src/index.ts')).toBeVisible();
       await page.keyboard.press('Enter');
       await expect(page.getByTestId('tab-src/index.ts')).toBeVisible();
+      // Wait for the model content to actually render before positioning the
+      // cursor — clicking an empty editor would drop the typing at line 1.
+      await expect(page.locator('.monaco-editor').first()).toContainText('add(2, 3)');
       await page.locator('.monaco-editor').first().click();
       await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End');
       await page.keyboard.press('End');
       await page.keyboard.type('\n// keep me');
+      await expect(page.locator('.monaco-editor').first()).toContainText('// keep me');
       await page.keyboard.press(`${mod}+s`);
+      // The edit must land at the end of the file (patch context lines intact).
+      await expect
+        .poll(() => readFileSync(join(fixture, 'src/index.ts'), 'utf8'))
+        .toMatch(/\}\s*\n\/\/ keep me/);
 
       // Let the agent continue: the stale patch must fail with a version conflict.
       await page.getByTestId('q-option-0').click();

@@ -27,8 +27,14 @@ interface AppStore {
   paletteOpen: boolean;
   overlay: OverlayKind;
   toasts: Toast[];
+  /** Dual-form shell (ADR-0004): Home task launcher vs full IDE workspace. */
+  surface: 'home' | 'workspace';
+  /** True while the Home project menu is opening a workspace — suppresses the auto-switch. */
+  homePick: boolean;
 
   init(): Promise<void>;
+  setSurface(surface: 'home' | 'workspace'): void;
+  setHomePick(inProgress: boolean): void;
   setLayout(patch: Partial<LayoutState>): void;
   toggleSidebar(): void;
   toggleAgentPanel(): void;
@@ -89,6 +95,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
   paletteOpen: false,
   overlay: 'none',
   toasts: [],
+  surface: 'home',
+  homePick: false,
+
+  setSurface(surface) {
+    set({ surface });
+  },
+
+  setHomePick(inProgress) {
+    set({ homePick: inProgress });
+  },
 
   async init() {
     const [info, settingsState, layoutRes] = await Promise.all([

@@ -600,6 +600,12 @@ export const CHANNELS = {
     z.object({}).strict(),
     z.object({ models: z.array(ModelDescriptorDtoSchema), workerAlive: z.boolean() }),
   ),
+  'models.fetchRemote': ch(
+    'models.fetchRemote',
+    1,
+    z.object({ providerId: z.string().min(1).max(100) }).strict(),
+    z.object({ models: z.array(ModelDescriptorDtoSchema) }),
+  ),
   'secrets.set': ch(
     'secrets.set',
     1,

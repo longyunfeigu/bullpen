@@ -30,7 +30,7 @@ function WorkspaceChip(): React.JSX.Element | null {
     <span className="tb-chip" title={workspace.path} data-testid="workspace-chip">
       📁 {workspace.displayName}
       {workspace.trustState === 'untrusted' && workspace.hasPiProjectResources ? (
-        <span className="text-warning" title="Project Pi resources are not loaded (untrusted)">
+        <span className="text-warning" title="Project agent resources are not loaded (untrusted)">
           ⛨
         </span>
       ) : null}
@@ -120,7 +120,7 @@ function TrustPrompt(): React.JSX.Element | null {
         <div className="modal-header">Do you trust this project?</div>
         <div style={{ padding: 16, lineHeight: 1.7 }}>
           <p>
-            <span className="mono">{workspace.path}</span> contains project-local Pi resources (
+            <span className="mono">{workspace.path}</span> contains project-local agent resources (
             <span className="mono">.pi</span> / <span className="mono">.agents</span>): extensions,
             skills or prompts that could run code when an agent session starts.
           </p>

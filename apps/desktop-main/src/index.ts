@@ -22,6 +22,7 @@ import { registerM7Handlers } from './ipc/m7-handlers.js';
 import { registerM8Handlers } from './ipc/m8-handlers.js';
 import { registerM9Handlers } from './ipc/m9-handlers.js';
 import { SecretService } from './services/secret-service.js';
+import { ModelCatalogService } from './services/model-catalog.js';
 import { AgentHost } from './services/agent-host.js';
 import { TaskService } from './services/task-service.js';
 import { join as joinPath } from 'node:path';
@@ -159,7 +160,7 @@ function createMainWindow(bootstrap: Bootstrap): BrowserWindow {
     minWidth: 1024,
     minHeight: 640,
     show: false,
-    title: 'Pi IDE',
+    title: 'Charter',
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 10 } }
       : {}),
@@ -222,7 +223,7 @@ function createMainWindow(bootstrap: Bootstrap): BrowserWindow {
       buttons: ['Reload Window', 'Quit'],
       defaultId: 0,
       title: 'Window crashed',
-      message: 'The Pi IDE window crashed. Your agent tasks and files on disk are unaffected.',
+      message: 'The Charter window crashed. Your agent tasks and files on disk are unaffected.',
     });
     if (choice === 0) win.webContents.reload();
     else {
@@ -390,7 +391,20 @@ if (!gotLock) {
         logger.child('tasks'),
       );
       taskService.markOrphanedRunsInterrupted();
-      registerM6Handlers(taskService, agentHostRef, secretService, settings, logger.child('ipc'));
+      const modelCatalog = new ModelCatalogService(
+        (providerId) =>
+          secretService.credentialsForWorker().find((c) => c.providerId === providerId)?.value ??
+          null,
+        logger.child('models'),
+      );
+      registerM6Handlers(
+        taskService,
+        agentHostRef,
+        secretService,
+        settings,
+        modelCatalog,
+        logger.child('ipc'),
+      );
       registerM7Handlers(taskService, logger.child('ipc'));
       registerM8Handlers(taskService, logger.child('ipc'));
       registerM9Handlers(taskService, logger.child('ipc'));

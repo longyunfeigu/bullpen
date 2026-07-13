@@ -49,7 +49,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           previous?.id !== workspace.id,
         ),
       });
-      if (workspace) void get().loadDir('');
+      if (workspace) {
+        void get().loadDir('');
+        // Dual-form shell (PIVOT-006): opening a workspace lands in the IDE
+        // surface — unless the Home project menu initiated the open, in which
+        // case the user is mid-charter and stays on Home.
+        const app = useAppStore.getState();
+        if (app.homePick) app.setHomePick(false);
+        else app.setSurface('workspace');
+      }
     });
     onEvent('fs.batch', ({ changes }) => {
       const { dirs } = get();
@@ -78,6 +86,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           workspace.hasPiProjectResources && workspace.trustState === 'untrusted',
         ),
       });
+      // A workspace was already open before the renderer booted (restore or
+      // env auto-open) — land in the IDE surface (PIVOT-006).
+      useAppStore.getState().setSurface('workspace');
       void get().loadDir('');
       const { useEditorStore } = await import('./editorStore.js');
       void useEditorStore.getState().restoreTabs();
@@ -111,8 +122,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         .pushToast(
           trusted ? 'warning' : 'info',
           trusted
-            ? 'Project Pi resources will be available to agent sessions in this workspace.'
-            : 'Project stays untrusted: local Pi extensions/skills are not loaded.',
+            ? 'Project agent resources will be available to agent sessions in this workspace.'
+            : 'Project stays untrusted: local project agent extensions/skills are not loaded.',
         );
     }
   },

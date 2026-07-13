@@ -82,6 +82,21 @@ interface TaskStore {
   // M9: verification + rollback
   rollbackTask(): Promise<boolean>;
   runVerification(label?: string): Promise<void>;
+
+  // PIVOT-005: Home fast path — one-line intent charters a task.
+  createFromIntent(input: {
+    intent: string;
+    mode: 'ask' | 'edit' | 'auto';
+    model: { providerId: string; modelId: string };
+  }): Promise<boolean>;
+}
+
+/** Derive a task title from free-form intent (first line, cleaned, ≤64 chars). */
+export function titleFromIntent(intent: string): string {
+  const firstLine = intent.split('\n')[0]?.trim() ?? '';
+  const cleaned = firstLine.replace(/\s+/g, ' ');
+  if (cleaned.length <= 64) return cleaned || 'New task';
+  return `${cleaned.slice(0, 61)}…`;
 }
 
 export const useTaskStore = create<TaskStore>((set, get) => ({
@@ -350,6 +365,16 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       .getState()
       .pushToast('info', `Rolled back ${res.data.restored?.length ?? 0} file(s).`);
     return true;
+  },
+
+  async createFromIntent(input) {
+    return get().createAndStart({
+      title: titleFromIntent(input.intent),
+      goalMd: input.intent,
+      acceptance: [],
+      mode: input.mode,
+      model: input.model,
+    });
   },
 
   async runVerification(label) {

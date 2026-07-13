@@ -7,7 +7,7 @@ export function StartupErrorView(props: { code: string; message: string }): Reac
   return (
     <div className="empty-state" role="alert" data-testid="startup-error">
       <div style={{ fontSize: 34 }}>⚠️</div>
-      <div className="es-title">Pi IDE could not start normally</div>
+      <div className="es-title">Charter could not start normally</div>
       <p style={{ maxWidth: 520 }}>{props.message}</p>
       <p className="mono text-muted" style={{ fontSize: 12 }}>
         Error code: {props.code}

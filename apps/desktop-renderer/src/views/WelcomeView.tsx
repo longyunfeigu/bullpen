@@ -17,8 +17,8 @@ export function WelcomeView(): React.JSX.Element {
 
   return (
     <div className="empty-state" data-testid="welcome-view">
-      <div style={{ fontSize: 40 }}>π</div>
-      <div className="es-title">Pi IDE</div>
+      <div style={{ fontSize: 40 }}>⌘</div>
+      <div className="es-title">Charter</div>
       <div className="text-muted">
         Local-first agentic IDE — edit like an IDE, delegate like an engineer.
       </div>
