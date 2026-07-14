@@ -41,6 +41,8 @@ import { NotificationService } from './services/notification-service.js';
 import { detectProjectKind } from './services/project-kind.js';
 import { registerActivityHandlers } from './ipc/activity-handlers.js';
 import { registerImageHandlers } from './ipc/image-handlers.js';
+import { ExternalSessionService } from './services/external-session-service.js';
+import { registerExternalHandlers } from './ipc/external-handlers.js';
 import { buildSupportBundle } from './services/support-bundle.js';
 import { join as joinPath } from 'node:path';
 
@@ -68,6 +70,7 @@ let m4Ref: M4Services | null = null;
 let m5Ref: M5Services | null = null;
 let agentHostRef: AgentHost | null = null;
 let taskServiceRef: TaskService | null = null;
+let externalSessionsRef: ExternalSessionService | null = null;
 export function getM5(): M5Services | null {
   return m5Ref;
 }
@@ -491,6 +494,15 @@ if (!gotLock) {
       registerActivityHandlers(taskService, workspaceHost, logger.child('ipc'));
       registerImageHandlers(workspaceHost, logger.child('ipc'));
 
+      // ADR-0017: external CLI agent sessions (claude/codex in user terminals).
+      externalSessionsRef = new ExternalSessionService(
+        m4.terminals,
+        taskService,
+        workspaceHost,
+        logger.child('external'),
+      );
+      registerExternalHandlers(externalSessionsRef, logger.child('ipc'));
+
       // PIVOT-014: system notifications on attention-worthy task states.
       // E2E runs must not spray real OS banners (they disturb focus/timing).
       const notifications = new NotificationService({
@@ -604,6 +616,7 @@ if (!gotLock) {
   app.on('will-quit', (event) => {
     if (cleanupDone) return;
     event.preventDefault();
+    externalSessionsRef?.dispose(); // before terminals: sessions close into review while the DB is open
     taskServiceRef?.shutdown();
     m4Ref?.dispose();
     const disposal = agentHostRef?.dispose() ?? Promise.resolve();

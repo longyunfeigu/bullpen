@@ -115,6 +115,15 @@ export function HomeSidebar(): React.JSX.Element {
           <span className="hm-trow-l1">
             <span className={`hm-dot ${dotClass(t)}`} />
             <span className="hm-tt">{t.title}</span>
+            {t.external ? (
+              <span
+                className="hm-extchip"
+                data-testid={`home-task-ext-${t.id}`}
+                title={`External ${t.external.cli} session — unmanaged, tracked & reviewable`}
+              >
+                EXT
+              </span>
+            ) : null}
             {attention && !running ? (
               <span
                 className={`hm-stchip mini ${meta.tone === 'ok' ? 'ok' : meta.tone === 'err' ? 'err' : 'warn'}`}

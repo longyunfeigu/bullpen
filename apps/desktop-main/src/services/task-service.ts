@@ -107,6 +107,7 @@ interface TaskRow {
   updated_at: string;
   worktree_json: string | null;
   changed_files: number | null;
+  external_json: string | null;
   project_path: string;
   project_name: string;
 }
@@ -1268,6 +1269,7 @@ export class TaskService {
             return { ...wt, missing: !existsSync(wt.path) };
           })()
         : null,
+      external: row.external_json ? (JSON.parse(row.external_json) as TaskDto['external']) : null,
     };
   }
 
@@ -1641,6 +1643,119 @@ export class TaskService {
     return this.getTask(id);
   }
 
+  // ---------- external CLI sessions (ADR-0017) ----------
+
+  /** Create the task row backing an external CLI agent session. */
+  async createExternalTask(input: {
+    cli: string;
+    terminalId: string;
+    projectPath: string;
+    snapshotRef: string | null;
+  }): Promise<TaskDto> {
+    const project = await this.workspaceRowForPath(input.projectPath);
+    const now = new Date().toISOString();
+    const id = newId('task');
+    let gitBaseline: { head: string | null; branch: string | null } | null = null;
+    if (project.isGitRepo) {
+      try {
+        gitBaseline = await new GitService(project.canonicalPath).headInfo();
+      } catch {
+        gitBaseline = null;
+      }
+    }
+    const external = {
+      cli: input.cli,
+      terminalId: input.terminalId,
+      snapshotRef: input.snapshotRef,
+      status: 'active' as const,
+    };
+    this.db
+      .prepare(
+        `INSERT INTO tasks (id, workspace_id, title, goal_md, acceptance_json, mode, state, model_json, verification_json, git_baseline_json, worktree_json, external_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'ask', 'READY', ?, ?, ?, NULL, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        project.id,
+        `${input.cli} · external session`,
+        `External \`${input.cli}\` session in an embedded terminal (unmanaged — outside the Tool Gateway). Changes are tracked by the workspace watcher against the entry snapshot.`,
+        JSON.stringify([]),
+        JSON.stringify({ providerId: 'external', modelId: input.cli }),
+        JSON.stringify([]),
+        gitBaseline ? JSON.stringify(gitBaseline) : null,
+        JSON.stringify(external),
+        now,
+        now,
+      );
+    this.recordEvent(id, 'task.created', {
+      title: `${input.cli} · external session`,
+      mode: 'ask',
+      model: { providerId: 'external', modelId: input.cli },
+      acceptance: [],
+      gitBaseline,
+      project: { name: project.displayName, path: project.canonicalPath },
+      worktree: null,
+      external,
+    });
+    this.recordEvent(id, 'external.sessionStarted', {
+      cli: input.cli,
+      terminalId: input.terminalId,
+      snapshotRef: input.snapshotRef,
+    });
+    this.hopStates(id, ['EXPLORING', 'IN_PROGRESS']);
+    this.logger.info('external session task created', {
+      id,
+      cli: input.cli,
+      project: project.canonicalPath,
+      snapshot: input.snapshotRef,
+    });
+    return this.getTask(id);
+  }
+
+  /** External session ended: freeze the count, land in REVIEW_READY (never auto-accept). */
+  finishExternalSession(taskId: string, changedFiles: number): TaskDto {
+    const row = this.getRow(taskId);
+    const external = row.external_json
+      ? (JSON.parse(row.external_json) as NonNullable<TaskDto['external']>)
+      : null;
+    if (external && external.status !== 'ended') {
+      this.db
+        .prepare(
+          'UPDATE tasks SET external_json = ?, changed_files = ?, updated_at = ? WHERE id = ?',
+        )
+        .run(
+          JSON.stringify({ ...external, status: 'ended' }),
+          changedFiles,
+          new Date().toISOString(),
+          taskId,
+        );
+      this.recordEvent(taskId, 'external.sessionEnded', { changedFiles });
+    }
+    const task = this.getTask(taskId);
+    if (task.state === 'IN_PROGRESS') return this.setState(taskId, 'REVIEW_READY');
+    return task;
+  }
+
+  /** ADR-0017: sweep external tasks stranded mid-session by an app quit. */
+  recoverExternalTasks(): void {
+    const rows = this.db
+      .prepare(`${TASK_SELECT} WHERE t.external_json IS NOT NULL`)
+      .all() as unknown as TaskRow[];
+    for (const row of rows) {
+      const external = JSON.parse(row.external_json!) as NonNullable<TaskDto['external']>;
+      if (external.status !== 'active') continue;
+      try {
+        this.finishExternalSession(row.id, row.changed_files ?? 0);
+        this.logger.info('external session recovered to review', { taskId: row.id });
+      } catch (e) {
+        this.logger.warn('external session recovery failed', {
+          taskId: row.id,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+  }
+
   private runtimeKind(): RuntimeKind {
     if (process.env.PI_IDE_FORCE_MOCK === '1') return 'mock';
     const settings = this.settings.effective;
@@ -1660,6 +1775,14 @@ export class TaskService {
    */
   async startTask(taskId: string, prompt?: string): Promise<{ task: TaskDto; queued: boolean }> {
     const task = this.getTask(taskId);
+    // ADR-0017: external sessions run in their terminal, never on the agent host.
+    if (task.external) {
+      throw new ProductFailure(
+        productError('TASK_EXTERNAL', {
+          userMessage: `This task is an external ${task.external.cli} session — talk to it in its terminal instead.`,
+        }),
+      );
+    }
     if (!['READY', 'INTERRUPTED', 'REVIEW_READY', 'FAILED'].includes(task.state)) {
       throw new ProductFailure(
         productError('TASK_NOT_STARTABLE', {

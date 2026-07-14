@@ -103,3 +103,34 @@ describe('GitService (GIT-001/002/008)', () => {
     expect(head).toBe('original\n');
   });
 });
+
+describe('GitService snapshotTree/readTreeBlob (ADR-0017)', () => {
+  it('snapshots tracked, dirty and untracked files without touching the real index', async () => {
+    writeFileSync(join(root, 'tracked.txt'), 'dirty edit\n'); // dirty tracked
+    writeFileSync(join(root, 'untracked.txt'), 'brand new\n'); // untracked
+    mkdirSync(join(root, 'sub'));
+    writeFileSync(join(root, 'sub/nested.txt'), 'nested\n');
+
+    const tree = await git.snapshotTree();
+    expect(tree).toMatch(/^[0-9a-f]{40,64}$/);
+
+    // Snapshot sees the pre-session bytes of everything…
+    expect((await git.readTreeBlob(tree, 'tracked.txt'))!.toString()).toBe('dirty edit\n');
+    expect((await git.readTreeBlob(tree, 'untracked.txt'))!.toString()).toBe('brand new\n');
+    expect((await git.readTreeBlob(tree, 'sub/nested.txt'))!.toString()).toBe('nested\n');
+    // …and answers null for paths that did not exist at snapshot time.
+    expect(await git.readTreeBlob(tree, 'created-later.txt')).toBeNull();
+
+    // The user's real index stayed untouched: untracked stays untracked.
+    const status = sh(['status', '--porcelain']);
+    expect(status).toContain('?? untracked.txt');
+    expect(status).not.toContain('A  untracked.txt');
+  });
+
+  it('respects .gitignore in the snapshot', async () => {
+    writeFileSync(join(root, '.gitignore'), 'ignored.log\n');
+    writeFileSync(join(root, 'ignored.log'), 'noise\n');
+    const tree = await git.snapshotTree();
+    expect(await git.readTreeBlob(tree, 'ignored.log')).toBeNull();
+  });
+});

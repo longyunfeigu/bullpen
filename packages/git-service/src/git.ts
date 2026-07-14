@@ -1,4 +1,7 @@
 import { execFile } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { productError, ProductFailure } from '@pi-ide/foundation';
 
 export interface GitDetect {
@@ -47,13 +50,18 @@ export class GitService {
 
   private run(
     args: string[],
-    options: { allowCodes?: number[] } = {},
+    options: { allowCodes?: number[]; env?: Record<string, string>; timeoutMs?: number } = {},
   ): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
       execFile(
         'git',
         args,
-        { cwd: this.root, maxBuffer: 32 * 1024 * 1024, timeout: 30000 },
+        {
+          cwd: this.root,
+          maxBuffer: 32 * 1024 * 1024,
+          timeout: options.timeoutMs ?? 30000,
+          ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
+        },
         (error, stdout, stderr) => {
           const code =
             error && typeof (error as { code?: unknown }).code === 'number'
@@ -325,6 +333,49 @@ export class GitService {
       '-z',
     ]);
     return res.stdout.split('\0').filter(Boolean);
+  }
+
+  /**
+   * ADR-0017: snapshot the whole worktree (tracked + untracked, minus ignored)
+   * as a git tree object via a TEMPORARY index — the user's real index and
+   * worktree are untouched. Returns the tree hash; baselines and one-click
+   * rollback for external CLI sessions read blobs out of this tree.
+   */
+  async snapshotTree(): Promise<string> {
+    const tmpIndex = join(tmpdir(), `pi-ide-snap-${process.pid}-${Date.now()}.idx`);
+    try {
+      await this.run(['add', '-A', '--', '.'], {
+        env: { GIT_INDEX_FILE: tmpIndex },
+        timeoutMs: 120000,
+      });
+      const res = await this.run(['write-tree'], { env: { GIT_INDEX_FILE: tmpIndex } });
+      return res.stdout.trim();
+    } finally {
+      await fs.rm(tmpIndex, { force: true }).catch(() => {});
+    }
+  }
+
+  /** Bytes of `path` inside a tree-ish, or null when the path is absent. */
+  readTreeBlob(tree: string, path: string): Promise<Buffer | null> {
+    return new Promise((resolve, reject) => {
+      execFile(
+        'git',
+        ['cat-file', 'blob', `${tree}:${path}`],
+        { cwd: this.root, maxBuffer: 64 * 1024 * 1024, timeout: 30000, encoding: 'buffer' },
+        (error, stdout) => {
+          if (error) {
+            const code = (error as { code?: unknown }).code;
+            if (code === 'ENOENT') {
+              reject(gitError('GIT_UNAVAILABLE', 'Git is not installed or not on PATH.'));
+              return;
+            }
+            resolve(null); // path not in the tree (created during the session)
+            return;
+          }
+          resolve(stdout as unknown as Buffer);
+        },
+      );
+    });
   }
 
   async worktreeAdd(path: string, branch: string): Promise<void> {

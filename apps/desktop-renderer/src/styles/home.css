@@ -1398,3 +1398,32 @@
 .tr-composer {
   position: relative;
 }
+
+/* ---------- ADR-0017: external CLI session markers ---------- */
+.hm-extchip {
+  flex: none;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+.term-agent {
+  color: var(--warning);
+  font-weight: 600;
+}
+.term-agent-ext {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+.term-room-open {
+  font-size: 11px;
+  color: var(--info);
+}

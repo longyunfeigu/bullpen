@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore.js';
 import { useTaskStore, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { useActivityStore } from '../store/activityStore.js';
 import { HomeSidebar, needsAttention } from './HomeSidebar.js';
+import { useExternalStore } from '../store/externalStore.js';
 import { HomeView } from './HomeView.js';
 import { TaskRoomView } from './TaskRoomView.js';
 import { FileLens } from './FileLens.js';
@@ -28,6 +29,8 @@ export function HomeShell(): React.JSX.Element {
   useEffect(() => {
     taskStore.init();
     useActivityStore.getState().init();
+    // ADR-0017: external session toasts/badges/glow work from any surface.
+    useExternalStore.getState().init();
     void taskStore.refreshTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

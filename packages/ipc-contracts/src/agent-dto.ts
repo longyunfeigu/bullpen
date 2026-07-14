@@ -49,6 +49,18 @@ export const TaskWorktreeSchema = z.object({
 });
 export type TaskWorktreeDto = z.infer<typeof TaskWorktreeSchema>;
 
+/** ADR-0017: this task is an external CLI agent session (claude/codex in an
+ * embedded terminal). Its changes arrive via watcher accounting; it never
+ * dispatches an agent run. */
+export const TaskExternalSchema = z.object({
+  cli: z.string(),
+  terminalId: z.string(),
+  /** Entry snapshot (git tree hash), null for non-git projects. */
+  snapshotRef: z.string().nullable(),
+  status: z.enum(['active', 'ended']),
+});
+export type TaskExternalDto = z.infer<typeof TaskExternalSchema>;
+
 export const TaskDtoSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
@@ -69,6 +81,7 @@ export const TaskDtoSchema = z.object({
   /** Net changed-file count recorded at run finalization; null before then. */
   changedFiles: z.number().int().nullable(),
   worktree: TaskWorktreeSchema.nullable(),
+  external: TaskExternalSchema.nullable().default(null),
 });
 export type TaskDto = z.infer<typeof TaskDtoSchema>;
 

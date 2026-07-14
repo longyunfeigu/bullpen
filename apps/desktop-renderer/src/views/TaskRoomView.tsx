@@ -24,6 +24,7 @@ import { hasDragRef, readDragRef } from './dragRefs.js';
 import { useSkillSlash } from './SkillSlashPicker.js';
 import { useDraftStore } from '../store/draftStore.js';
 import { openTaskInEditor } from './openInEditor.js';
+import { ExternalTerminalColumn, useExternalFiles } from './ExternalRoom.js';
 
 /**
  * Task Room v2 (ADR-0008/0009, PIVOT-021/028): the per-task page rendered in
@@ -77,7 +78,12 @@ export function TaskRoomView(): React.JSX.Element {
 
   const running = RUNNING_TASK_STATES.has(task.state);
   const answered = isAnswered(task);
-  const files = activity?.filesTouched ?? [];
+  // ADR-0017: an external session's rail is fed by watcher accounting, not by
+  // agent tool events (there are none). Same rows, same peek behavior.
+  const externalFiles = useExternalFiles(task);
+  const files = task.external
+    ? externalFiles.filter((f) => f.status !== 'deleted').map((f) => f.path)
+    : (activity?.filesTouched ?? []);
   const sameProject = workspace?.path === task.projectPath;
   const peek = useAppStore((s) => s.peek);
   const peeking = peek !== null && peek.taskId === task.id;
@@ -112,21 +118,32 @@ export function TaskRoomView(): React.JSX.Element {
           {task.projectName}
         </span>
         {task.worktree ? <WorktreeChip task={task} /> : null}
+        {task.external ? (
+          <span
+            className="tr-extchip"
+            data-testid="task-room-external-chip"
+            title="External CLI session — runs outside the Tool Gateway. Entry snapshot taken; changes tracked and reviewable."
+          >
+            EXT · {task.external.cli}
+          </span>
+        ) : null}
         <span className="tr-sp" />
-        {running ? (
+        {running && !task.external ? (
           <button className="btn danger" data-testid="agent-stop" onClick={() => void store.stop()}>
             Stop
           </button>
         ) : null}
-        <button
-          className="ghostbtn"
-          data-testid="replay-open"
-          title="Replay what the agent did, step by step"
-          onClick={() => store.openReplay()}
-        >
-          <Ic name="play" size={12} />
-          Replay
-        </button>
+        {task.external ? null : (
+          <button
+            className="ghostbtn"
+            data-testid="replay-open"
+            title="Replay what the agent did, step by step"
+            onClick={() => store.openReplay()}
+          >
+            <Ic name="play" size={12} />
+            Replay
+          </button>
+        )}
         <button
           className="ghostbtn"
           data-testid="task-room-open-editor"
@@ -154,13 +171,22 @@ export function TaskRoomView(): React.JSX.Element {
 
       <div className={`tr-body ${peeking ? 'peeking' : ''}`}>
         <div className="tr-main">
-          {/* Mockup A (ADR-0014): mode/model/effort live in the composer foot. */}
-          <RoomTimeline task={task} />
+          {task.external ? (
+            /* ADR-0017: the conversation with an external agent IS its terminal —
+               it takes the timeline+composer's place; everything else is the
+               same room (rail, peek, review bar). */
+            <ExternalTerminalColumn task={task} />
+          ) : (
+            <>
+              {/* Mockup A (ADR-0014): mode/model/effort live in the composer foot. */}
+              <RoomTimeline task={task} />
+            </>
+          )}
           {/* ADR-0016 (direction B): the completion report is STATE — a review
               bar docked above the composer while the decision is pending. */}
           {task.state === 'REVIEW_READY' && !answered ? <ReviewBar task={task} /> : null}
-          {running ? <ActivityStrip taskId={task.id} /> : null}
-          <RoomComposer key={task.id} task={task} running={running} />
+          {running && !task.external ? <ActivityStrip taskId={task.id} /> : null}
+          {task.external ? null : <RoomComposer key={task.id} task={task} running={running} />}
         </div>
 
         {peeking ? (
@@ -230,6 +256,17 @@ export function TaskRoomView(): React.JSX.Element {
               >
                 <Ic name="file" size={11} />
                 <span className="tr-fpath">{path}</span>
+                {task.external
+                  ? (() => {
+                      const f = externalFiles.find((x) => x.path === path);
+                      return f ? (
+                        <span className="tr-fstat">
+                          <span className="tr-fadd">+{f.additions}</span>{' '}
+                          <span className="tr-fdel">−{f.deletions}</span>
+                        </span>
+                      ) : null;
+                    })()
+                  : null}
               </button>
             ))
           )}
@@ -340,6 +377,11 @@ export function TaskRoomView(): React.JSX.Element {
               <div className="tr-note">
                 A plan is waiting for you in the timeline. Approve it, edit it — or type below to
                 request changes.
+              </div>
+            ) : running && task.external ? (
+              <div className="tr-note" data-testid="task-room-external-running">
+                The session is live — talk to {task.external.cli} in its terminal. When it ends, the
+                changes land here for review.
               </div>
             ) : running ? (
               <div className="tr-note">

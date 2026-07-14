@@ -170,6 +170,70 @@ export class ChangeService {
     return baseline;
   }
 
+  /**
+   * ADR-0017: capture a baseline from PROVIDED bytes (an external session's
+   * entry snapshot) instead of the current disk state — the watcher only
+   * learns about external writes after they landed, so "read the file now"
+   * would capture post-write content and break diffs and rollback.
+   * `bytes: null` records an honest "did not exist" baseline.
+   */
+  async ensureBaselineFromBytes(
+    taskId: string,
+    relativePath: string,
+    bytes: Buffer | null,
+  ): Promise<FileBaseline> {
+    const existing = this.repo.getBaseline(taskId, relativePath);
+    if (existing) return existing;
+    await resolveInsideRoot(this.root, relativePath);
+    let baseline: FileBaseline;
+    if (bytes === null) {
+      baseline = {
+        taskId,
+        relativePath,
+        existed: false,
+        blobHash: null,
+        mode: null,
+        size: 0,
+        capturedAt: new Date().toISOString(),
+      };
+    } else {
+      const { hash } = await this.blobs.put(bytes);
+      baseline = {
+        taskId,
+        relativePath,
+        existed: true,
+        blobHash: hash,
+        mode: null,
+        size: bytes.length,
+        capturedAt: new Date().toISOString(),
+      };
+    }
+    this.repo.saveBaseline(baseline);
+    return baseline;
+  }
+
+  /** ADR-0017: record an externally-observed change (no content flows through us). */
+  recordExternalChange(
+    taskId: string,
+    relativePath: string,
+    kind: Exclude<ChangeKind, 'renamed'>,
+    afterHash: string | null,
+  ): void {
+    this.repo.recordChange({
+      id: newId('chg'),
+      taskId,
+      toolCallId: null,
+      relativePath,
+      kind,
+      beforeHash: this.repo.getBaseline(taskId, relativePath)?.blobHash ?? null,
+      afterHash,
+      patch: null,
+      renameTo: null,
+      author: 'agent',
+      createdAt: new Date().toISOString(),
+    });
+  }
+
   /** Write content through the document store when open, else atomically to disk. */
   private async writeThrough(relativePath: string, content: string): Promise<void> {
     if (this.documents.isOpen(relativePath)) {

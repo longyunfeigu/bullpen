@@ -22,6 +22,116 @@ export interface CreateTerminalOptions {
 interface Session {
   info: TerminalInfo;
   pty: IPty;
+  tracker: AgentStateTracker;
+}
+
+// ---------- external agent CLI detection (ADR-0017) ----------
+
+/** Known coding-agent CLIs; overridable via PI_IDE_EXTERNAL_CLIS (tests). */
+export const DEFAULT_AGENT_CLIS = ['claude', 'codex'] as const;
+
+/** Foreground titles that hide the real program (npm-installed CLIs run as node). */
+const INTERPRETER_TITLES = new Set(['node', 'bun', 'deno', 'python', 'python3']);
+
+function basename(p: string): string {
+  const clean = p.split('\\').join('/');
+  return clean.slice(clean.lastIndexOf('/') + 1);
+}
+
+/** `claude` / `/usr/local/bin/claude` → 'claude'; anything else → null. */
+export function titleMatchesAgent(title: string, clis: readonly string[]): string | null {
+  const name = basename(title.trim()).toLowerCase();
+  return clis.find((c) => c === name) ?? null;
+}
+
+/** Matches `node /path/to/claude …` style command lines (argv basename scan). */
+export function commandMatchesAgent(command: string, clis: readonly string[]): string | null {
+  for (const token of command.trim().split(/\s+/).slice(0, 4)) {
+    const name = basename(token).toLowerCase();
+    const hit = clis.find((c) => c === name);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+export interface AgentStateChange {
+  /** CLI name while inside an agent session, null when back at the shell. */
+  agent: string | null;
+}
+
+/**
+ * Debounced enter/exit tracking for one PTY. Entering an agent session fires
+ * immediately; leaving needs `exitGrace` consecutive non-agent samples so the
+ * brief shell flashes between a TUI's child processes don't end the session.
+ */
+export class AgentStateTracker {
+  private current: string | null = null;
+  private missStreak = 0;
+
+  constructor(private readonly exitGrace = 2) {}
+
+  get agent(): string | null {
+    return this.current;
+  }
+
+  update(match: string | null): AgentStateChange | null {
+    if (match) {
+      this.missStreak = 0;
+      if (this.current !== match) {
+        this.current = match;
+        return { agent: match };
+      }
+      return null;
+    }
+    if (this.current === null) return null;
+    this.missStreak += 1;
+    if (this.missStreak >= this.exitGrace) {
+      this.current = null;
+      this.missStreak = 0;
+      return { agent: null };
+    }
+    return null;
+  }
+}
+
+/** Walks the live process tree below `rootPid` looking for an agent CLI. */
+export function scanDescendantsForAgent(rootPid: number, clis: readonly string[]): string | null {
+  if (process.platform === 'win32') return null;
+  try {
+    const result = spawnSync('ps', ['-ax', '-o', 'pid=,ppid=,command='], { timeout: 2000 });
+    if (result.status !== 0) return null;
+    const children = new Map<number, Array<{ pid: number; command: string }>>();
+    for (const line of result.stdout.toString().split('\n')) {
+      const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
+      if (!m) continue;
+      const ppid = Number(m[2]);
+      const list = children.get(ppid) ?? [];
+      list.push({ pid: Number(m[1]), command: m[3] ?? '' });
+      children.set(ppid, list);
+    }
+    const queue = [...(children.get(rootPid) ?? [])];
+    let guard = 0;
+    while (queue.length > 0 && guard < 256) {
+      guard += 1;
+      const entry = queue.shift()!;
+      const hit = commandMatchesAgent(entry.command, clis);
+      if (hit) return hit;
+      queue.push(...(children.get(entry.pid) ?? []));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export interface TerminalManagerOptions {
+  /** Agent CLI names to detect (ADR-0017); default claude/codex. */
+  agentClis?: readonly string[];
+  /** Foreground-process poll interval; 0 disables polling (tests drive pollOnce). */
+  agentPollMs?: number;
+  /** DI seams for deterministic tests. */
+  readTitle?: (session: { pty: IPty }) => string;
+  scanDescendants?: (pid: number, clis: readonly string[]) => string | null;
 }
 
 function defaultShell(): string {
@@ -43,11 +153,69 @@ export function hasChildProcesses(pid: number): boolean {
 /** User terminal sessions (separate security domain from agent commands, TERM-005). */
 export class TerminalManager {
   private readonly sessions = new Map<string, Session>();
+  private readonly agentListeners = new Set<
+    (info: { id: string; agent: string | null; cwd: string }) => void
+  >();
+  private readonly agentClis: readonly string[];
+  private readonly readTitle: (session: { pty: IPty }) => string;
+  private readonly scanDescendants: (pid: number, clis: readonly string[]) => string | null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly onData: (id: string, data: string) => void,
     private readonly onExit: (id: string, exitCode: number) => void,
-  ) {}
+    options: TerminalManagerOptions = {},
+  ) {
+    this.agentClis =
+      options.agentClis ??
+      (process.env.PI_IDE_EXTERNAL_CLIS
+        ? process.env.PI_IDE_EXTERNAL_CLIS.split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean)
+        : DEFAULT_AGENT_CLIS);
+    this.readTitle = options.readTitle ?? ((s) => s.pty.process);
+    this.scanDescendants = options.scanDescendants ?? scanDescendantsForAgent;
+    const pollMs = options.agentPollMs ?? 700;
+    if (pollMs > 0) {
+      this.pollTimer = setInterval(() => this.pollOnce(), pollMs);
+      this.pollTimer.unref?.();
+    }
+  }
+
+  /** ADR-0017: subscribe to agent-session enter/exit per terminal. */
+  onAgentState(
+    listener: (info: { id: string; agent: string | null; cwd: string }) => void,
+  ): () => void {
+    this.agentListeners.add(listener);
+    return () => this.agentListeners.delete(listener);
+  }
+
+  /** Current agent CLI running in a terminal, if any. */
+  agentFor(id: string): string | null {
+    return this.sessions.get(id)?.tracker.agent ?? null;
+  }
+
+  /** One detection sample across all sessions (interval-driven; public for tests). */
+  pollOnce(): void {
+    for (const session of this.sessions.values()) {
+      let match: string | null = null;
+      try {
+        const title = this.readTitle(session);
+        match = titleMatchesAgent(title, this.agentClis);
+        if (!match && INTERPRETER_TITLES.has(basename(title.trim()).toLowerCase())) {
+          match = this.scanDescendants(session.info.pid, this.agentClis);
+        }
+      } catch {
+        match = null; // a dying pty reads as "no agent"
+      }
+      const change = session.tracker.update(match);
+      if (change) {
+        for (const listener of this.agentListeners) {
+          listener({ id: session.info.id, agent: change.agent, cwd: session.info.cwd });
+        }
+      }
+    }
+  }
 
   create(options: CreateTerminalOptions): TerminalInfo {
     const shell = options.shellPath || defaultShell();
@@ -71,10 +239,12 @@ export class TerminalManager {
     };
     pty.onData((data) => this.onData(id, data));
     pty.onExit(({ exitCode }) => {
+      const session = this.sessions.get(id);
       this.sessions.delete(id);
+      this.fireAgentExitIfActive(id, session);
       this.onExit(id, exitCode);
     });
-    this.sessions.set(id, { info, pty });
+    this.sessions.set(id, { info, pty, tracker: new AgentStateTracker() });
     return info;
   }
 
@@ -101,10 +271,19 @@ export class TerminalManager {
     return hasChildProcesses(session.info.pid);
   }
 
+  /** A killed/exited terminal ends its agent session too (ADR-0017). */
+  private fireAgentExitIfActive(id: string, session: Session | undefined): void {
+    if (!session || session.tracker.agent === null) return;
+    for (const listener of this.agentListeners) {
+      listener({ id, agent: null, cwd: session.info.cwd });
+    }
+  }
+
   /** Graceful kill with process-tree escalation (CMD-004/TERM-004). */
   kill(id: string): void {
     const session = this.sessions.get(id);
     if (!session) return;
+    this.fireAgentExitIfActive(id, session);
     const pid = session.info.pid;
     try {
       session.pty.kill();
@@ -128,5 +307,12 @@ export class TerminalManager {
     for (const id of [...this.sessions.keys()]) {
       this.kill(id);
     }
+  }
+
+  dispose(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = null;
+    this.disposeAll();
+    this.agentListeners.clear();
   }
 }

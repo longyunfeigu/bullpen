@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css';
 import { onEvent, rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
+import { useExternalStore } from '../store/externalStore.js';
 
 interface TermInstance {
   id: string;
@@ -68,6 +69,17 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         item.exited = true;
         item.term.write(`\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m\r\n`);
       }
+    });
+    // ADR-0017: closing summary line when an external agent session ends —
+    // display-buffer only (never written to the PTY).
+    onEvent('terminal.agentState', ({ id, agent, taskId }) => {
+      if (agent !== null || !taskId) return;
+      const item = get().items.find((t) => t.id === id);
+      if (!item) return;
+      const files = useExternalStore.getState().sessions[taskId]?.files.length ?? 0;
+      item.term.write(
+        `\r\n\x1b[90m✻ session ended — ${files} file${files === 1 ? '' : 's'} changed, tracked for review\x1b[0m\r\n`,
+      );
     });
     onEvent('workspace.changed', () => {
       for (const item of get().items) item.term.dispose();
@@ -152,9 +164,13 @@ export function TerminalPanel(): React.JSX.Element {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const hostRef = useRef<HTMLDivElement>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  // ADR-0017: external agent sessions decorate their terminal's tab.
+  const agentByTerminal = useExternalStore((s) => s.agentByTerminal);
+  const taskByTerminal = useExternalStore((s) => s.taskByTerminal);
 
   useEffect(() => {
     store.init();
+    useExternalStore.getState().init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -219,45 +235,71 @@ export function TerminalPanel(): React.JSX.Element {
           ＋ New Terminal
         </button>
         {store.items.map((t) => (
-          <div key={t.id} style={{ display: 'flex', alignItems: 'center' }}>
-            {renaming === t.id ? (
-              <input
-                autoFocus
-                defaultValue={t.title}
-                style={{ flex: 1, margin: 4 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    store.rename(t.id, (e.target as HTMLInputElement).value || t.title);
-                    setRenaming(null);
-                  }
-                  if (e.key === 'Escape') setRenaming(null);
-                }}
-                onBlur={() => setRenaming(null)}
-              />
-            ) : (
+          <div key={t.id}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              {renaming === t.id ? (
+                <input
+                  autoFocus
+                  defaultValue={t.title}
+                  style={{ flex: 1, margin: 4 }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      store.rename(t.id, (e.target as HTMLInputElement).value || t.title);
+                      setRenaming(null);
+                    }
+                    if (e.key === 'Escape') setRenaming(null);
+                  }}
+                  onBlur={() => setRenaming(null)}
+                />
+              ) : (
+                <button
+                  className="quickpick-item"
+                  style={{
+                    flex: 1,
+                    background: store.active === t.id ? 'var(--bg-selected)' : undefined,
+                  }}
+                  data-testid={`terminal-tab-${t.id}`}
+                  onClick={() => store.setActive(t.id)}
+                  onDoubleClick={() => setRenaming(t.id)}
+                >
+                  <span>
+                    {t.exited ? '◌ ' : '● '}
+                    {agentByTerminal[t.id] ? (
+                      <span className="term-agent" data-testid={`terminal-agent-${t.id}`}>
+                        ✳ {agentByTerminal[t.id]}{' '}
+                        <span
+                          className="term-agent-ext"
+                          title="External agent session — unmanaged (outside the Tool Gateway); tracked & reviewable"
+                        >
+                          EXT
+                        </span>
+                      </span>
+                    ) : (
+                      t.title
+                    )}
+                  </span>
+                </button>
+              )}
               <button
-                className="quickpick-item"
-                style={{
-                  flex: 1,
-                  background: store.active === t.id ? 'var(--bg-selected)' : undefined,
-                }}
-                data-testid={`terminal-tab-${t.id}`}
-                onClick={() => store.setActive(t.id)}
-                onDoubleClick={() => setRenaming(t.id)}
+                className="modal-close"
+                aria-label={`Close ${t.title}`}
+                onClick={() => void store.requestKill(t.id)}
               >
-                <span>
-                  {t.exited ? '◌ ' : '● '}
-                  {t.title}
-                </span>
+                ✕
               </button>
-            )}
-            <button
-              className="modal-close"
-              aria-label={`Close ${t.title}`}
-              onClick={() => void store.requestKill(t.id)}
-            >
-              ✕
-            </button>
+            </div>
+            {taskByTerminal[t.id] ? (
+              <button
+                className="quickpick-item term-room-open"
+                data-testid={`terminal-open-room-${t.id}`}
+                title="Open this session's Task Room — live changes, peek and review around this terminal"
+                onClick={() => {
+                  useAppStore.getState().openTaskRoom(taskByTerminal[t.id]!);
+                }}
+              >
+                ⤢ Open session room
+              </button>
+            ) : null}
           </div>
         ))}
       </div>

@@ -65,6 +65,38 @@ export const EVENT_CHANNELS = {
   ),
   'terminal.data': ev('terminal.data', 1, z.object({ id: z.string(), data: z.string() })),
   'terminal.exit': ev('terminal.exit', 1, z.object({ id: z.string(), exitCode: z.number() })),
+  /** ADR-0017: a terminal entered (agent = CLI name) or left (agent = null) an
+   * external agent session. taskId is present once accounting attached. */
+  'terminal.agentState': ev(
+    'terminal.agentState',
+    1,
+    z.object({
+      id: z.string(),
+      agent: z.string().nullable(),
+      taskId: z.string().nullable(),
+    }),
+  ),
+  /** ADR-0017: live accounting for an external CLI session (watcher-driven). */
+  'external.sessionChanged': ev(
+    'external.sessionChanged',
+    1,
+    z.object({
+      taskId: z.string(),
+      terminalId: z.string(),
+      cli: z.string(),
+      status: z.enum(['active', 'ended']),
+      /** Short id of the entry snapshot (git tree), null for non-git projects. */
+      snapshotRef: z.string().nullable(),
+      files: z.array(
+        z.object({
+          path: z.string(),
+          status: z.enum(['created', 'modified', 'deleted', 'renamed']),
+          additions: z.number(),
+          deletions: z.number(),
+        }),
+      ),
+    }),
+  ),
   'git.changed': ev('git.changed', 1, z.object({ reason: z.string() })),
   'task.event': ev(
     'task.event',

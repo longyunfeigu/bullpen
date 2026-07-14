@@ -392,6 +392,31 @@ export const CHANNELS = {
       ),
     }),
   ),
+  /** ADR-0017: active external CLI sessions (renderer state restore). */
+  'external.listSessions': ch(
+    'external.listSessions',
+    1,
+    z.object({}).strict(),
+    z.object({
+      sessions: z.array(
+        z.object({
+          terminalId: z.string(),
+          taskId: z.string(),
+          cli: z.string(),
+          snapshotRef: z.string().nullable(),
+          status: z.enum(['active', 'ended']),
+          files: z.array(
+            z.object({
+              path: z.string(),
+              status: z.enum(['created', 'modified', 'deleted', 'renamed']),
+              additions: z.number(),
+              deletions: z.number(),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
   'git.status': ch(
     'git.status',
     1,

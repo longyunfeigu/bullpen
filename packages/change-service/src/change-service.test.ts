@@ -257,3 +257,45 @@ describe('disk write failure (M10/REL)', () => {
     }
   });
 });
+
+describe('external session baselines (ADR-0017)', () => {
+  it('captures a baseline from provided bytes, not from disk', async () => {
+    // The external CLI already wrote the new content to disk…
+    writeFileSync(join(root, 'a.txt'), 'externally rewritten\n');
+    // …but the accounting hands us the entry-snapshot bytes.
+    await service.ensureBaselineFromBytes('t1', 'a.txt', Buffer.from('line1\nline2\nline3\n'));
+    service.recordExternalChange('t1', 'a.txt', 'modified', null);
+
+    const cs = await service.changeSet('t1');
+    expect(cs.files).toHaveLength(1);
+    expect(cs.files[0]!.status).toBe('modified');
+    expect(cs.files[0]!.diff).toContain('-line1');
+    expect(cs.files[0]!.diff).toContain('+externally rewritten');
+  });
+
+  it('bytes=null records an honest created-during-session baseline', async () => {
+    writeFileSync(join(root, 'fresh.txt'), 'made by the CLI\n');
+    await service.ensureBaselineFromBytes('t1', 'fresh.txt', null);
+    const cs = await service.changeSet('t1');
+    expect(cs.files[0]!.status).toBe('created');
+    expect(cs.files[0]!.diff).toContain('+made by the CLI');
+  });
+
+  it('is idempotent per task+path (later events keep the first baseline)', async () => {
+    await service.ensureBaselineFromBytes('t1', 'a.txt', Buffer.from('v0\n'));
+    await service.ensureBaselineFromBytes('t1', 'a.txt', Buffer.from('v1-should-be-ignored\n'));
+    writeFileSync(join(root, 'a.txt'), 'v2\n');
+    const cs = await service.changeSet('t1');
+    expect(cs.files[0]!.diff).toContain('-v0');
+  });
+
+  it('rollback restores the snapshot bytes exactly', async () => {
+    const original = readFileSync(join(root, 'a.txt'));
+    writeFileSync(join(root, 'a.txt'), 'CLI overwrote this\n');
+    await service.ensureBaselineFromBytes('t1', 'a.txt', original);
+    const preflight = await service.rollbackPreflight('t1');
+    expect(preflight.safe).toContain('a.txt');
+    await service.rollback('t1');
+    expect(readFileSync(join(root, 'a.txt'))).toEqual(original);
+  });
+});

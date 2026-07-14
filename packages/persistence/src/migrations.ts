@@ -201,4 +201,14 @@ ALTER TABLE tasks ADD COLUMN changed_files INTEGER;
 CREATE INDEX idx_tasks_updated ON tasks(updated_at);
 `,
   },
+  {
+    version: 3,
+    name: 'external-cli-sessions',
+    // ADR-0017: marks a task as an external CLI agent session
+    // ({ cli, terminalId, snapshotRef, status }); such tasks never dispatch
+    // an agent run — their changes arrive through watcher accounting.
+    up: `
+ALTER TABLE tasks ADD COLUMN external_json TEXT;
+`,
+  },
 ];
