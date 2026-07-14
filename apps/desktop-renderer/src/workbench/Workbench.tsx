@@ -4,6 +4,7 @@ import { useTaskStore } from '../store/taskStore.js';
 import { openTaskInEditor } from '../views/openInEditor.js';
 import { handleGlobalKeydown, registerCommands, executeCommand } from '../commands.js';
 import { onEvent, platform, rpcResult } from '../bridge.js';
+import { runInitsOnce } from './init.js';
 import { Splitter } from './Splitter.js';
 import { CommandPalette } from './CommandPalette.js';
 import { WelcomeView } from '../views/WelcomeView.js';
@@ -177,7 +178,7 @@ export const overlayRegistry: React.ComponentType[] = [];
 /** Dual-form shell (ADR-0004): the Home task launcher registered by contrib. */
 export const homeSurfaceRegistry: { main: React.ComponentType | null } = { main: null };
 export const editorBannerRegistry: React.ComponentType[] = [];
-export const initRegistry: Array<() => void> = [];
+export { initRegistry } from './init.js';
 
 function BottomPanelContent({ tab }: { tab: BottomTab }): React.JSX.Element {
   const Component = bottomTabRegistry[tab];
@@ -231,7 +232,7 @@ export function Workbench(): React.JSX.Element {
   }, [setOverlay]);
 
   useEffect(() => {
-    for (const init of initRegistry) init();
+    if (!runInitsOnce()) return;
     // ADR-0013: shared git-status snapshot for explorer/tab/gutter decorations.
     void import('../store/gitStatusStore.js').then(({ useGitStatusStore }) =>
       useGitStatusStore.getState().init(),
