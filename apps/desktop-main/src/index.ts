@@ -86,6 +86,17 @@ const CSP = [
   "form-action 'none'",
 ].join('; ');
 
+/**
+ * Dev-server-only CSP: vite's @vitejs/plugin-react injects an inline
+ * react-refresh preamble and HMR talks over a websocket — both are blocked by
+ * the production policy (blank window). Applies exclusively to requests from
+ * the localhost dev server; the packaged app:// surface always gets CSP above.
+ */
+const DEV_CSP = CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'").replace(
+  "connect-src 'self'",
+  "connect-src 'self' ws:",
+);
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'app',
@@ -111,15 +122,17 @@ function registerAppProtocol(rendererDist: string): void {
 
 function installCsp(): void {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const isAppContent =
-      details.url.startsWith('app://') ||
-      (isDev && DEV_SERVER_URL && details.url.startsWith(DEV_SERVER_URL));
+    const isDevContent = Boolean(isDev && DEV_SERVER_URL && details.url.startsWith(DEV_SERVER_URL));
+    const isAppContent = details.url.startsWith('app://') || isDevContent;
     if (!isAppContent) {
       callback({ responseHeaders: details.responseHeaders });
       return;
     }
     callback({
-      responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [CSP] },
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [isDevContent ? DEV_CSP : CSP],
+      },
     });
   });
 }
@@ -222,6 +235,23 @@ function createMainWindow(bootstrap: Bootstrap): BrowserWindow {
       forceQuit = true;
     }
   });
+
+  // Dev visibility: renderer console errors/warnings surface in the dev log
+  // (a blank window is otherwise undebuggable from the terminal).
+  if (isDev) {
+    win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      if (level >= 2) {
+        bootstrap.logger.warn('renderer console', {
+          level,
+          message: message.slice(0, 500),
+          source: `${sourceId}:${line}`,
+        });
+      }
+    });
+    win.webContents.on('did-fail-load', (_event, code, description, url) => {
+      bootstrap.logger.error('renderer failed to load', { code, description, url });
+    });
+  }
 
   win.webContents.on('render-process-gone', (_event, details) => {
     bootstrap.logger.error('renderer crashed', { reason: details.reason });
