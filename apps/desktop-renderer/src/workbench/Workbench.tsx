@@ -216,6 +216,10 @@ export function Workbench(): React.JSX.Element {
 
   useEffect(() => {
     for (const init of initRegistry) init();
+    // ADR-0013: shared git-status snapshot for explorer/tab/gutter decorations.
+    void import('../store/gitStatusStore.js').then(({ useGitStatusStore }) =>
+      useGitStatusStore.getState().init(),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

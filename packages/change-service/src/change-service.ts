@@ -482,6 +482,37 @@ export class ChangeService {
     return { taskId, files, totalAdditions, totalDeletions };
   }
 
+  /**
+   * Review presentation (ADR-0013): both sides of one file's net change —
+   * the task baseline snapshot and the current logical content. Returns null
+   * when the path was never touched by the task.
+   */
+  async fileContents(
+    taskId: string,
+    path: string,
+  ): Promise<{ baseline: string | null; current: string | null; binary: boolean } | null> {
+    const baselines = this.repo.baselinesFor(taskId);
+    const renames = this.repo.changesFor(taskId).filter((c) => c.kind === 'renamed') as Array<
+      FileChangeRecord & { renameTo: string }
+    >;
+    const renamedFrom = renames.find((r) => r.renameTo === path)?.relativePath ?? null;
+    const baseline =
+      baselines.find((b) => b.relativePath === path) ??
+      (renamedFrom ? baselines.find((b) => b.relativePath === renamedFrom) : undefined);
+    if (!baseline) return null;
+    const baselineBytes = baseline.blobHash
+      ? await this.blobs.get(baseline.blobHash).catch(() => null)
+      : null;
+    const current = await this.documents.readLogical(path).catch(() => null);
+    const binary =
+      (baselineBytes ? detectBinary(baselineBytes) : false) || (current?.binary ?? false);
+    return {
+      baseline: baseline.existed && baselineBytes ? stripBom(baselineBytes.toString('utf8')) : null,
+      current: current && !current.binary ? current.content : null,
+      binary,
+    };
+  }
+
   /** CHG-010: classify every touched path before rollback. */
   async rollbackPreflight(taskId: string): Promise<{
     safe: string[];

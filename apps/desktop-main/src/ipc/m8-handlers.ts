@@ -18,6 +18,7 @@ export function registerM8Handlers(tasks: TaskService, logger: Logger): void {
       'task.changeSet': async ({ taskId }) => ({
         changeSet: await tasks.changeSetForReview(taskId),
       }),
+      'task.reviewFile': async ({ taskId, path }) => tasks.reviewFileContents(taskId, path),
       'task.reviewDecision': async (payload) =>
         tasks.applyReviewDecision({
           taskId: payload.taskId,

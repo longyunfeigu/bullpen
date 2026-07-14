@@ -593,6 +593,16 @@ export const CHANNELS = {
     z.object({ taskId: z.string() }).strict(),
     z.object({ changeSet: ChangeSetDtoSchema }),
   ),
+  'task.reviewFile': ch(
+    'task.reviewFile',
+    1,
+    z.object({ taskId: z.string(), path: z.string().min(1).max(4000) }).strict(),
+    z.object({
+      baseline: z.string().nullable(),
+      current: z.string().nullable(),
+      binary: z.boolean(),
+    }),
+  ),
   'task.reviewDecision': ch(
     'task.reviewDecision',
     1,

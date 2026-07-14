@@ -3,6 +3,7 @@ import type { DirEntryDto } from '@pi-ide/ipc-contracts';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useEditorStore } from '../store/editorStore.js';
 import { useAppStore } from '../store/appStore.js';
+import { useGitStatusStore, MARK_COLOR } from '../store/gitStatusStore.js';
 import { rpcResult } from '../bridge.js';
 import { useGlowPaths } from './useGlow.js';
 import { Ic } from './home-icons.js';
@@ -67,6 +68,9 @@ export function ExplorerView(): React.JSX.Element {
   const pushToast = useAppStore((s) => s.pushToast);
   // PIVOT-016: agent writes make the touched rows glow while the change is fresh.
   const glowPaths = useGlowPaths();
+  // ADR-0013: git status decorations (A/M/D letters, dirty-folder dots).
+  const gitMarks = useGitStatusStore((s) => s.byPath);
+  const gitDirty = useGitStatusStore((s) => s.dirty);
 
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(600);
@@ -276,7 +280,45 @@ export function ExplorerView(): React.JSX.Element {
                   <span aria-hidden style={{ color: 'var(--fg-muted)', display: 'flex' }}>
                     <Ic name={isDir ? 'folder' : 'file'} size={13} />
                   </span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.name}</span>
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      flex: 1,
+                      minWidth: 0,
+                      color:
+                        !isDir && gitMarks[row.path] ? MARK_COLOR[gitMarks[row.path]!] : undefined,
+                    }}
+                  >
+                    {row.name}
+                  </span>
+                  {!isDir && gitMarks[row.path] ? (
+                    <span
+                      className="mono"
+                      data-testid={`tree-git-${row.path}`}
+                      style={{
+                        color: MARK_COLOR[gitMarks[row.path]!],
+                        fontSize: 10,
+                        fontWeight: 700,
+                        paddingRight: 8,
+                      }}
+                    >
+                      {gitMarks[row.path]}
+                    </span>
+                  ) : isDir && gitDirty[row.path] ? (
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 5,
+                        height: 5,
+                        borderRadius: '50%',
+                        background: 'var(--warning)',
+                        marginRight: 10,
+                        opacity: 0.8,
+                        flex: 'none',
+                      }}
+                    />
+                  ) : null}
                 </div>
                 {editing &&
                 editing.kind !== 'rename' &&

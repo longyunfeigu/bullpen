@@ -699,6 +699,15 @@ export class TaskService {
   // ---------- review projection and decisions (M8-05, CHG-005/007/008) ----------
 
   /** Net change set with hunks and review-state projection for the Review page. */
+  /** ADR-0013: both sides of one file for the review diff editor. */
+  async reviewFileContents(
+    taskId: string,
+    path: string,
+  ): Promise<{ baseline: string | null; current: string | null; binary: boolean }> {
+    const result = await this.contextForTask(taskId).changes.fileContents(taskId, path);
+    return result ?? { baseline: null, current: null, binary: false };
+  }
+
   async changeSetForReview(taskId: string): Promise<ChangeSetDto> {
     const changes = this.contextForTask(taskId).changes;
     const cs = await changes.changeSet(taskId);

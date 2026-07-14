@@ -597,3 +597,29 @@ kbd {
   overflow: hidden;
   white-space: nowrap;
 }
+
+/* ---------- editor gutter change bars (ADR-0013) ---------- */
+.gutter-added,
+.gutter-modified {
+  width: 3px !important;
+  margin-left: 3px;
+}
+.gutter-added {
+  background: var(--success);
+}
+.gutter-modified {
+  background: var(--info);
+}
+.gutter-deleted {
+  width: 0 !important;
+  margin-left: 1px;
+}
+.gutter-deleted::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 0;
+  border-left: 5px solid var(--danger);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}

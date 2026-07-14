@@ -150,3 +150,10 @@
 - `VERIFIED`：自动化和人工验收均通过，证据已记录。
 - 任一 P0 缺陷、数据丢失、安全越界或无法恢复的迁移问题会阻止后续 Stable。
 - Claude Code 不得把所有任务一次性标 DONE；每项需要可定位提交和测试。
+
+## 未排期 backlog（记录，不承诺）
+
+- **Best-of-N**（ADR-0009 am.2 调研结论）：同一 charter 用 N 个模型在 N 个隔离 worktree 并行执行，结果并排比较后选优落地。现有 worktree/任务架构天然支持；未排期。
+- **PR/远端集成**：明确不做（本地 apply 派定位，ADR-0013）。
+- **Merged worktree 任务的事后回滚**（"revert merge"）：ACCEPTED 后 worktree 已丢弃，需要基于 change-set 快照对主树做反向应用；当前给出明确提示（ADR-0012 记录限制）。
+- **Gutter 变更条对未保存 buffer 的实时 diff**：当前保存后刷新（ADR-0013 记录取舍）。

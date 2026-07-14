@@ -3,6 +3,7 @@ import type { DirEntryDto } from '@pi-ide/ipc-contracts';
 import { useEditorStore } from '../store/editorStore.js';
 import { useAppStore } from '../store/appStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
+import { useGitStatusStore, MARK_COLOR } from '../store/gitStatusStore.js';
 import { useGlowPaths } from './useGlow.js';
 import { Ic } from './home-icons.js';
 
@@ -25,6 +26,7 @@ export function HomeProjectTree(): React.JSX.Element {
   const expanded = useWorkspaceStore((s) => s.expanded);
   const toggleExpand = useWorkspaceStore((s) => s.toggleExpand);
   const loadDir = useWorkspaceStore((s) => s.loadDir);
+  const gitMarks = useGitStatusStore((s) => s.byPath);
 
   // Root loads on mount (expanding the project row mounts the tree).
   useEffect(() => {
@@ -70,7 +72,12 @@ export function HomeProjectTree(): React.JSX.Element {
               {isDir ? <Ic name="chevron" size={11} /> : null}
             </span>
             <Ic name={isDir ? 'folder' : 'file'} size={12} />
-            <span className="hm-tree-name">{entry.name}</span>
+            <span
+              className="hm-tree-name"
+              style={!isDir && gitMarks[path] ? { color: MARK_COLOR[gitMarks[path]!] } : undefined}
+            >
+              {entry.name}
+            </span>
           </button>
           {isDir && isOpen ? renderDir(path, depth + 1) : null}
         </React.Fragment>

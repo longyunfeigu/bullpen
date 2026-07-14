@@ -786,10 +786,10 @@ export function HomeView(): React.JSX.Element {
                   data-testid={`home-mode-${m.id}`}
                   role="radio"
                   aria-checked={mode === m.id}
-                  title={m.hint}
+                  title={`${m.label} — ${m.hint}`}
                   onClick={() => setMode(m.id)}
                 >
-                  {m.label}
+                  {m.seg}
                 </button>
               ))}
             </div>

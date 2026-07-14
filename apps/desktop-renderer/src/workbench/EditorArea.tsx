@@ -3,6 +3,8 @@ import { monaco, modelUri } from '../monaco-setup.js';
 import { useEditorStore, isMdRich, type EditorGroup } from '../store/editorStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useAppStore } from '../store/appStore.js';
+import { useGitStatusStore, MARK_COLOR } from '../store/gitStatusStore.js';
+import { parseGutterRanges, toDecorations } from './gutter-diff.js';
 import { WelcomeView } from '../views/WelcomeView.js';
 import { ImageView } from '../views/ImageView.js';
 
@@ -49,6 +51,22 @@ const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
 const viewStates = new Map<string, monaco.editor.ICodeEditorViewState | null>();
 
+/** Git status letter on a tab (ADR-0013 decorations). */
+function TabGitMark({ path }: { path: string }): React.JSX.Element | null {
+  const mark = useGitStatusStore((s) => s.byPath[path]);
+  if (!mark) return null;
+  return (
+    <span
+      className="mono"
+      data-testid={`tab-git-${path}`}
+      title={`git: ${mark}`}
+      style={{ color: MARK_COLOR[mark], fontSize: 10, fontWeight: 700 }}
+    >
+      {mark}
+    </span>
+  );
+}
+
 function MonacoPane({
   group,
   groupIndex,
@@ -59,6 +77,9 @@ function MonacoPane({
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const currentPath = useRef<string | null>(null);
+  const gutterDecos = useRef<string[]>([]);
+  const gitVersion = useGitStatusStore((s) => s.version);
+  const gitIsRepo = useGitStatusStore((s) => s.isRepo);
   const settings = useAppStore((s) => s.settings);
   const setCursor = useEditorStore((s) => s.setCursor);
   const setActiveLanguage = useEditorStore((s) => s.setActiveLanguage);
@@ -107,6 +128,27 @@ function MonacoPane({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ADR-0013: gutter change bars vs the git index — refreshed when the file
+  // is (re)opened, saved (dirty→clean), or the watcher bumps the git status.
+  const activeDirty = meta?.dirty === true;
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !active || !gitIsRepo || activeDirty) return;
+    let cancelled = false;
+    void rpcResult('git.diffFile', { path: active, staged: false }).then((res) => {
+      const model = editor.getModel();
+      if (cancelled || !model || currentPath.current !== active) return;
+      const diff = res.ok ? res.data.diff : '';
+      gutterDecos.current = model.deltaDecorations(
+        gutterDecos.current,
+        toDecorations(parseGutterRanges(diff ?? '')),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, activeDirty, gitVersion, gitIsRepo]);
 
   // Apply editor settings live.
   useEffect(() => {
@@ -435,6 +477,7 @@ function TabsRow({
           >
             {tab.pinned ? <span aria-label="pinned">📌</span> : null}
             <span>{name}</span>
+            <TabGitMark path={tab.path} />
             {meta?.externalState !== 'clean' && meta ? (
               <span className="text-warning" title="External change">
                 ⚠

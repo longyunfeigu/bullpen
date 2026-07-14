@@ -95,15 +95,33 @@ export const TONE_COLOR: Record<StateTone, string> = {
 export const MODE_META: Array<{
   id: 'ask' | 'edit' | 'auto' | 'full';
   label: string;
+  /** Compact segment label — the full label lives in the hint line/tooltips. */
+  seg: string;
   hint: string;
   danger?: boolean;
 }> = [
-  { id: 'ask', label: 'Read-only', hint: 'Answers questions; never writes or runs anything' },
-  { id: 'edit', label: 'Approve changes', hint: 'Plans first; every write/command asks you' },
-  { id: 'auto', label: 'Auto · pause on risk', hint: 'Low-risk actions run; risky ones ask' },
+  {
+    id: 'ask',
+    label: 'Read-only',
+    seg: 'Read',
+    hint: 'Answers questions; never writes or runs anything',
+  },
+  {
+    id: 'edit',
+    label: 'Approve changes',
+    seg: 'Approve',
+    hint: 'Plans first; every write/command asks you',
+  },
+  {
+    id: 'auto',
+    label: 'Auto · pause on risk',
+    seg: 'Auto',
+    hint: 'Low-risk actions run; risky ones ask',
+  },
   {
     id: 'full',
     label: 'Full auto',
+    seg: 'Full',
     hint: 'Nothing asks and the result is applied automatically — forbidden actions stay blocked, verification failures pause, and you can roll back afterwards',
     danger: true,
   },
