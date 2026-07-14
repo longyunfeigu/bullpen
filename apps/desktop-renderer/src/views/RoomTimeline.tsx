@@ -712,6 +712,11 @@ function ThinkingBlock(props: {
             ? `Thinking${seconds && seconds > 1 ? ` · ${seconds}s` : '…'}`
             : `Thought${seconds && seconds > 0 ? ` for ${seconds}s` : ''}`}
         </span>
+        {!props.live && !open ? (
+          <span className="rt-think-preview">
+            — {props.text.replace(/\s+/g, ' ').trim().slice(0, 110)}
+          </span>
+        ) : null}
         <span className="rt-think-chev" aria-hidden>
           {open ? '▾' : '▸'}
         </span>

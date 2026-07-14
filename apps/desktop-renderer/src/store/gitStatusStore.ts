@@ -2,9 +2,12 @@ import { create } from 'zustand';
 import { onEvent, rpcResult } from '../bridge.js';
 
 /**
- * Workspace git status for decorations (ADR-0013): explorer rows, tabs and
- * gutters read one shared, watcher-refreshed snapshot (same visual language
- * as VS Code: A green, M amber, D red, U green-untracked, C conflict).
+ * Workspace file decorations (ADR-0013): explorer rows, tabs and gutters read
+ * one shared, watcher-refreshed snapshot. Two sources, merged:
+ * - git status (authoritative when the project is a repo — covers user edits)
+ * - the product's own change records (agent-touched files; the ONLY source
+ *   for non-git projects, where git has nothing to say)
+ * Visual language mirrors VS Code: A green, M amber, D red, U untracked, C conflict.
  */
 
 export type GitMark = 'A' | 'M' | 'D' | 'U' | 'R' | 'C';
@@ -69,27 +72,40 @@ export const useGitStatusStore = create<GitStatusStore>((set, get) => ({
         void get().refresh();
       }, 400);
     });
+    // Accept/rollback/archive edges add or clear agent marks immediately.
+    onEvent('task.stateChanged', () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void get().refresh();
+      }, 250);
+    });
     void get().refresh();
   },
 
   async refresh() {
-    const res = await rpcResult('git.status', {});
-    if (!res.ok || !res.data.isRepo) {
-      if (get().isRepo || Object.keys(get().byPath).length > 0) {
-        set({ isRepo: false, byPath: {}, dirty: {}, version: get().version + 1 });
-      }
-      return;
-    }
+    const [gitRes, agentRes] = await Promise.all([
+      rpcResult('git.status', {}),
+      rpcResult('task.agentFileMarks', {}),
+    ]);
     const byPath: Record<string, GitMark> = {};
+    // Agent change records first …
+    if (agentRes.ok) {
+      for (const m of agentRes.data.marks) byPath[m.path] = m.mark;
+    }
+    // … git overrides per path when the project is a repo (it also sees user edits).
+    const isRepo = gitRes.ok && gitRes.data.isRepo;
+    if (gitRes.ok && gitRes.data.isRepo) {
+      for (const entry of gitRes.data.entries) byPath[entry.path] = markOf(entry);
+    }
     const dirty: Record<string, true> = {};
-    for (const entry of res.data.entries) {
-      byPath[entry.path] = markOf(entry);
-      let dir = entry.path;
+    for (const path of Object.keys(byPath)) {
+      let dir = path;
       while (dir.includes('/')) {
         dir = dir.slice(0, dir.lastIndexOf('/'));
         dirty[dir] = true;
       }
     }
-    set({ isRepo: true, byPath, dirty, version: get().version + 1 });
+    set({ isRepo, byPath, dirty, version: get().version + 1 });
   },
 }));

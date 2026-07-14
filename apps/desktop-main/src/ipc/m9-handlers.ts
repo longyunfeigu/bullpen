@@ -33,6 +33,7 @@ export function registerM9Handlers(tasks: TaskService, logger: Logger): void {
       'task.suggestWorktreeSetup': async () => ({
         command: await tasks.suggestWorktreeSetup(),
       }),
+      'task.agentFileMarks': async () => ({ marks: tasks.agentFileMarks() }),
     },
     logger,
   );

@@ -664,6 +664,14 @@ export const CHANNELS = {
     z.object({}).strict(),
     z.object({ suggestions: z.array(VerificationCommandSchema) }),
   ),
+  'task.agentFileMarks': ch(
+    'task.agentFileMarks',
+    1,
+    z.object({}).strict(),
+    z.object({
+      marks: z.array(z.object({ path: z.string(), mark: z.enum(['A', 'M', 'D', 'R']) })),
+    }),
+  ),
   'task.suggestWorktreeSetup': ch(
     'task.suggestWorktreeSetup',
     1,

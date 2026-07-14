@@ -64,6 +64,33 @@ test.describe('P4 review v2 + decorations (ADR-0013)', () => {
     }
   });
 
+  test('non-git projects still get marks from the agent change records', async () => {
+    const fixture = createTsSmallFixture(); // NOT a git repo
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
+    });
+    try {
+      await page.getByTestId('surface-home').click();
+      await expect(page.getByTestId('home-model')).toHaveValue(/mock/, { timeout: 15000 });
+      await page.getByTestId('home-mode-auto').click();
+      await page.getByTestId('home-intent').fill('[scenario:edit-basic] decorate without git');
+      await page.getByTestId('home-submit').click();
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
+
+      // Editor surface: the modified file carries an agent-record mark (M)
+      // even though git has nothing to say in this folder.
+      await page.getByTestId('task-room-open-editor').click();
+      const srcRow = page.getByTestId('tree-item-src');
+      await expect(srcRow).toBeVisible({ timeout: 15000 });
+      await srcRow.click();
+      await expect(page.getByTestId('tree-git-src/index.ts')).toHaveText('M', { timeout: 15000 });
+    } finally {
+      await app.close();
+    }
+  });
+
   test('git decorations: explorer letters, tab mark and gutter bars follow file changes', async () => {
     const fixture = createGitFixture();
     // One modified + one untracked file before launch.

@@ -1115,6 +1115,53 @@ export class TaskService {
     return context.verifications.detectSuggestions();
   }
 
+  /**
+   * Agent-touched file marks for tree/tab decorations (ADR-0013 amendment):
+   * derived from the product's own change records, so they work without git.
+   * Rolled-back/cancelled/archived tasks drop out; worktree tasks count only
+   * once merged (ACCEPTED) — before that the main tree is untouched.
+   */
+  agentFileMarks(): Array<{ path: string; mark: 'A' | 'M' | 'D' | 'R' }> {
+    const ws = this.workspace.current;
+    if (!ws) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT fc.relative_path AS path, fc.kind AS kind, fc.rename_to AS renameTo,
+                fb.existed AS existed
+         FROM file_changes fc
+         JOIN tasks t ON t.id = fc.task_id
+         LEFT JOIN file_baselines fb
+           ON fb.task_id = fc.task_id AND fb.relative_path = fc.relative_path
+         WHERE t.workspace_id = ?
+           AND t.archived = 0
+           AND t.state NOT IN ('ROLLED_BACK', 'CANCELLED')
+           AND (t.worktree_json IS NULL OR t.state = 'ACCEPTED')
+         ORDER BY fc.created_at ASC`,
+      )
+      .all(ws.id) as Array<{
+      path: string;
+      kind: string;
+      renameTo: string | null;
+      existed: number | null;
+    }>;
+    const marks = new Map<string, 'A' | 'M' | 'D' | 'R'>();
+    for (const row of rows) {
+      if (row.kind === 'deleted') {
+        marks.set(row.path, 'D');
+      } else if (row.kind === 'renamed' && row.renameTo) {
+        marks.set(row.renameTo, 'R');
+        marks.set(row.path, 'D');
+      } else if (row.kind === 'created') {
+        marks.set(row.path, 'A');
+      } else {
+        // modified — but a file the task itself created stays A.
+        const current = marks.get(row.path);
+        marks.set(row.path, current === 'A' || row.existed === 0 ? 'A' : 'M');
+      }
+    }
+    return [...marks.entries()].map(([path, mark]) => ({ path, mark }));
+  }
+
   /** Suggested worktree setup command from the project's lockfiles (ADR-0009 am.2). */
   async suggestWorktreeSetup(): Promise<string | null> {
     const ws = this.workspace.current;
