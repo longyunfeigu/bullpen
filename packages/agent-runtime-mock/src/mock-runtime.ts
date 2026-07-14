@@ -217,6 +217,30 @@ export class MockAgentRuntime implements AgentRuntime {
         await delay(step.ms, handle.controller.signal);
         return 'ok';
       }
+      case 'thinking': {
+        const messageId = `${newId('msg')}#t0`;
+        const chunkSize = step.chunkSize ?? 32;
+        const startedAt = Date.now();
+        for (let i = 0; i < step.text.length; i += chunkSize) {
+          if (aborted()) return 'ok';
+          yield {
+            ...base(),
+            type: 'thinking.delta',
+            messageId,
+            text: step.text.slice(i, i + chunkSize),
+          };
+          if (this.pacingMs > 0) await delay(this.pacingMs, handle.controller.signal);
+        }
+        if (aborted()) return 'ok';
+        yield {
+          ...base(),
+          type: 'thinking.completed',
+          messageId,
+          text: step.text,
+          durationMs: Date.now() - startedAt,
+        };
+        return 'ok';
+      }
       case 'assistant': {
         const messageId = newId('msg');
         const chunkSize = step.chunkSize ?? 32;

@@ -549,6 +549,15 @@ export function SettingsView(): React.JSX.Element {
                 onChange={(v) => set({ agent: { autoApproveKnownR2: v } })}
               />
             </Row>
+            <Row
+              label="Show model thinking"
+              hint="Streams the model's reasoning, collapsed in the timeline — never treated as evidence"
+            >
+              <Toggle
+                checked={settings.agent.showThinking}
+                onChange={(v) => set({ agent: { showThinking: v } })}
+              />
+            </Row>
           </div>
         ) : null}
 

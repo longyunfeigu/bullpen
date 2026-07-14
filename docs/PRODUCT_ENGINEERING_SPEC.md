@@ -476,7 +476,7 @@ Application
 | AG-003 | 支持创建 Session、prompt、steer、followUp、abort、subscribe 和恢复引用。 | P0 |
 | AG-004 | 所有 Pi 事件映射为产品 `AgentEvent`，带 sequence、timestamp、runId 和 schemaVersion。 | P0 |
 | AG-005 | 流式文本、工具开始/进度/结果、usage、停止原因和错误均可观察。 | P0 |
-| AG-006 | 不向用户展示模型私有思维链；只展示 Agent 明确输出的计划、说明和可验证动作。 | P0 |
+| AG-006 | （ADR-0011 修订）模型思维链以独立、默认折叠的展示通道呈现（可在设置中关闭）；思维链永不进入证据体系（计划/报告/验证），也不作为动作行。 | P0 |
 | AG-007 | Edit/Auto 首次写入前必须存在计划对象；计划项有 ID、状态、描述、受影响区域和验证方法。 | P0 |
 | AG-008 | 用户可批准、编辑或拒绝计划；编辑后的计划作为新用户消息送入 Runtime。 | P0 |
 | AG-009 | 停止按钮始终可见；停止后不再发起新工具，最终状态不冒充成功。 | P0 |

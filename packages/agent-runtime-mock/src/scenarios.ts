@@ -2,6 +2,8 @@ import type { CreateSessionInput, TaskPlan } from '@pi-ide/agent-contract';
 
 export type ScenarioStep =
   | { kind: 'assistant'; text: string; chunkSize?: number }
+  /** ADR-0011: model reasoning stream (collapsed presentation channel). */
+  | { kind: 'thinking'; text: string; chunkSize?: number }
   | { kind: 'plan'; plan: TaskPlan }
   | { kind: 'plan-update'; plan: TaskPlan }
   /**
@@ -55,6 +57,11 @@ export function promptParam(prompt: string, key: string): string | undefined {
 export const SCENARIOS: Record<string, Scenario> = {
   'ask-basic': (ctx) => [
     { kind: 'wait', ms: 5 },
+    {
+      kind: 'thinking',
+      text: 'The user asks about the workspace layout. I should look at the structure and summarize the entry points and tests. (deterministic mock thinking)',
+      chunkSize: 40,
+    },
     {
       kind: 'assistant',
       text: `Looking at the workspace at ${ctx.session.workspaceRoot}: this appears to be a TypeScript project. The entry point wires the main services together, and tests live alongside sources. (deterministic mock answer)`,

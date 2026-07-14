@@ -726,9 +726,25 @@ function TimelineCard({
     case 'agent.message':
       return (
         <Card icon="bot" title="Agent" testid="tl-agent">
-          <div style={{ whiteSpace: 'pre-wrap' }}>{String(payload.text ?? '')}</div>
+          <Markdown text={String(payload.text ?? '')} />
         </Card>
       );
+    case 'agent.thinking': {
+      const seconds =
+        typeof payload.durationMs === 'number' ? Math.round(payload.durationMs / 1000) : 0;
+      return (
+        <Card
+          icon="bot"
+          title={`✦ Thought${seconds > 0 ? ` for ${seconds}s` : ''}`}
+          testid="tl-thinking"
+          collapsible
+        >
+          <div className="text-muted" style={{ whiteSpace: 'pre-wrap', fontSize: 11.5 }}>
+            {String(payload.text ?? '')}
+          </div>
+        </Card>
+      );
+    }
     case 'tool.call': {
       const ok = payload.ok === true;
       const state = String(payload.state ?? '');
@@ -951,7 +967,9 @@ function TimelineCard({
               <summary style={{ cursor: 'pointer' }} className="text-muted">
                 Agent's own summary (unverified narrative)
               </summary>
-              <div style={{ whiteSpace: 'pre-wrap', paddingTop: 4 }}>{agentSummary}</div>
+              <div style={{ paddingTop: 4 }}>
+                <Markdown text={agentSummary} />
+              </div>
             </details>
           ) : null}
           <div className="text-muted" style={{ fontSize: 10.5, marginTop: 4 }}>
@@ -1072,9 +1090,16 @@ export function TimelineList({ taskState }: { taskState: string }): React.JSX.El
               context={timelineContext}
             />
           ))}
+          {store.streamingThinking ? (
+            <Card icon="bot" title="✦ Thinking…" testid="tl-thinking-live">
+              <div className="text-muted" style={{ whiteSpace: 'pre-wrap', fontSize: 11.5 }}>
+                {store.streamingThinking.text}
+              </div>
+            </Card>
+          ) : null}
           {store.streaming ? (
             <Card icon="bot" title="Agent (streaming…)" testid="tl-streaming">
-              <div style={{ whiteSpace: 'pre-wrap' }}>{store.streaming.text}</div>
+              <Markdown text={store.streaming.text} />
             </Card>
           ) : null}
         </>

@@ -1701,6 +1701,28 @@ export class TaskService {
       case 'message.delta':
         broadcast('task.stream', { taskId, runId, messageId: event.messageId, delta: event.text });
         break;
+      // ADR-0011: thinking is presentation-only — streamed live, persisted as a
+      // collapsed timeline block, excluded from reports/evidence. A settings
+      // switch drops it entirely.
+      case 'thinking.delta':
+        if (this.settings.effective.agent.showThinking) {
+          broadcast('task.streamThinking', {
+            taskId,
+            runId,
+            messageId: event.messageId,
+            delta: event.text,
+          });
+        }
+        break;
+      case 'thinking.completed':
+        if (this.settings.effective.agent.showThinking && event.text.trim().length > 0) {
+          this.recordEvent(taskId, 'agent.thinking', {
+            messageId: event.messageId,
+            text: event.text,
+            durationMs: event.durationMs,
+          });
+        }
+        break;
       case 'message.completed':
         this.recordEvent(taskId, 'agent.message', {
           messageId: event.message.messageId,

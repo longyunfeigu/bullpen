@@ -81,6 +81,16 @@ export const EVENT_CHANNELS = {
       delta: z.string(),
     }),
   ),
+  'task.streamThinking': ev(
+    'task.streamThinking',
+    1,
+    z.object({
+      taskId: z.string(),
+      runId: z.string(),
+      messageId: z.string(),
+      delta: z.string(),
+    }),
+  ),
   'task.stateChanged': ev(
     'task.stateChanged',
     1,

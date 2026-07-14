@@ -49,6 +49,9 @@ export const SettingsSchema = z.object({
       maxOutputKb: z.number().int().min(64).max(4096).default(1024),
       /** Concurrent agent runs in the open workspace; extra starts queue FIFO (ADR-0006; 1 = pre-ADR behavior). */
       maxConcurrentRuns: z.number().int().min(1).max(8).default(3),
+      /** ADR-0011: stream + record the model's thinking (collapsed in the UI,
+       * excluded from the evidence system). */
+      showThinking: z.boolean().default(true),
     })
     .prefault({}),
   notifications: z

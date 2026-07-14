@@ -64,7 +64,6 @@ export function TaskRoomView(): React.JSX.Element {
 
   const running = RUNNING_TASK_STATES.has(task.state);
   const answered = isAnswered(task);
-  const action = currentActionLine(activity);
   const files = activity?.filesTouched ?? [];
   const sameProject = workspace?.path === task.projectPath;
 
@@ -150,13 +149,9 @@ export function TaskRoomView(): React.JSX.Element {
               {modeLabel(task.mode)} · {task.model.providerId}/{task.model.modelId}
               {task.model.thinkingLevel ? ` · effort ${task.model.thinkingLevel}` : ''}
             </span>
-            {action && running ? (
-              <span className="tr-action" data-testid="task-room-action">
-                — {actionLine(action.kind, action.label)}
-              </span>
-            ) : null}
           </div>
           <RoomTimeline task={task} />
+          {running ? <ActivityStrip taskId={task.id} /> : null}
           <RoomComposer task={task} running={running} />
         </div>
 
@@ -324,6 +319,69 @@ export function TaskRoomView(): React.JSX.Element {
 function actionLine(kind: string, label: string): string {
   void kind;
   return label.length > 90 ? `${label.slice(0, 87)}…` : label;
+}
+
+/**
+ * Live activity strip (ADR-0011): what the agent is DOING right now — current
+ * tool + target, elapsed time and token spend — replacing the bare "Working".
+ */
+function ActivityStrip({ taskId }: { taskId: string }): React.JSX.Element {
+  const store = useTaskStore();
+  const activity = useActivityStore((s) => s.perTask[taskId]);
+  const streamingThinking = useTaskStore((s) => s.streamingThinking);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const action = currentActionLine(activity);
+  const current = activity?.current ?? null;
+  const elapsed = current
+    ? Math.max(0, Math.round((Date.now() - Date.parse(current.at)) / 1000))
+    : null;
+
+  // Token spend so far: sum the recorded usage events for this task.
+  const tokens = useMemo(() => {
+    let input = 0;
+    let output = 0;
+    for (const event of store.timeline) {
+      if (event.type !== 'agent.usage') continue;
+      const usage = (event.payload as { usage?: { inputTokens?: number; outputTokens?: number } })
+        .usage;
+      input += usage?.inputTokens ?? 0;
+      output += usage?.outputTokens ?? 0;
+    }
+    return { input, output };
+  }, [store.timeline]);
+
+  const label = streamingThinking
+    ? 'Thinking…'
+    : store.streaming
+      ? 'Writing a reply…'
+      : action
+        ? actionLine(action.kind, action.label)
+        : 'Working…';
+
+  const fmt = (n: number): string =>
+    n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
+
+  return (
+    <div className="tr-activity" data-testid="task-room-activity">
+      <span className="tr-activity-dot" aria-hidden />
+      <span className="tr-activity-label" data-testid="task-room-action">
+        {label}
+      </span>
+      <span className="tr-activity-meta">
+        {current && elapsed !== null && elapsed > 1 ? <span>{elapsed}s</span> : null}
+        {tokens.input + tokens.output > 0 ? (
+          <span title="Tokens so far (in · out)">
+            ↑{fmt(tokens.input)} ↓{fmt(tokens.output)}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
 }
 
 /** Worktree chip — branch identity + escape hatches (terminal / Finder). */

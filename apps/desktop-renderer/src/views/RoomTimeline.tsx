@@ -373,6 +373,14 @@ function eventNode(
           <Markdown text={String(payload.text ?? '')} />
         </Bubble>
       );
+    case 'agent.thinking':
+      return (
+        <ThinkingBlock
+          key={event.id}
+          text={String(payload.text ?? '')}
+          durationMs={typeof payload.durationMs === 'number' ? payload.durationMs : null}
+        />
+      );
     case 'tool.call': {
       const toolName = String(payload.name ?? '');
       // Plan-channel plumbing never renders as tool rows — the plan card and
@@ -662,6 +670,60 @@ function VerRow({
   );
 }
 
+/**
+ * Model reasoning (ADR-0011): collapsed by default, never part of the
+ * evidence system. Live variant streams softly and folds when done.
+ */
+function ThinkingBlock(props: {
+  text: string;
+  durationMs: number | null;
+  live?: boolean;
+  startedAt?: number;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!props.live) return;
+    const timer = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [props.live]);
+  const seconds = props.live
+    ? Math.max(0, Math.round((Date.now() - (props.startedAt ?? Date.now())) / 1000))
+    : props.durationMs !== null
+      ? Math.round(props.durationMs / 1000)
+      : null;
+  return (
+    <div
+      className={`rt-think ${props.live ? 'live' : ''} ${open ? 'open' : ''}`}
+      data-testid={props.live ? 'tl-thinking-live' : 'tl-thinking'}
+    >
+      <button
+        className="rt-think-head"
+        onClick={() => setOpen(!open)}
+        title={props.live ? 'The model is reasoning' : 'Show the model\u2019s reasoning'}
+      >
+        <span className="rt-think-star" aria-hidden>
+          ✦
+        </span>
+        <span className={`rt-think-label ${props.live ? 'shimmer' : ''}`}>
+          {props.live
+            ? `Thinking${seconds && seconds > 1 ? ` · ${seconds}s` : '…'}`
+            : `Thought${seconds && seconds > 0 ? ` for ${seconds}s` : ''}`}
+        </span>
+        <span className="rt-think-chev" aria-hidden>
+          {open ? '▾' : '▸'}
+        </span>
+      </button>
+      {open || props.live ? (
+        <div className="rt-think-body" data-testid="tl-thinking-body">
+          {props.text}
+          {props.live ? <span className="rt-live-caret" aria-hidden /> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** Worktree setup evidence row (deps install etc. before the agent started). */
 function SetupRow(props: {
   command: string;
@@ -727,7 +789,7 @@ export function RoomTimeline({ task }: { task: TaskDto }): React.JSX.Element {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [store.timeline.length, store.streaming?.text.length]);
+  }, [store.timeline.length, store.streaming?.text.length, store.streamingThinking?.text.length]);
 
   // Elapsed time per milestone = distance to the next state change.
   const msMeta = new Map<string, string | null>();
@@ -745,6 +807,14 @@ export function RoomTimeline({ task }: { task: TaskDto }): React.JSX.Element {
       ) : (
         <>
           {store.timeline.map((event) => eventNode(event, context, task, msMeta))}
+          {store.streamingThinking ? (
+            <ThinkingBlock
+              live
+              text={store.streamingThinking.text}
+              durationMs={null}
+              startedAt={store.streamingThinking.startedAt}
+            />
+          ) : null}
           {store.streaming ? (
             <Bubble who="agent" testid="tl-streaming" live>
               <Markdown text={store.streaming.text} />

@@ -225,6 +225,22 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
         label: trunc(str(p.text), 140),
         status: 'ok',
       };
+    case 'agent.thinking':
+      // ADR-0011: reasoning is presentation-only — it never becomes the
+      // action line or activity noise (the timeline renders it directly).
+      return null;
+    case 'worktree.setup': {
+      const ok = p.ok === true;
+      return {
+        ...base,
+        kind: 'command',
+        label: ok
+          ? `Worktree setup finished: ${trunc(str(p.command), 60)}`
+          : `Worktree setup failed: ${trunc(str(p.command), 60)}`,
+        status: ok ? 'ok' : 'error',
+        author: 'system',
+      };
+    }
     case 'agent.question': {
       const prompt = rec(p.prompt);
       return {

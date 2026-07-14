@@ -728,3 +728,125 @@
 .tr-note.warn {
   color: var(--warning);
 }
+
+/* ---------- model thinking (ADR-0011): quiet, collapsed, foldable ---------- */
+.rt-think {
+  margin: 2px 0 2px 2px;
+  border-left: 2px solid transparent;
+  padding-left: 8px;
+}
+.rt-think.open,
+.rt-think.live {
+  border-left-color: var(--border);
+}
+.rt-think-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--fg-faint);
+  font-size: 11px;
+  font-family: inherit;
+  padding: 2px 4px 2px 0;
+  cursor: pointer;
+  border-radius: 5px;
+}
+.rt-think-head:hover {
+  color: var(--fg-muted);
+}
+.rt-think-star {
+  font-size: 10px;
+  color: var(--accent);
+  opacity: 0.75;
+}
+.rt-think-label.shimmer {
+  background: linear-gradient(90deg, var(--fg-faint) 25%, var(--fg) 50%, var(--fg-faint) 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: rt-think-shimmer 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rt-think-label.shimmer {
+    animation: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+@keyframes rt-think-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.rt-think-chev {
+  font-size: 9px;
+  opacity: 0.7;
+}
+.rt-think-body {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--fg-faint);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 2px 0 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* ---------- live activity strip (ADR-0011) ---------- */
+.tr-activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  min-height: 30px;
+}
+.tr-activity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--info);
+  flex: none;
+  animation: tr-act-pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tr-activity-dot {
+    animation: none;
+  }
+}
+@keyframes tr-act-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+.tr-activity-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+.tr-activity-meta {
+  display: inline-flex;
+  gap: 10px;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

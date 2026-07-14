@@ -9,7 +9,8 @@
  *   them to disk (AuthStorage.inMemory).
  * - Untrusted workspaces get an empty discovery cwd so project-local pi
  *   extensions/skills/prompts are never loaded (AG-014).
- * - Thinking deltas are never forwarded (AG-006): only visible text.
+ * - Thinking streams are forwarded as dedicated thinking.* events (ADR-0011
+ *   amends AG-006): presentation-only, never part of the evidence system.
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -330,6 +331,8 @@ export class PiAgentRuntime implements AgentRuntime {
     entry.currentRunId = input.runId;
 
     const messageBuffers = new Map<string, string>();
+    /** First-delta timestamps per thinking block — for "thought for Xs". */
+    const thinkingStarts = new Map<string, number>();
     let lastUsage: ModelUsage | null = null;
     let sawError: string | null = null;
 
@@ -344,13 +347,41 @@ export class PiAgentRuntime implements AgentRuntime {
               delta?: string;
               text?: string;
             };
-            // Visible text only — thinking deltas are never forwarded (AG-006).
             if (streamEvent?.type === 'text_delta') {
               const delta = streamEvent.delta ?? streamEvent.text ?? '';
               if (delta) {
                 const id = messageIdOf(event.message) ?? 'assistant';
                 messageBuffers.set(id, (messageBuffers.get(id) ?? '') + delta);
                 queue.push({ ...base(), type: 'message.delta', messageId: id, text: delta });
+              }
+            }
+            // ADR-0011: reasoning streams as its own channel. Each thinking
+            // block completes individually (a message may hold several).
+            if (streamEvent?.type === 'thinking_delta') {
+              const delta = streamEvent.delta ?? '';
+              if (delta) {
+                const id = `${messageIdOf(event.message) ?? 'assistant'}#t${String(
+                  (streamEvent as { contentIndex?: number }).contentIndex ?? 0,
+                )}`;
+                if (!thinkingStarts.has(id)) thinkingStarts.set(id, Date.now());
+                queue.push({ ...base(), type: 'thinking.delta', messageId: id, text: delta });
+              }
+            }
+            if (streamEvent?.type === 'thinking_end') {
+              const content = (streamEvent as { content?: string }).content ?? '';
+              const id = `${messageIdOf(event.message) ?? 'assistant'}#t${String(
+                (streamEvent as { contentIndex?: number }).contentIndex ?? 0,
+              )}`;
+              const startedAt = thinkingStarts.get(id);
+              thinkingStarts.delete(id);
+              if (content.trim().length > 0) {
+                queue.push({
+                  ...base(),
+                  type: 'thinking.completed',
+                  messageId: id,
+                  text: content,
+                  durationMs: startedAt ? Date.now() - startedAt : null,
+                });
               }
             }
             break;

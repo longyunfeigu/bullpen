@@ -15,11 +15,20 @@ export interface StreamingMessage {
   text: string;
 }
 
+/** Live model reasoning (ADR-0011) — shown collapsed-by-default, then folds. */
+export interface StreamingThinking {
+  runId: string;
+  messageId: string;
+  text: string;
+  startedAt: number;
+}
+
 interface TaskStore {
   tasks: TaskDto[];
   activeTaskId: string | null;
   timeline: TimelineEventDto[];
   streaming: StreamingMessage | null;
+  streamingThinking: StreamingThinking | null;
   models: ModelDescriptorDto[];
   workerAlive: boolean;
   newTaskOpen: boolean;
@@ -132,6 +141,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   activeTaskId: null,
   timeline: [],
   streaming: null,
+  streamingThinking: null,
   models: [],
   workerAlive: false,
   newTaskOpen: false,
@@ -159,8 +169,23 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       );
       // Completed agent message replaces the streaming bubble.
       const patch: Partial<TaskStore> = { timeline: next };
-      if (event.type === 'agent.message') patch.streaming = null;
+      if (event.type === 'agent.message') {
+        patch.streaming = null;
+        patch.streamingThinking = null;
+      }
+      // The persisted thinking block replaces its live stream.
+      if (event.type === 'agent.thinking') patch.streamingThinking = null;
       set(patch as never);
+    });
+    onEvent('task.streamThinking', ({ taskId, runId, messageId, delta }) => {
+      if (taskId !== get().activeTaskId) return;
+      const current = get().streamingThinking;
+      set({
+        streamingThinking:
+          current && current.messageId === messageId
+            ? { ...current, text: current.text + delta }
+            : { runId, messageId, text: delta, startedAt: Date.now() },
+      });
     });
     onEvent('task.stream', ({ taskId, runId, messageId, delta }) => {
       if (taskId !== get().activeTaskId) return;
@@ -177,7 +202,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         tasks: get().tasks.map((t) => (t.id === taskId ? { ...t, state } : t)),
       });
       if (state === 'REVIEW_READY' || state === 'FAILED' || state === 'INTERRUPTED') {
-        set({ streaming: null });
+        set({ streaming: null, streamingThinking: null });
       }
       void get().refreshTasks();
     });
@@ -205,7 +230,13 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 
   async openTask(taskId) {
-    set({ activeTaskId: taskId, timeline: [], streaming: null, loadingTimeline: true });
+    set({
+      activeTaskId: taskId,
+      timeline: [],
+      streaming: null,
+      streamingThinking: null,
+      loadingTimeline: true,
+    });
     const res = await rpcResult('task.get', { taskId, eventsAfter: 0 });
     if (res.ok) {
       set({ timeline: res.data.timeline, loadingTimeline: false });
@@ -239,7 +270,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     }
     if (useAppStore.getState().taskRoomTaskId === taskId) app.closeTaskRoom();
     if (get().activeTaskId === taskId) {
-      set({ activeTaskId: null, timeline: [], streaming: null });
+      set({ activeTaskId: null, timeline: [], streaming: null, streamingThinking: null });
     }
     await get().refreshTasks();
     app.pushToast('info', 'Task archived.');

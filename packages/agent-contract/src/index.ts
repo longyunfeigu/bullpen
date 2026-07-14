@@ -175,6 +175,15 @@ export type AgentEvent =
   | (AgentEventBase & { type: 'run.started' })
   | (AgentEventBase & { type: 'message.delta'; messageId: string; text: string })
   | (AgentEventBase & { type: 'message.completed'; message: VisibleMessage })
+  /** Model reasoning stream (ADR-0011). Presentation-only: collapsed by default
+   * in the UI and excluded from the evidence system (reports/verification). */
+  | (AgentEventBase & { type: 'thinking.delta'; messageId: string; text: string })
+  | (AgentEventBase & {
+      type: 'thinking.completed';
+      messageId: string;
+      text: string;
+      durationMs: number | null;
+    })
   | (AgentEventBase & { type: 'plan.proposed'; plan: TaskPlan })
   | (AgentEventBase & { type: 'plan.updated'; plan: TaskPlan })
   | (AgentEventBase & { type: 'tool.proposed'; call: ToolCallProposal })
