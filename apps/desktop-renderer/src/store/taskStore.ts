@@ -206,7 +206,13 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       }
       void get().refreshTasks();
     });
-    onEvent('agent.workerStatus', ({ alive }) => set({ workerAlive: alive }));
+    onEvent('agent.workerStatus', ({ alive }) => {
+      const wasAlive = get().workerAlive;
+      set({ workerAlive: alive });
+      // Cold-start race: a models.list issued before the worker was ready
+      // yields an empty catalog — refetch the moment the worker comes up.
+      if (alive && !wasAlive) void get().refreshModels();
+    });
     // ADR-0009: tasks are global — switching the focused project must not
     // clear the list, the open room, or its timeline.
     onEvent('workspace.changed', () => {
