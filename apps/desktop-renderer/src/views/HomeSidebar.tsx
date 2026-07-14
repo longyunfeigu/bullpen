@@ -8,7 +8,8 @@ import { useActivityStore, currentActionLine, type TaskActivity } from '../store
 import { useGlowTasks } from './useGlow.js';
 import { HomeProjectTree } from './HomeProjectTree.js';
 import { Ic } from './home-icons.js';
-import { isAnswered, presentedMeta, stateTone } from './labels.js';
+import { canArchiveTask, isAnswered, presentedMeta, stateTone } from './labels.js';
+import { ArmedIconButton } from './ui.js';
 
 /** Attention = the amber Inbox: states that block on the user (ADR-0009:
  * zero-change "Answered" tasks are excluded — they ask for nothing). */
@@ -103,32 +104,43 @@ export function HomeSidebar(): React.JSX.Element {
     const meta = presentedMeta(t);
     const attention = needsAttention(t) || isAnswered(t);
     return (
-      <button
-        key={t.id}
-        className={`hm-trow ${taskRoomTaskId === t.id ? 'sel' : ''} ${glowTasks.has(t.id) ? 'glow-pulse' : ''}`}
-        data-testid={`home-task-${t.id}`}
-        data-state={t.state}
-        title={`${t.title} — ${meta.label}`}
-        onClick={() => openTask(t)}
-      >
-        <span className="hm-trow-l1">
-          <span className={`hm-dot ${dotClass(t)}`} />
-          <span className="hm-tt">{t.title}</span>
-          {attention && !running ? (
-            <span
-              className={`hm-stchip mini ${meta.tone === 'ok' ? 'ok' : meta.tone === 'err' ? 'err' : 'warn'}`}
-            >
-              {meta.short}
+      <div key={t.id} className="hm-trww">
+        <button
+          className={`hm-trow ${taskRoomTaskId === t.id ? 'sel' : ''} ${glowTasks.has(t.id) ? 'glow-pulse' : ''}`}
+          data-testid={`home-task-${t.id}`}
+          data-state={t.state}
+          title={`${t.title} — ${meta.label}`}
+          onClick={() => openTask(t)}
+        >
+          <span className="hm-trow-l1">
+            <span className={`hm-dot ${dotClass(t)}`} />
+            <span className="hm-tt">{t.title}</span>
+            {attention && !running ? (
+              <span
+                className={`hm-stchip mini ${meta.tone === 'ok' ? 'ok' : meta.tone === 'err' ? 'err' : 'warn'}`}
+              >
+                {meta.short}
+              </span>
+            ) : null}
+          </span>
+          {ticker ? (
+            <span className="hm-trow-l2" data-testid={`home-task-ticker-${t.id}`}>
+              <Ic name={ticker.icon} size={10} />
+              <span className="hm-ticker-text">{ticker.text}</span>
             </span>
           ) : null}
-        </span>
-        {ticker ? (
-          <span className="hm-trow-l2" data-testid={`home-task-ticker-${t.id}`}>
-            <Ic name={ticker.icon} size={10} />
-            <span className="hm-ticker-text">{ticker.text}</span>
-          </span>
+        </button>
+        {canArchiveTask(t) ? (
+          <ArmedIconButton
+            icon="archive"
+            className="hm-archx"
+            testid={`home-archive-${t.id}`}
+            title={isAnswered(t) ? 'Close out and archive' : 'Archive task'}
+            armedTitle="Click again to archive"
+            onConfirm={() => void taskStore.archiveTask(t.id)}
+          />
         ) : null}
-      </button>
+      </div>
     );
   };
 
@@ -144,6 +156,7 @@ export function HomeSidebar(): React.JSX.Element {
       <button
         className="hm-nav-item"
         data-testid="home-new-task"
+        title="Start a new task from the composer"
         onClick={() => {
           app.closeTaskRoom();
           app.focusComposer();
@@ -151,10 +164,12 @@ export function HomeSidebar(): React.JSX.Element {
       >
         <Ic name="pencil" />
         <span>New task</span>
+        <span className="hm-kbd">⌘N</span>
       </button>
       <button
         className="hm-nav-item"
         data-testid="home-reviews"
+        title="Jump to the next task waiting on you"
         onClick={() => {
           const next = inbox[0];
           if (next) openTask(next);

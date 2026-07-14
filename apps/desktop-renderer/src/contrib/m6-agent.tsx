@@ -23,13 +23,17 @@ export function registerM6(): void {
   });
   registerCommands([
     {
+      // ADR-0008 entry consolidation: "new task" means the Home composer.
+      // (The Editor's agent panel keeps its own "+ Task" dialog button.)
       id: 'task.new',
-      title: 'New Agent Task…',
+      title: 'New Task',
       category: 'Agent',
-      keybinding: 'mod+shift+i',
+      keybinding: 'mod+n',
       run: () => {
-        useAppStore.getState().setLayout({ agentPanelVisible: true });
-        useTaskStore.getState().setNewTaskOpen(true);
+        const app = useAppStore.getState();
+        app.setSurface('home');
+        app.closeTaskRoom();
+        app.focusComposer();
       },
     },
     {

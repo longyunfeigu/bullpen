@@ -118,7 +118,7 @@ export function installApplicationMenu(opts: { isDev: boolean }): void {
     {
       label: 'Agent',
       submenu: [
-        { label: 'New Task…', accelerator: 'CmdOrCtrl+Shift+I', click: send('task.new') },
+        { label: 'New Task…', accelerator: 'CmdOrCtrl+N', click: send('task.new') },
         {
           label: 'Stop Agent',
           accelerator: isMac ? 'Cmd+Escape' : 'Ctrl+Escape',

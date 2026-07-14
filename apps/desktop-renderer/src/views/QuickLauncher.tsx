@@ -6,7 +6,7 @@ import { useTaskStore } from '../store/taskStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { openWorkspaceFile } from './PathLinks.js';
 import { Ic } from './home-icons.js';
-import { stateShort } from './labels.js';
+import { presentedMeta } from './labels.js';
 
 interface Entry {
   id: string;
@@ -76,7 +76,13 @@ export function QuickLauncher(): React.JSX.Element | null {
         group: 'Actions',
         icon: 'pencil',
         label: 'New Task',
-        run: () => useAppStore.getState().setSurface('home'),
+        run: () => {
+          // Land in the composer even when a Task Room is open.
+          const app = useAppStore.getState();
+          app.setSurface('home');
+          app.closeTaskRoom();
+          app.focusComposer();
+        },
       },
       surface === 'home'
         ? {
@@ -98,10 +104,8 @@ export function QuickLauncher(): React.JSX.Element | null {
         group: 'Actions',
         icon: 'sliders',
         label: 'Open Settings',
-        run: () => {
-          useAppStore.getState().setSurface('workspace');
-          useAppStore.getState().setOverlay('settings');
-        },
+        // Settings is an overlay — opening it must not yank you to the Editor.
+        run: () => useAppStore.getState().setOverlay('settings'),
       },
     ];
     list.push(...actions.filter((a) => matches(a.label)));
@@ -112,7 +116,7 @@ export function QuickLauncher(): React.JSX.Element | null {
         group: 'Tasks',
         icon: 'inbox',
         label: t.title,
-        sub: stateShort(t.state),
+        sub: presentedMeta(t).short,
         run: () => {
           // ADR-0008: tasks open in their Task Room, not the Editor.
           void useTaskStore.getState().openTask(t.id);

@@ -44,6 +44,20 @@ export function isAnswered(task: { state: string; changedFiles?: number | null }
   return task.state === 'REVIEW_READY' && task.changedFiles === 0;
 }
 
+/**
+ * Cleanup affordance: which tasks may be archived from the UI.
+ * Running/deciding tasks never offer it (stop or decide first), and a
+ * REVIEW_READY task with real changes must be reviewed or rolled back first.
+ * The one exception is an answered task (zero changes) — archiving it is the
+ * natural "close out" and implies accepting the no-op result.
+ */
+export function canArchiveTask(task: { state: string; changedFiles?: number | null }): boolean {
+  if (['ACCEPTED', 'ROLLED_BACK', 'CANCELLED', 'FAILED', 'INTERRUPTED'].includes(task.state)) {
+    return true;
+  }
+  return isAnswered(task);
+}
+
 /** Presentation meta for a task — the only place the "Answered" veneer exists. */
 export function presentedMeta(task: { state: string; changedFiles?: number | null }): {
   label: string;
@@ -87,6 +101,10 @@ export const MODE_META: Array<{ id: 'ask' | 'edit' | 'auto'; label: string; hint
 export function modeLabel(mode: string): string {
   return MODE_META.find((m) => m.id === mode)?.label ?? mode;
 }
+
+/** Reasoning-effort levels (agent-contract ThinkingLevel) — composer + settings. */
+export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'max'] as const;
+export type ThinkingLevelId = (typeof THINKING_LEVELS)[number];
 
 /** Humane action verbs for tool calls (fallback prettifies snake_case). */
 const TOOL_VERBS: Record<string, string> = {

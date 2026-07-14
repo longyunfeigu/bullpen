@@ -30,13 +30,20 @@ interface TaskStore {
   refreshTasks(): Promise<void>;
   refreshModels(): Promise<void>;
   openTask(taskId: string): Promise<void>;
+  /** Archive (hide) a finished task; answered tasks are closed out (accepted) first. */
+  archiveTask(taskId: string): Promise<boolean>;
   setNewTaskOpen(open: boolean): void;
   createAndStart(input: {
     title: string;
     goalMd: string;
     acceptance: string[];
     mode: 'ask' | 'edit' | 'auto';
-    model: { providerId: string; modelId: string };
+    model: {
+      providerId: string;
+      modelId: string;
+      /** Reasoning effort; falls back to Settings → Models → default thinking level. */
+      thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'max';
+    };
     verification?: Array<{
       label: string;
       executable: string;
@@ -207,17 +214,53 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     }
   },
 
+  async archiveTask(taskId) {
+    const app = useAppStore.getState();
+    const task = get().tasks.find((t) => t.id === taskId);
+    // Light completion (ADR-0009): an answered task (zero changes) is closed
+    // out — accepting the no-op result — before it is archived.
+    if (task && task.state === 'REVIEW_READY' && task.changedFiles === 0) {
+      const accepted = await rpcResult('task.accept', {
+        taskId,
+        confirmUnverified: false,
+        confirmConflicts: false,
+      });
+      if (!accepted.ok) {
+        app.pushToast('error', accepted.error.userMessage);
+        return false;
+      }
+    }
+    const res = await rpcResult('task.archive', { taskId });
+    if (!res.ok) {
+      app.pushToast('error', res.error.userMessage);
+      return false;
+    }
+    if (useAppStore.getState().taskRoomTaskId === taskId) app.closeTaskRoom();
+    if (get().activeTaskId === taskId) {
+      set({ activeTaskId: null, timeline: [], streaming: null });
+    }
+    await get().refreshTasks();
+    app.pushToast('info', 'Task archived.');
+    return true;
+  },
+
   setNewTaskOpen(open) {
     set({ newTaskOpen: open });
   },
 
   async createAndStart(input) {
+    // Effort: an explicit composer choice wins; otherwise the Settings default
+    // applies (previously that setting was never read — a dead control).
+    const thinkingLevel =
+      input.model.thinkingLevel ??
+      useAppStore.getState().settings?.models.defaultThinkingLevel ??
+      'medium';
     const create = await rpcResult('task.create', {
       title: input.title,
       goalMd: input.goalMd,
       acceptance: input.acceptance,
       mode: input.mode,
-      model: input.model,
+      model: { ...input.model, thinkingLevel },
       verification: input.verification ?? [],
       ...(input.projectPath ? { projectPath: input.projectPath } : {}),
       isolation: input.isolation ?? 'none',

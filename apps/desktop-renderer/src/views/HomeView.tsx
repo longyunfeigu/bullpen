@@ -9,7 +9,15 @@ import { useActivityStore, currentActionLine } from '../store/activityStore.js';
 import { useGlowTasks } from './useGlow.js';
 import { needsAttention, ATTENTION_STATES } from './HomeSidebar.js';
 import { Ic } from './home-icons.js';
-import { MODE_META, presentedMeta } from './labels.js';
+import {
+  MODE_META,
+  THINKING_LEVELS,
+  type ThinkingLevelId,
+  canArchiveTask,
+  isAnswered,
+  presentedMeta,
+} from './labels.js';
+import { ArmedIconButton } from './ui.js';
 import { LiveBoard } from './LiveBoard.js';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
@@ -40,8 +48,15 @@ export function HomeView(): React.JSX.Element {
   const glowTasks = useGlowTasks();
 
   const [intent, setIntent] = useState('');
-  const [mode, setMode] = useState<'ask' | 'edit' | 'auto'>('edit');
+  // Settings → Agent → default mode seeds the composer (it loads before mount).
+  const [mode, setMode] = useState<'ask' | 'edit' | 'auto'>(
+    () => useAppStore.getState().settings?.agent.defaultMode ?? 'edit',
+  );
   const [modelKey, setModelKey] = useState('');
+  // Reasoning effort for this task; seeded from Settings → Models.
+  const [thinking, setThinking] = useState<ThinkingLevelId>(
+    () => useAppStore.getState().settings?.models.defaultThinkingLevel ?? 'medium',
+  );
   const [recent, setRecent] = useState<RecentWorkspaceDto[]>([]);
   const [branch, setBranch] = useState<string | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -232,7 +247,7 @@ export function HomeView(): React.JSX.Element {
       goalMd: goal,
       acceptance,
       mode,
-      model: { providerId, modelId },
+      model: { providerId, modelId, thinkingLevel: thinking },
       verification,
       // ADR-0009: explicit dispatch target + optional worktree isolation.
       projectPath: workspace.path,
@@ -324,7 +339,19 @@ export function HomeView(): React.JSX.Element {
   const running = taskStore.tasks
     .filter((t) => RUNNING_TASK_STATES.has(t.state) && t.state !== 'AWAITING_PERMISSION')
     .slice(0, 5);
+  // Finished work stays one glance (and one archive) away instead of leaving
+  // the launcher dead-empty after a burst of tasks.
+  const recentDone = taskStore.tasks
+    .filter(
+      (t) =>
+        !t.archived &&
+        (['ACCEPTED', 'ROLLED_BACK', 'CANCELLED'].includes(t.state) || isAnswered(t)),
+    )
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 4);
   const multiProject = new Set([...needsYou, ...running].map((t) => t.projectPath)).size > 1;
+  const recentMultiProject =
+    new Set([...needsYou, ...running, ...recentDone].map((t) => t.projectPath)).size > 1;
 
   const mcCard = (t: TaskDto): React.JSX.Element => {
     const attention = needsAttention(t);
@@ -408,7 +435,9 @@ export function HomeView(): React.JSX.Element {
     <main className="hm-main" data-testid="home-view">
       <div className="hm-main-top" />
 
-      <div className={`hm-hero ${needsYou.length > 0 || running.length > 0 ? 'compact' : ''}`}>
+      <div
+        className={`hm-hero ${needsYou.length > 0 || running.length > 0 || recentDone.length > 0 ? 'compact' : ''}`}
+      >
         <h1>What should we build?</h1>
         <div className="hm-sub">
           Describe the outcome — plans, diffs and verification all wait for your OK.
@@ -706,6 +735,20 @@ export function HomeView(): React.JSX.Element {
             <span className="hm-spacer" />
             <select
               className="hm-select"
+              data-testid="home-thinking"
+              title="Reasoning effort — how hard the model thinks before acting (default comes from Settings → Models)"
+              aria-label="Reasoning effort"
+              value={thinking}
+              onChange={(e) => setThinking(e.target.value as ThinkingLevelId)}
+            >
+              {THINKING_LEVELS.map((l) => (
+                <option key={l} value={l}>
+                  {l === 'off' ? 'no thinking' : `✦ ${l}`}
+                </option>
+              ))}
+            </select>
+            <select
+              className="hm-select"
               data-testid="home-model"
               value={modelKey}
               onChange={(e) => setModelKey(e.target.value)}
@@ -753,7 +796,7 @@ export function HomeView(): React.JSX.Element {
         </div>
       </div>
 
-      {needsYou.length > 0 || running.length > 0 ? (
+      {needsYou.length > 0 || running.length > 0 || recentDone.length > 0 ? (
         <div className="hm-mc">
           {needsYou.length > 0 ? (
             <>
@@ -776,6 +819,63 @@ export function HomeView(): React.JSX.Element {
                     />
                   </React.Fragment>
                 ))}
+              </div>
+            </>
+          ) : null}
+          {recentDone.length > 0 ? (
+            <>
+              <div className="hm-mc-label">RECENT</div>
+              <div data-testid="home-mc-recent">
+                {recentDone.map((t) => {
+                  const meta = presentedMeta(t);
+                  return (
+                    <div
+                      key={t.id}
+                      className="hm-tcard recent"
+                      role="button"
+                      tabIndex={0}
+                      data-testid={`home-recent-task-${t.id}`}
+                      title={`${t.title} — ${meta.label}`}
+                      onClick={() => openTask(t.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openTask(t.id);
+                        }
+                      }}
+                    >
+                      <span
+                        className={`hm-stchip ${meta.tone === 'ok' ? 'ok' : meta.tone === 'err' ? 'err' : 'idle'}`}
+                        data-state={t.state}
+                      >
+                        {meta.short}
+                      </span>
+                      <span className="hm-tinfo">
+                        <span className="hm-ttitle" style={{ display: 'block' }}>
+                          {t.title}
+                        </span>
+                        {recentMultiProject ? (
+                          <span className="hm-tmeta">
+                            <span className="hm-projchip" title={t.projectPath}>
+                              <Ic name="folder" size={10} />
+                              {t.projectName}
+                            </span>
+                          </span>
+                        ) : null}
+                      </span>
+                      {canArchiveTask(t) ? (
+                        <ArmedIconButton
+                          icon="archive"
+                          className="hm-archx card"
+                          testid={`home-recent-archive-${t.id}`}
+                          title={isAnswered(t) ? 'Close out and archive' : 'Archive task'}
+                          armedTitle="Click again to archive"
+                          onConfirm={() => void taskStore.archiveTask(t.id)}
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </>
           ) : null}

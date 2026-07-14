@@ -396,8 +396,8 @@
 .hm-btmrow {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 8px 10px 10px;
+  gap: 1px;
+  padding: 8px 7px 10px;
 }
 .hm-btmrow .hm-spacer {
   flex: 1;
@@ -429,6 +429,14 @@
   cursor: pointer;
   font-family: inherit;
   max-width: 230px;
+  /* The bottom row must never push the send button out of the card. */
+  flex: 0 1 auto;
+  min-width: 54px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 7px;
+  padding-right: 7px;
 }
 .hm-select:hover {
   background: var(--bg-hover);
@@ -437,6 +445,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -444,7 +453,7 @@
   background: var(--bg-hover);
   color: var(--fg-faint);
   cursor: pointer;
-  margin-left: 6px;
+  margin-left: 4px;
 }
 .hm-send.ready {
   background: var(--accent);
@@ -479,7 +488,7 @@
 .hm-seg button {
   font-size: 12px;
   color: var(--fg-muted);
-  padding: 4px 12px;
+  padding: 4px 9px;
   border-radius: 999px;
   border: none;
   background: transparent;
@@ -560,6 +569,55 @@
   font-size: 9.5px;
   padding: 0 7px;
   flex: none;
+}
+/* Task-row wrapper: hosts the hover archive affordance without nesting buttons. */
+.hm-trww {
+  position: relative;
+}
+.hm-archx {
+  position: absolute;
+  right: 5px;
+  top: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--fg-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 80ms ease;
+  padding: 0;
+}
+.hm-trww:hover .hm-archx,
+.hm-archx.armed,
+.hm-archx:focus-visible {
+  opacity: 1;
+}
+.hm-archx:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.hm-archx.armed {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-card));
+}
+/* Card-sized variant used on the launcher's RECENT rows. */
+.hm-archx.card {
+  position: static;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.hm-tcard:hover .hm-archx.card,
+.hm-archx.card.armed,
+.hm-archx.card:focus-visible {
+  opacity: 1;
 }
 .hm-projbadge {
   flex: none;
@@ -691,6 +749,19 @@
 .hm-tcard:hover {
   border-color: var(--fg-faint);
 }
+/* RECENT rows: quieter than live cards — finished work shouldn't shout. */
+.hm-tcard.recent {
+  padding: 8px 12px;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--bg-card) 60%, transparent);
+}
+.hm-tcard.recent .hm-ttitle {
+  font-weight: 480;
+  color: var(--fg-muted);
+}
+.hm-tcard.recent:hover .hm-ttitle {
+  color: var(--fg);
+}
 .hm-tcard.attention {
   border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
 }
@@ -732,6 +803,10 @@
 .hm-stchip.warn {
   background: var(--warning-bg);
   color: var(--warning);
+}
+.hm-stchip.idle {
+  background: var(--bg-hover);
+  color: var(--fg-muted);
 }
 .hm-stchip.run {
   background: var(--info-bg);

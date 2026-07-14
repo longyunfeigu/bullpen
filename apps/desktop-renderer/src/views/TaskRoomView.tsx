@@ -9,7 +9,7 @@ import { RoomTimeline } from './RoomTimeline.js';
 import { LiveBoard } from './LiveBoard.js';
 import { ConfirmDangerButton } from './ui.js';
 import { Ic } from './home-icons.js';
-import { isAnswered, modeLabel, presentedMeta } from './labels.js';
+import { canArchiveTask, isAnswered, modeLabel, presentedMeta } from './labels.js';
 
 /**
  * Task Room v2 (ADR-0008/0009, PIVOT-021/028): the per-task page rendered in
@@ -132,6 +132,20 @@ export function TaskRoomView(): React.JSX.Element {
           <Ic name="layout" size={12} />
           Open in editor
         </button>
+        {canArchiveTask(task) ? (
+          <ConfirmDangerButton
+            label="Archive…"
+            confirmLabel="Confirm — archive"
+            testid="task-archive"
+            quiet
+            title={
+              isAnswered(task)
+                ? 'Close out this answered task and hide it from the task list'
+                : 'Hide this finished task from the task list'
+            }
+            onConfirm={() => void store.archiveTask(task.id)}
+          />
+        ) : null}
       </div>
 
       <div className="tr-body">
@@ -139,6 +153,7 @@ export function TaskRoomView(): React.JSX.Element {
           <div className="tr-mode text-muted">
             <span className="tr-mode-fixed">
               {modeLabel(task.mode)} · {task.model.providerId}/{task.model.modelId}
+              {task.model.thinkingLevel ? ` · effort ${task.model.thinkingLevel}` : ''}
             </span>
             {action && running ? (
               <span className="tr-action" data-testid="task-room-action">
