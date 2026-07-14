@@ -86,6 +86,8 @@ export interface CreateTaskInput {
   projectPath?: string;
   /** ADR-0009: run in an isolated git worktree. */
   isolation?: 'none' | 'worktree';
+  /** Optional command run once inside a fresh worktree (deps, codegen…). */
+  worktreeSetup?: string;
 }
 
 interface TaskRow {
@@ -1086,6 +1088,26 @@ export class TaskService {
     return context.verifications.detectSuggestions();
   }
 
+  /** Suggested worktree setup command from the project's lockfiles (ADR-0009 am.2). */
+  async suggestWorktreeSetup(): Promise<string | null> {
+    const ws = this.workspace.current;
+    if (!ws) return null;
+    const { promises: fsp } = await import('node:fs');
+    const { join } = await import('node:path');
+    const has = async (name: string): Promise<boolean> =>
+      Boolean(await fsp.stat(join(ws.canonicalPath, name)).catch(() => null));
+    if (await has('pnpm-lock.yaml')) return 'pnpm install --frozen-lockfile';
+    if (await has('bun.lockb')) return 'bun install';
+    if (await has('yarn.lock')) return 'yarn install --frozen-lockfile';
+    if (await has('package-lock.json')) return 'npm ci';
+    if (await has('package.json')) return 'npm install';
+    if (await has('uv.lock')) return 'uv sync';
+    if (await has('requirements.txt')) return 'pip install -r requirements.txt';
+    if (await has('Cargo.toml')) return 'cargo fetch';
+    if (await has('go.mod')) return 'go mod download';
+    return null;
+  }
+
   // ---------- persistence helpers ----------
 
   private rowToDto(row: TaskRow): TaskDto {
@@ -1108,7 +1130,13 @@ export class TaskService {
       projectName: row.project_name,
       projectPath: row.project_path,
       changedFiles: row.changed_files,
-      worktree: row.worktree_json ? (JSON.parse(row.worktree_json) as TaskWorktree) : null,
+      worktree: row.worktree_json
+        ? (() => {
+            const wt = JSON.parse(row.worktree_json!) as TaskWorktree;
+            // Missing = deleted externally; the room degrades honestly (ADR-0009 am.2).
+            return { ...wt, missing: !existsSync(wt.path) };
+          })()
+        : null,
     };
   }
 
@@ -1405,8 +1433,24 @@ export class TaskService {
 
     // ADR-0009: isolated worktree for same-project parallel tasks.
     let worktree: TaskWorktree | null = null;
+    let setupResult: import('./worktree-service.js').WorktreeSetupResult | null = null;
     if (input.isolation === 'worktree') {
-      worktree = await this.worktrees.create(project.canonicalPath, project.id, id);
+      worktree = await this.worktrees.create(project.canonicalPath, project.id, id, input.title);
+      // Optional supply step (ADR-0009 am.2): a fresh checkout has no deps or
+      // gitignored config — run the user's setup command before the agent starts.
+      const setupCommand = input.worktreeSetup?.trim();
+      if (setupCommand) {
+        setupResult = await this.worktrees.runSetup(worktree.path, setupCommand);
+        if (!setupResult.ok) {
+          await this.worktrees.discard(project.canonicalPath, worktree);
+          throw new ProductFailure(
+            productError('WT_SETUP_FAILED', {
+              userMessage: `Worktree setup failed (${setupCommand}): ${setupResult.outputTail.split('\n').filter(Boolean).slice(-2).join(' ').slice(0, 200)}`,
+              retryable: true,
+            }),
+          );
+        }
+      }
     }
 
     const rootForBaseline = worktree?.path ?? project.canonicalPath;
@@ -1446,6 +1490,9 @@ export class TaskService {
       project: { name: project.displayName, path: project.canonicalPath },
       worktree,
     });
+    if (setupResult) {
+      this.recordEvent(id, 'worktree.setup', { ...setupResult });
+    }
     this.logger.info('task created', {
       id,
       mode: input.mode,
@@ -2043,6 +2090,40 @@ export class TaskService {
     this.cancelAllAsks('app quit');
     this.cancelAllPlanWaits('app quit');
     this.startQueue.length = 0;
+  }
+
+  /**
+   * ADR-0009 am.2: startup hygiene — worktree directories whose task is
+   * finished (accepted/rolled back/cancelled/archived) or deleted have no
+   * further use; failed/interrupted tasks keep theirs for resume/review.
+   */
+  async sweepWorktreeOrphans(): Promise<void> {
+    const keepStates = new Set([
+      'READY',
+      'EXPLORING',
+      'PLANNING',
+      'AWAITING_PLAN_APPROVAL',
+      'IN_PROGRESS',
+      'AWAITING_PERMISSION',
+      'VERIFYING',
+      'REVIEW_READY',
+      'INTERRUPTED',
+      'FAILED',
+    ]);
+    const rows = this.db
+      .prepare('SELECT id, state, workspace_id FROM tasks WHERE worktree_json IS NOT NULL')
+      .all() as Array<{ id: string; state: string; workspace_id: string }>;
+    const keep = new Set(rows.filter((r) => keepStates.has(r.state)).map((r) => r.id));
+    const wsRows = this.db.prepare('SELECT id, canonical_path FROM workspaces').all() as Array<{
+      id: string;
+      canonical_path: string;
+    }>;
+    const roots = new Map(wsRows.map((r) => [r.id, r.canonical_path]));
+    await this.worktrees.sweepOrphans(roots, keep).catch((e) => {
+      this.logger.warn('worktree orphan sweep failed', {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    });
   }
 
   /** Restart-time scan (M10 expands): mark previously-running tasks interrupted. */

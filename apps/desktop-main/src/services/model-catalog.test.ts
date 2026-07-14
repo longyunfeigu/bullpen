@@ -58,6 +58,7 @@ describe('ModelCatalogService (PIVOT-009/033)', () => {
         displayName: 'Opus (registry)',
         contextWindow: 200000,
         supportsThinking: true,
+        supportedThinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'max'],
         configured: true,
         authKind: 'api-key',
       },

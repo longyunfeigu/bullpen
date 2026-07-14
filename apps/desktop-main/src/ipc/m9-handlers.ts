@@ -30,6 +30,9 @@ export function registerM9Handlers(tasks: TaskService, logger: Logger): void {
       'task.suggestVerifications': async () => ({
         suggestions: await tasks.suggestVerifications(),
       }),
+      'task.suggestWorktreeSetup': async () => ({
+        command: await tasks.suggestWorktreeSetup(),
+      }),
     },
     logger,
   );

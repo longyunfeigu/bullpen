@@ -129,3 +129,40 @@ OpenRouter and LiteLLM plus free-form custom gateways. Decisions:
   scope (accept ≠ commit, spec §5.4). The `charter/<taskId>` branch is kept for audit.
 - New failure surfaces (worktree creation, merge conflicts) get product error codes
   (`WT_*`, `ACCEPT_MERGE_CONFLICTS`) and explicit UI paths.
+
+## Amendment 2 — worktree supply, escape hatches and lifecycle hygiene
+
+Date: 2026-07-14. Informed by a survey of shipping parallel-agent products
+(Conductor, Cursor worktrees, Claude Code desktop, Vibe Kanban, Crystal): all
+converged on (a) copying gitignored config into fresh checkouts, (b) a setup
+step for dependencies, (c) direct terminal/file-manager access to the worktree,
+and (d) automatic cleanup of finished checkouts.
+
+- **`.worktreeinclude` (de-facto convention, gitignore syntax).** On worktree
+  creation, files matched by the project-root `.worktreeinclude` AND already
+  git-ignored are copied from the main checkout (`.env`, local certs…). Only
+  ignored files are eligible — tracked files can never be duplicated/forked.
+  Enumeration uses `git ls-files -o -i --exclude-standard --directory`.
+- **Setup command (`worktreeSetup` on task.create).** Optional single command
+  (e.g. `npm ci`) run host-side in the fresh worktree before the agent starts;
+  suggested from lockfile detection (`task.suggestWorktreeSetup`). Output tail
+  is recorded as a `worktree.setup` timeline event; a non-zero exit discards
+  the worktree and fails task creation (WT_SETUP_FAILED) — the agent never
+  starts in a checkout the user believes is prepared but isn't. Same trust
+  model as verification commands: the user's own command, host-executed.
+- **Escape hatches.** The room's branch chip opens: "Open in terminal" (a
+  terminal whose cwd is the worktree — resolved host-side from the task row,
+  never renderer input) and "Reveal in Finder" (`app.revealPath`, absolute
+  existing paths only). The Changes rail for worktree tasks opens the
+  diff-so-far lens instead of the (untouched) main-tree file.
+- **Readable branches.** `charter/<title-slug>-<shortid>` instead of the
+  opaque `charter/<taskId>` (still matched by the git-safe branch regex).
+- **Lifecycle.** Accept/rollback already discard the worktree; additionally a
+  startup sweep removes worktree directories whose task is finished
+  (ACCEPTED/ROLLED_BACK/CANCELLED/ARCHIVED) or deleted; FAILED/INTERRUPTED/
+  REVIEW_READY keep theirs (resume/review). If a worktree directory disappears
+  externally, the task DTO carries `worktree.missing` and the room degrades
+  honestly (banner; terminal/reveal disabled) instead of going stale.
+- **Merged-file feedback.** `task.mergedBack` now projects into the activity
+  stream as a write pulse, so the merged files glow in the main project tree
+  the moment an accept lands.

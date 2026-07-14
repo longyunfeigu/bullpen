@@ -62,7 +62,7 @@ export const SettingsSchema = z.object({
       defaultProviderId: z.string().nullable().default(null),
       defaultModelId: z.string().nullable().default(null),
       defaultThinkingLevel: z
-        .enum(['off', 'minimal', 'low', 'medium', 'high', 'max'])
+        .enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
         .default('medium'),
       /** Use the deterministic mock runtime instead of Pi (dev/test only). */
       useMockRuntime: z.boolean().default(false),

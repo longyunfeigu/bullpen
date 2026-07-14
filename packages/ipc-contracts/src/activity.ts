@@ -412,6 +412,26 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
         label: 'Rolled back to the pre-task state',
         status: 'warn',
       };
+    case 'task.mergedBack': {
+      const files = Array.isArray(p.files) ? p.files.map((f) => str(f)).filter(Boolean) : [];
+      // kind 'write' so the merged files pulse/glow in the main project tree.
+      return {
+        ...base,
+        kind: 'write',
+        label: `Merged ${files.length} file${files.length === 1 ? '' : 's'} into the project`,
+        status: 'ok',
+        author: 'system',
+        paths: files.map(cleanPath),
+      };
+    }
+    case 'merge.blocked':
+      return {
+        ...base,
+        kind: 'state',
+        label: 'Merge blocked: the project changed during the task',
+        status: 'warn',
+        author: 'system',
+      };
     case 'rollback.blocked':
       return {
         ...base,

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTaskStore, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { useAppStore } from '../store/appStore.js';
-import { stateShort, stateTone, TONE_COLOR, modeLabel } from './labels.js';
+import { modeLabel, presentedMeta, TONE_COLOR } from './labels.js';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -11,6 +11,7 @@ const FILTERS = [
   { id: 'failed', label: 'Stopped' },
 ] as const;
 
+/** Editor-surface task list — compact segmented filter + Home-style rows. */
 export function TasksView(): React.JSX.Element {
   const store = useTaskStore();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['id']>('all');
@@ -45,26 +46,25 @@ export function TasksView(): React.JSX.Element {
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
       data-testid="tasks-view"
     >
-      <div style={{ display: 'flex', gap: 4, padding: 8, flexWrap: 'wrap' }}>
-        {FILTERS.map((f) => (
-          <button
-            key={f.id}
-            className="btn"
-            style={{
-              padding: '2px 8px',
-              fontSize: 11,
-              background: filter === f.id ? 'var(--bg-selected)' : undefined,
-            }}
-            onClick={() => setFilter(f.id)}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="tv-head">
+        <div className="tv-seg" role="radiogroup" aria-label="Task filter">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              className={filter === f.id ? 'on' : ''}
+              role="radio"
+              aria-checked={filter === f.id}
+              onClick={() => setFilter(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
         <span style={{ flex: 1 }} />
         <button
-          className="btn primary"
-          style={{ padding: '2px 8px', fontSize: 11 }}
+          className="tv-new"
           data-testid="tasks-new"
+          title="Start a new task"
           onClick={() => {
             store.setNewTaskOpen(true);
             useAppStore.getState().setLayout({ agentPanelVisible: true });
@@ -73,43 +73,49 @@ export function TasksView(): React.JSX.Element {
           ＋ New
         </button>
       </div>
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '2px 4px 8px' }}>
         {visible.length === 0 ? (
           <div className="empty-state">
             <div>No tasks{filter !== 'all' ? ' in this filter' : ' yet'}.</div>
           </div>
         ) : (
-          visible.map((task) => (
-            <button
-              key={task.id}
-              className="quickpick-item"
-              data-testid={`task-item-${task.id}`}
-              style={{
-                display: 'block',
-                background: store.activeTaskId === task.id ? 'var(--bg-selected)' : undefined,
-                padding: '8px 12px',
-              }}
-              onClick={() => {
-                void store.openTask(task.id);
-                useAppStore.getState().setLayout({ agentPanelVisible: true });
-              }}
-            >
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          visible.map((task) => {
+            const meta = presentedMeta(task);
+            return (
+              <button
+                key={task.id}
+                className={`tv-row ${store.activeTaskId === task.id ? 'active' : ''}`}
+                data-testid={`task-item-${task.id}`}
+                onClick={() => {
+                  void store.openTask(task.id);
+                  useAppStore.getState().setLayout({ agentPanelVisible: true });
+                }}
+              >
                 <span
-                  style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}
-                >
-                  {task.title}
+                  className="tv-dot"
+                  style={{ background: TONE_COLOR[meta.tone] }}
+                  aria-hidden
+                />
+                <span className="tv-body">
+                  <span className="tv-title">{task.title}</span>
+                  <span className="tv-meta">
+                    <span style={{ color: TONE_COLOR[meta.tone] }} data-state={task.state}>
+                      {meta.short}
+                    </span>
+                    <span>·</span>
+                    <span>{modeLabel(task.mode)}</span>
+                    <span>·</span>
+                    <span>
+                      {new Date(task.updatedAt).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </span>
                 </span>
-              </div>
-              <div className="text-muted" style={{ fontSize: 11, display: 'flex', gap: 8 }}>
-                <span style={{ color: TONE_COLOR[stateTone(task.state)] }} data-state={task.state}>
-                  {stateShort(task.state)}
-                </span>
-                <span>{modeLabel(task.mode)}</span>
-                <span>{new Date(task.updatedAt).toLocaleTimeString()}</span>
-              </div>
-            </button>
-          ))
+              </button>
+            );
+          })
         )}
       </div>
     </div>

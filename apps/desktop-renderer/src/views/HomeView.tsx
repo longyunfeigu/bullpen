@@ -14,11 +14,13 @@ import {
   THINKING_LEVELS,
   type ThinkingLevelId,
   canArchiveTask,
+  clampThinkingLevelTo,
   isAnswered,
   presentedMeta,
 } from './labels.js';
 import { ArmedIconButton } from './ui.js';
 import { LiveBoard } from './LiveBoard.js';
+import { NewProjectDialog } from './NewProjectDialog.js';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
 
@@ -60,6 +62,7 @@ export function HomeView(): React.JSX.Element {
   const [recent, setRecent] = useState<RecentWorkspaceDto[]>([]);
   const [branch, setBranch] = useState<string | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [refs, setRefs] = useState<string[]>([]);
@@ -75,6 +78,9 @@ export function HomeView(): React.JSX.Element {
   // ADR-0009: worktree isolation for same-project parallel tasks.
   const [worktree, setWorktree] = useState(false);
   const [worktreeTouched, setWorktreeTouched] = useState(false);
+  // ADR-0009 am.2: optional setup command for the fresh worktree (deps etc.).
+  const [wtSetup, setWtSetup] = useState('');
+  const [wtSetupTouched, setWtSetupTouched] = useState(false);
   // @ file picker (PIVOT-015)
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
@@ -123,6 +129,18 @@ export function HomeView(): React.JSX.Element {
     });
   }, [advanced, workspace]);
 
+  // Worktree setup suggestion (lockfile detection) seeds the field per project.
+  useEffect(() => {
+    setWtSetupTouched(false);
+    setWtSetup('');
+    if (!workspace?.isGitRepo) return;
+    void rpcResult('task.suggestWorktreeSetup', {}).then((res) => {
+      if (res.ok && res.data.command) {
+        setWtSetup((current) => (current ? current : res.data.command!));
+      }
+    });
+  }, [workspace]);
+
   // ADR-0009: same-project parallelism defaults the worktree toggle ON.
   const projectBusy = useMemo(
     () =>
@@ -168,6 +186,22 @@ export function HomeView(): React.JSX.Element {
       setModelKey(`${preferred.providerId}::${preferred.modelId}`);
     }
   }, [configuredModels, modelKey, app.settings]);
+
+  // Effort × model linkage: only the selected model's supported levels are
+  // offered; switching models clamps the current choice to the nearest one.
+  const selectedModel = useMemo(
+    () => configuredModels.find((m) => `${m.providerId}::${m.modelId}` === modelKey) ?? null,
+    [configuredModels, modelKey],
+  );
+  const supportedLevels = useMemo<readonly ThinkingLevelId[]>(() => {
+    const supported = selectedModel?.supportedThinkingLevels;
+    if (!supported || supported.length === 0) return THINKING_LEVELS;
+    return THINKING_LEVELS.filter((l) => supported.includes(l));
+  }, [selectedModel]);
+  const thinkingDisabled = supportedLevels.length === 1 && supportedLevels[0] === 'off';
+  useEffect(() => {
+    setThinking((current) => clampThinkingLevelTo(supportedLevels, current));
+  }, [supportedLevels]);
 
   // Refs queued elsewhere (e.g. "attach annotated image", PIVOT-020).
   const pendingRefs = useAppStore((s) => s.pendingRefs);
@@ -252,6 +286,9 @@ export function HomeView(): React.JSX.Element {
       // ADR-0009: explicit dispatch target + optional worktree isolation.
       projectPath: workspace.path,
       isolation: advanced && worktree && workspace.isGitRepo ? 'worktree' : 'none',
+      ...(advanced && worktree && workspace.isGitRepo && wtSetup.trim()
+        ? { worktreeSetup: wtSetup.trim() }
+        : {}),
     });
     setSubmitting(false);
     if (ok) {
@@ -263,6 +300,7 @@ export function HomeView(): React.JSX.Element {
       setSelectedVerif(new Set());
       setCustomVerif([]);
       setWorktreeTouched(false);
+      setWtSetupTouched(false);
       // Stay on the Home surface (PIVOT-022): open the new task's room.
       const newId = useTaskStore.getState().activeTaskId;
       if (newId) app.openTaskRoom(newId);
@@ -434,6 +472,7 @@ export function HomeView(): React.JSX.Element {
   return (
     <main className="hm-main" data-testid="home-view">
       <div className="hm-main-top" />
+      {newProjectOpen ? <NewProjectDialog onClose={() => setNewProjectOpen(false)} /> : null}
 
       <div
         className={`hm-hero ${needsYou.length > 0 || running.length > 0 || recentDone.length > 0 ? 'compact' : ''}`}
@@ -513,8 +552,19 @@ export function HomeView(): React.JSX.Element {
                     void workspaceStore.openViaDialog();
                   }}
                 >
-                  <Ic name="plus" />
+                  <Ic name="folder" />
                   <span className="hm-tt">Open Folder…</span>
+                </button>
+                <button
+                  className="hm-row"
+                  data-testid="home-menu-new-project"
+                  onClick={() => {
+                    setProjectMenuOpen(false);
+                    setNewProjectOpen(true);
+                  }}
+                >
+                  <Ic name="plus" />
+                  <span className="hm-tt">New Project…</span>
                 </button>
               </div>
             ) : null}
@@ -689,6 +739,24 @@ export function HomeView(): React.JSX.Element {
                       ) : null}
                     </span>
                   </label>
+                  {worktree ? (
+                    <div className="hm-field" style={{ marginTop: 6 }}>
+                      <label>
+                        Worktree setup command — runs once in the fresh checkout before the agent
+                        starts (a new worktree has no installed dependencies)
+                      </label>
+                      <input
+                        data-testid="home-adv-wtsetup"
+                        className="mono"
+                        placeholder="e.g. npm ci — leave empty to skip"
+                        value={wtSetup}
+                        onChange={(e) => {
+                          setWtSetup(e.target.value);
+                          setWtSetupTouched(true);
+                        }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -736,12 +804,17 @@ export function HomeView(): React.JSX.Element {
             <select
               className="hm-select"
               data-testid="home-thinking"
-              title="Reasoning effort — how hard the model thinks before acting (default comes from Settings → Models)"
+              title={
+                thinkingDisabled
+                  ? `${selectedModel?.displayName ?? 'This model'} does not support reasoning effort`
+                  : 'Reasoning effort — how hard the model thinks before acting (levels this model supports; default comes from Settings → Models)'
+              }
               aria-label="Reasoning effort"
               value={thinking}
+              disabled={thinkingDisabled}
               onChange={(e) => setThinking(e.target.value as ThinkingLevelId)}
             >
-              {THINKING_LEVELS.map((l) => (
+              {supportedLevels.map((l) => (
                 <option key={l} value={l}>
                   {l === 'off' ? 'no thinking' : `✦ ${l}`}
                 </option>

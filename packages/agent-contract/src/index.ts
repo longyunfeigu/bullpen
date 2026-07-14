@@ -4,7 +4,7 @@ import type { ProductError } from '@pi-ide/foundation';
  * these types only; Pi types never cross this boundary. */
 
 export type AgentMode = 'ask' | 'edit' | 'auto';
-export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'max';
+export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type AbortReason = 'user_stop' | 'app_quit' | 'timeout' | 'superseded' | 'error';
 
 export interface ModelRef {
@@ -20,6 +20,8 @@ export interface ModelDescriptor {
   displayName: string;
   contextWindow: number | null;
   supportsThinking: boolean;
+  /** Reasoning-effort levels this model accepts (always contains at least 'off'). */
+  supportedThinkingLevels: ThinkingLevel[];
   /** Whether usable credentials exist for the provider. Never includes the credential itself. */
   configured: boolean;
   authKind: 'api-key' | 'oauth' | 'none' | 'unknown';

@@ -11,6 +11,7 @@ import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useEditorStore } from '../store/editorStore.js';
 import { NewTaskDialog } from './NewTaskDialog.js';
 import { PathChips } from './PathLinks.js';
+import { Markdown } from './Markdown.js';
 import { Ic } from './home-icons.js';
 import { ConfirmDangerButton } from './ui.js';
 import { modeLabel, stateLabel, stateTone, TONE_COLOR, toolStateWord, toolVerb } from './labels.js';
@@ -460,13 +461,15 @@ export function QuestionCard(props: {
   if (answered) {
     return (
       <Card icon="help" title="Question (answered)" testid="q-card-answered" collapsible>
-        <div className="text-muted">{prompt.question}</div>
+        <Markdown className="text-muted" text={prompt.question} />
       </Card>
     );
   }
   return (
     <Card icon="help" title="The agent has a question" tone="warning" testid="q-card">
-      <div style={{ marginBottom: 6, whiteSpace: 'pre-wrap' }}>{prompt.question}</div>
+      <div style={{ marginBottom: 6 }}>
+        <Markdown text={prompt.question} />
+      </div>
       {prompt.options.length > 0 ? (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
           {prompt.options.map((option, i) => (
@@ -807,6 +810,23 @@ function TimelineCard({
       return (
         <Card icon="square" title="Stopped" tone="warning" testid="tl-aborted">
           The run was stopped ({String(payload.reason)}). Nothing was rolled back automatically.
+        </Card>
+      );
+    case 'worktree.setup':
+      return (
+        <Card
+          icon="wrench"
+          title={`Worktree setup — ${payload.ok === true ? 'ok' : 'failed'}`}
+          tone={payload.ok === true ? 'default' : 'danger'}
+          testid="tl-worktree-setup"
+          collapsible
+        >
+          <div className="mono" style={{ fontSize: 11 }}>
+            {String(payload.command ?? '')}
+          </div>
+          <pre className="mono" style={{ fontSize: 10.5, maxHeight: 120, overflow: 'auto' }}>
+            {String(payload.outputTail ?? '')}
+          </pre>
         </Card>
       );
     case 'verification.started':

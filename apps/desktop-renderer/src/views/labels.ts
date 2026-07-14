@@ -103,8 +103,28 @@ export function modeLabel(mode: string): string {
 }
 
 /** Reasoning-effort levels (agent-contract ThinkingLevel) — composer + settings. */
-export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'max'] as const;
+export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ThinkingLevelId = (typeof THINKING_LEVELS)[number];
+
+/**
+ * Clamp an effort level to a model's supported list (nearest neighbour, higher
+ * first — mirrors the runtime's own clamp so the composer never promises a
+ * level the provider call would silently downgrade).
+ */
+export function clampThinkingLevelTo(
+  supported: readonly string[],
+  level: ThinkingLevelId,
+): ThinkingLevelId {
+  if (supported.includes(level)) return level;
+  const index = THINKING_LEVELS.indexOf(level);
+  for (let i = index + 1; i < THINKING_LEVELS.length; i++) {
+    if (supported.includes(THINKING_LEVELS[i]!)) return THINKING_LEVELS[i]!;
+  }
+  for (let i = index - 1; i >= 0; i--) {
+    if (supported.includes(THINKING_LEVELS[i]!)) return THINKING_LEVELS[i]!;
+  }
+  return (supported[0] as ThinkingLevelId) ?? 'off';
+}
 
 /** Humane action verbs for tool calls (fallback prettifies snake_case). */
 const TOOL_VERBS: Record<string, string> = {

@@ -202,6 +202,9 @@ export function registerM4Handlers(
   services: M4Services,
   host: WorkspaceHost,
   logger: Logger,
+  /** Resolves a task's absolute working dir (worktree tasks); lazy — the task
+   * service is constructed after handler registration. */
+  resolveTaskCwd?: (taskId: string) => string | null,
 ): void {
   registerHandlers(
     {
@@ -234,10 +237,13 @@ export function registerM4Handlers(
         return { outcomes };
       },
 
-      'terminal.create': async ({ cwd }) => {
+      'terminal.create': async ({ cwd, taskId }) => {
         const ws = host.mustActive();
+        // A taskId opens the terminal in that task's isolated worktree (the
+        // path is resolved host-side from the task row — never renderer input).
+        const taskCwd = taskId ? (resolveTaskCwd?.(taskId) ?? null) : null;
         const info = services.terminals.create({
-          cwd: cwd ? `${ws.canonicalPath}/${cwd}` : ws.canonicalPath,
+          cwd: taskCwd ?? (cwd ? `${ws.canonicalPath}/${cwd}` : ws.canonicalPath),
           shellPath: undefined,
         });
         return { id: info.id, title: info.title, shell: info.shell, pid: info.pid };

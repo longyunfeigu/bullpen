@@ -24,6 +24,10 @@ import {
   type AgentSessionEvent,
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
+// Pinned to the exact pi-ai version shipped inside pi-coding-agent (ADR-0010):
+// pure helpers for per-model reasoning-effort capabilities.
+import { clampThinkingLevel, getSupportedThinkingLevels } from '@earendil-works/pi-ai';
+import type { Api, Model } from '@earendil-works/pi-ai';
 import {
   AGENT_EVENT_SCHEMA_VERSION,
   type AbortReason,
@@ -33,6 +37,7 @@ import {
   type CredentialCheck,
   type ModelDescriptor,
   type ModelUsage,
+  type ThinkingLevel,
   type RuntimeInfo,
   type RuntimeInit,
   type RuntimeSessionRef,
@@ -265,7 +270,12 @@ export class PiAgentRuntime implements AgentRuntime {
       authStorage: this.auth,
       modelRegistry: this.registry,
       model,
-      thinkingLevel: (input.model.thinkingLevel ?? 'medium') as never,
+      // Clamp to the model's supported effort levels (nearest neighbour) so a
+      // composer/settings default can never produce an invalid provider call.
+      thinkingLevel: clampThinkingLevel(
+        model as Model<Api>,
+        (input.model.thinkingLevel ?? 'medium') as never,
+      ) as never,
       // Explicit allowlist: exactly the gateway tools, nothing else. Pi's
       // built-in read/bash/edit/write can never activate (TOOL-001).
       tools: input.tools.map((t) => t.name),
@@ -543,6 +553,9 @@ export class PiAgentRuntime implements AgentRuntime {
       displayName: model.name ?? model.id,
       contextWindow: model.contextWindow ?? null,
       supportsThinking: Boolean(model.reasoning),
+      supportedThinkingLevels: getSupportedThinkingLevels(
+        model as unknown as Model<Api>,
+      ) as ThinkingLevel[],
       configured: configured.has(model.provider),
       authKind: configured.has(model.provider) ? 'api-key' : 'unknown',
     }));

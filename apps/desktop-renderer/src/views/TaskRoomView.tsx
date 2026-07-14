@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { rpcResult } from '../bridge.js';
 import { useTaskStore, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { useActivityStore, currentActionLine } from '../store/activityStore.js';
 import { useAppStore } from '../store/appStore.js';
@@ -100,14 +101,8 @@ export function TaskRoomView(): React.JSX.Element {
         <span className="tr-proj" data-testid="task-room-project" title={task.projectPath}>
           <Ic name="folder" size={11} />
           {task.projectName}
-          {task.worktree ? (
-            <>
-              <span className="tr-proj-sep">·</span>
-              <Ic name="branch" size={11} />
-              <span className="mono">{task.worktree.branch}</span>
-            </>
-          ) : null}
         </span>
+        {task.worktree ? <WorktreeChip task={task} /> : null}
         <span className="tr-sp" />
         {running ? (
           <button className="btn danger" data-testid="agent-stop" onClick={() => void store.stop()}>
@@ -166,6 +161,13 @@ export function TaskRoomView(): React.JSX.Element {
         </div>
 
         <aside className="tr-rail">
+          {task.worktree?.missing ? (
+            <div className="tr-note warn" data-testid="task-room-worktree-missing">
+              The isolated worktree folder for this task no longer exists on disk (it was removed
+              outside the app). Recorded changes and the timeline stay available; resuming the agent
+              or merging files is not possible — archive or roll back to close out.
+            </div>
+          ) : null}
           {running ? (
             <>
               <h4 className="tr-rail-h">
@@ -191,10 +193,20 @@ export function TaskRoomView(): React.JSX.Element {
                 key={path}
                 className="tr-frow"
                 data-testid={`task-room-file-${path}`}
-                title={`Open ${path} in the editor`}
+                title={
+                  task.worktree
+                    ? `Show what changed in ${path} (the file lives in the task's worktree)`
+                    : `Open ${path} in the editor`
+                }
                 onClick={() => {
-                  void editor.openFile(path);
-                  openInEditor();
+                  // Worktree tasks: the main tree does NOT have these changes —
+                  // open the honest diff-so-far lens instead of the untouched file.
+                  if (task.worktree) {
+                    app.setLens({ taskId: task.id, path });
+                  } else {
+                    void editor.openFile(path);
+                    openInEditor();
+                  }
                 }}
               >
                 <Ic name="file" size={11} />
@@ -312,6 +324,79 @@ export function TaskRoomView(): React.JSX.Element {
 function actionLine(kind: string, label: string): string {
   void kind;
   return label.length > 90 ? `${label.slice(0, 87)}…` : label;
+}
+
+/** Worktree chip — branch identity + escape hatches (terminal / Finder). */
+function WorktreeChip({
+  task,
+}: {
+  task: { id: string; worktree: { branch: string; path: string; missing?: boolean } | null };
+}): React.JSX.Element | null {
+  const app = useAppStore();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+  const wt = task.worktree;
+  if (!wt) return null;
+  const missing = wt.missing === true;
+  return (
+    <div className="tr-wtchip" ref={ref}>
+      <button
+        className={`tr-proj tr-wtbtn ${missing ? 'warn' : ''}`}
+        data-testid="task-room-worktree"
+        title="This task runs in an isolated worktree — changes reach the project only when you accept"
+        onClick={() => setOpen(!open)}
+      >
+        <Ic name="branch" size={11} />
+        <span className="mono">{wt.branch}</span>
+        {missing ? <span>· missing</span> : null}
+        <Ic name="chevron" size={10} />
+      </button>
+      {open ? (
+        <div className="tr-wtmenu" data-testid="worktree-menu">
+          <div className="tr-wtmenu-cap">
+            Isolated worktree — the agent works on a separate checkout; accepting merges the result
+            into the project.
+          </div>
+          <button
+            className="tr-wtmenu-row"
+            data-testid="worktree-open-terminal"
+            disabled={missing}
+            onClick={() => {
+              setOpen(false);
+              void import('./TerminalPanel.js').then(({ useTerminalStore }) => {
+                void useTerminalStore.getState().create({ taskId: task.id, title: wt.branch });
+              });
+              app.setSurface('workspace');
+            }}
+          >
+            <Ic name="play" size={11} /> Open in terminal
+          </button>
+          <button
+            className="tr-wtmenu-row"
+            data-testid="worktree-reveal"
+            disabled={missing}
+            onClick={() => {
+              setOpen(false);
+              void rpcResult('app.revealPath', { path: wt.path });
+            }}
+          >
+            <Ic name="folder" size={11} /> Reveal in Finder
+          </button>
+          {missing ? (
+            <div className="tr-wtmenu-cap warn">The worktree folder no longer exists on disk.</div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** Room reply pill — plan-aware: while a plan awaits approval, typing here IS

@@ -266,6 +266,14 @@ function registerCoreHandlers(bootstrap: Bootstrap): void {
     {
       'app.getInfo': async () => getAppInfo(),
       'app.openExternal': async ({ url }) => ({ opened: await openExternalChecked(url, logger) }),
+      'app.revealPath': async ({ path }) => {
+        // Reveal in Finder/Explorer — absolute existing paths only.
+        const { isAbsolute } = await import('node:path');
+        const { existsSync } = await import('node:fs');
+        if (!isAbsolute(path) || !existsSync(path)) return { revealed: false };
+        if (!process.env.PI_IDE_E2E) shell.showItemInFolder(path);
+        return { revealed: true };
+      },
       'app.reportClientError': async (payload, meta) => {
         logger.error(`renderer error: ${payload.message}`, { code: payload.code });
         state?.recordError(
@@ -398,7 +406,15 @@ if (!gotLock) {
       registerWorkspaceHandlers(workspaceHost, state, logger.child('ipc'));
       m4 = new M4Services(workspaceHost, settings, logger.child('m4'));
       m4Ref = m4;
-      registerM4Handlers(m4, workspaceHost, logger.child('ipc'));
+      registerM4Handlers(m4, workspaceHost, logger.child('ipc'), (taskId) => {
+        try {
+          const task = taskServiceRef?.getTask(taskId);
+          const wt = task?.worktree;
+          return wt && !wt.missing ? wt.path : null;
+        } catch {
+          return null;
+        }
+      });
       m5Ref = new M5Services(workspaceHost, state, paths, logger.child('m5'));
       registerM5Handlers(m5Ref, workspaceHost, logger.child('ipc'));
 
@@ -418,6 +434,8 @@ if (!gotLock) {
       );
       taskServiceRef = taskService;
       taskService.markOrphanedRunsInterrupted();
+      // ADR-0009 am.2: fire-and-forget cleanup of finished tasks' worktrees.
+      void taskService.sweepWorktreeOrphans();
       const modelCatalog = new ModelCatalogService(
         (providerId) => secretService.catalogProvider(providerId),
         logger.child('models'),

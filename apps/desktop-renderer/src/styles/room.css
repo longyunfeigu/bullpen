@@ -663,3 +663,68 @@
     min-height: 60vh;
   }
 }
+
+/* ---------- worktree chip + escape-hatch menu (ADR-0009 am.2) ---------- */
+.tr-wtchip {
+  position: relative;
+  display: inline-flex;
+}
+.tr-wtbtn {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tr-wtbtn:hover {
+  background: var(--bg-hover);
+}
+.tr-wtbtn.warn {
+  color: var(--warning);
+}
+.tr-wtmenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: 260px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tr-wtmenu-cap {
+  font-size: 10.5px;
+  color: var(--fg-muted);
+  line-height: 1.45;
+  padding: 4px 8px 6px;
+}
+.tr-wtmenu-cap.warn {
+  color: var(--warning);
+}
+.tr-wtmenu-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+.tr-wtmenu-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.tr-wtmenu-row:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tr-note.warn {
+  color: var(--warning);
+}

@@ -350,6 +350,7 @@ export class MockAgentRuntime implements AgentRuntime {
         displayName: 'Mock Model 1',
         contextWindow: 128000,
         supportsThinking: true,
+        supportedThinkingLevels: ['off', 'minimal', 'low', 'medium', 'high'],
         configured: true,
         authKind: 'none',
       },

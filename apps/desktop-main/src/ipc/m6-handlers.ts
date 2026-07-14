@@ -27,6 +27,7 @@ export function registerM6Handlers(
           verification: payload.verification,
           ...(payload.projectPath !== undefined ? { projectPath: payload.projectPath } : {}),
           isolation: payload.isolation,
+          ...(payload.worktreeSetup !== undefined ? { worktreeSetup: payload.worktreeSetup } : {}),
         }),
       }),
       'task.start': async ({ taskId, prompt }) => {

@@ -561,7 +561,7 @@ export function SettingsView(): React.JSX.Element {
                   value={settings.models.defaultThinkingLevel}
                   onChange={(e) => set({ models: { defaultThinkingLevel: e.target.value } })}
                 >
-                  {['off', 'minimal', 'low', 'medium', 'high', 'max'].map((l) => (
+                  {['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map((l) => (
                     <option key={l} value={l}>
                       {l}
                     </option>

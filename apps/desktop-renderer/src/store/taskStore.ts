@@ -42,7 +42,7 @@ interface TaskStore {
       providerId: string;
       modelId: string;
       /** Reasoning effort; falls back to Settings → Models → default thinking level. */
-      thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'max';
+      thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     };
     verification?: Array<{
       label: string;
@@ -55,6 +55,8 @@ interface TaskStore {
     projectPath?: string;
     /** ADR-0009: isolate the task in its own git worktree. */
     isolation?: 'none' | 'worktree';
+    /** ADR-0009 am.2: command run once inside the fresh worktree (deps, codegen). */
+    worktreeSetup?: string;
   }): Promise<boolean>;
   send(text: string, during: 'steer' | 'followUp'): Promise<void>;
   stop(): Promise<void>;
@@ -264,6 +266,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       verification: input.verification ?? [],
       ...(input.projectPath ? { projectPath: input.projectPath } : {}),
       isolation: input.isolation ?? 'none',
+      ...(input.worktreeSetup?.trim() ? { worktreeSetup: input.worktreeSetup.trim() } : {}),
     });
     if (!create.ok) {
       useAppStore.getState().pushToast('error', create.error.userMessage);

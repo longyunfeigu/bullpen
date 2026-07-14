@@ -22,7 +22,7 @@ interface TerminalStore {
   pendingKill: string | null;
   initialized: boolean;
   init(): void;
-  create(): Promise<void>;
+  create(options?: { taskId?: string; title?: string }): Promise<void>;
   setActive(id: string): void;
   requestKill(id: string): Promise<void>;
   confirmKill(id: string, confirmed: boolean): Promise<void>;
@@ -75,9 +75,12 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     });
   },
 
-  async create() {
+  async create(options) {
     const settings = useAppStore.getState().settings;
-    const res = await rpcResult('terminal.create', {});
+    const res = await rpcResult(
+      'terminal.create',
+      options?.taskId ? { taskId: options.taskId } : {},
+    );
     if (!res.ok) {
       useAppStore.getState().pushToast('error', res.error.userMessage);
       return;
@@ -94,7 +97,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     });
     const item: TermInstance = {
       id: res.data.id,
-      title: res.data.title,
+      title: options?.title ?? res.data.title,
       term,
       fit,
       exited: false,

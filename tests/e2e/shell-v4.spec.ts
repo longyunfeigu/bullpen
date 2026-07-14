@@ -134,8 +134,9 @@ test.describe('Shell v4 — worktree isolation and merge-back (ADR-0009)', () =>
       await page.getByTestId('home-intent').fill('[scenario:edit-basic] isolated fix');
       await page.getByTestId('home-submit').click();
 
-      // Room header shows the isolation branch.
-      await expect(page.getByTestId('task-room-project')).toContainText('charter/', {
+      // Room header shows the isolation branch (ADR-0009 am.2: its own chip
+      // with terminal/Finder escape hatches; slug-based branch name).
+      await expect(page.getByTestId('task-room-worktree')).toContainText('charter/', {
         timeout: 20000,
       });
       await page.getByTestId('plan-approve').click();
@@ -161,7 +162,7 @@ test.describe('Shell v4 — worktree isolation and merge-back (ADR-0009)', () =>
       await expect(page.getByTestId('tl-merged-back')).toBeVisible();
 
       // The isolation branch stays on the header chip for audit.
-      await expect(page.getByTestId('task-room-project')).toContainText('charter/');
+      await expect(page.getByTestId('task-room-worktree')).toContainText('charter/');
     } finally {
       await app.close();
     }

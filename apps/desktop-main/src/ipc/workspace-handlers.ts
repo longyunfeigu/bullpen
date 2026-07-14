@@ -4,6 +4,7 @@ import { OpenTabsStateSchema } from '@pi-ide/ipc-contracts';
 import { resolveInsideRoot } from '@pi-ide/workspace-service';
 import type { Logger } from '@pi-ide/foundation';
 import { registerHandlers } from './router.js';
+import { createProject } from '../services/project-create.js';
 import { toDto, type WorkspaceHost } from '../services/workspace-host.js';
 import type { StateService } from '../services/state-service.js';
 
@@ -26,6 +27,18 @@ export function registerWorkspaceHandlers(
       'workspace.close': async () => {
         await host.close();
         return { closed: true };
+      },
+      'workspace.pickParentDir': async () => {
+        const result = await dialog.showOpenDialog({
+          properties: ['openDirectory', 'createDirectory'],
+          title: 'Choose where to create the project',
+          buttonLabel: 'Choose',
+        });
+        return { path: result.canceled ? null : (result.filePaths[0] ?? null) };
+      },
+      'workspace.createProject': async (input) => {
+        const path = await createProject(input, logger);
+        return { path, workspace: await host.open(path) };
       },
       'workspace.current': async () => ({ workspace: host.dto() }),
       'workspace.setTrust': async ({ trusted }) => ({ workspace: host.setTrust(trusted) }),

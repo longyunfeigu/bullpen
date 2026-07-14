@@ -55,6 +55,12 @@ export const CHANNELS = {
     z.object({ url: z.string().url() }).strict(),
     z.object({ opened: z.boolean() }),
   ),
+  'app.revealPath': ch(
+    'app.revealPath',
+    1,
+    z.object({ path: z.string().min(1).max(4000) }).strict(),
+    z.object({ revealed: z.boolean() }),
+  ),
   'workspace.open': ch(
     'workspace.open',
     1,
@@ -72,6 +78,26 @@ export const CHANNELS = {
     1,
     z.object({}).strict(),
     z.object({ items: z.array(RecentWorkspaceSchema) }),
+  ),
+  'workspace.pickParentDir': ch(
+    'workspace.pickParentDir',
+    1,
+    z.object({}).strict(),
+    z.object({ path: z.string().nullable() }),
+  ),
+  'workspace.createProject': ch(
+    'workspace.createProject',
+    1,
+    z
+      .object({
+        mode: z.enum(['empty', 'clone']),
+        parentDir: z.string().min(1),
+        name: z.string().min(1).max(120),
+        gitInit: z.boolean().default(false),
+        cloneUrl: z.string().max(2000).optional(),
+      })
+      .strict(),
+    z.object({ path: z.string(), workspace: WorkspaceDtoSchema }),
   ),
   'settings.get': ch('settings.get', 1, z.object({}).strict(), SettingsStateSchema),
   'settings.update': ch(
@@ -323,7 +349,13 @@ export const CHANNELS = {
   'terminal.create': ch(
     'terminal.create',
     1,
-    z.object({ cwd: z.string().optional() }).strict(),
+    z
+      .object({
+        cwd: z.string().optional(),
+        /** Open in this task's isolated worktree (path resolved host-side). */
+        taskId: z.string().optional(),
+      })
+      .strict(),
     z.object({
       id: z.string(),
       title: z.string(),
@@ -455,6 +487,8 @@ export const CHANNELS = {
         projectPath: z.string().min(1).max(2000).optional(),
         /** ADR-0009: run the task in an isolated git worktree. */
         isolation: z.enum(['none', 'worktree']).default('none'),
+        /** Optional command run once inside a fresh worktree (deps, codegen…). */
+        worktreeSetup: z.string().max(1000).optional(),
       })
       .strict(),
     z.object({ task: TaskDtoSchema }),
@@ -619,6 +653,12 @@ export const CHANNELS = {
     1,
     z.object({}).strict(),
     z.object({ suggestions: z.array(VerificationCommandSchema) }),
+  ),
+  'task.suggestWorktreeSetup': ch(
+    'task.suggestWorktreeSetup',
+    1,
+    z.object({}).strict(),
+    z.object({ command: z.string().nullable() }),
   ),
   'task.activity': ch(
     'task.activity',

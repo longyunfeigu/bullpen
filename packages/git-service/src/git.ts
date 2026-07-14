@@ -310,6 +310,23 @@ export class GitService {
   // ---------- worktrees (ADR-0009) ----------
 
   /** Create a linked worktree at `path` on a new branch from HEAD. */
+  /**
+   * Untracked files/dirs matched by gitignore rules (`--directory` collapses
+   * wholly-ignored directories like node_modules/ to one entry). Source list
+   * for `.worktreeinclude` copying — only already-ignored files may be copied.
+   */
+  async listIgnored(): Promise<string[]> {
+    const res = await this.run([
+      'ls-files',
+      '--others',
+      '--ignored',
+      '--exclude-standard',
+      '--directory',
+      '-z',
+    ]);
+    return res.stdout.split('\0').filter(Boolean);
+  }
+
   async worktreeAdd(path: string, branch: string): Promise<void> {
     if (!/^[A-Za-z0-9_./-]{1,120}$/.test(branch) || branch.startsWith('-')) {
       throw gitError('GIT_INVALID_BRANCH', 'That branch name is not valid.');

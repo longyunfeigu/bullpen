@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import type { DirEntryDto } from '@pi-ide/ipc-contracts';
-import { rpcResult } from '../bridge.js';
 import { useEditorStore } from '../store/editorStore.js';
 import { useAppStore } from '../store/appStore.js';
+import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useGlowPaths } from './useGlow.js';
 import { Ic } from './home-icons.js';
 
@@ -12,47 +12,25 @@ const MAX_ENTRIES = 200;
  * Lightweight lazy file tree under the ACTIVE project row on Home. Directories
  * expand in place; clicking a file opens it in the Editor. Only the selected
  * project can expand (the engine reads one workspace at a time).
+ *
+ * Data source is the shared workspaceStore (same as the Editor explorer), so
+ * `fs.batch` watcher events refresh this tree live — agent-created files
+ * appear as they are written and glow while the change is fresh (PIVOT-016).
  */
 export function HomeProjectTree(): React.JSX.Element {
   const app = useAppStore();
   const editor = useEditorStore();
   const glow = useGlowPaths();
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [children, setChildren] = useState<Record<string, DirEntryDto[]>>({});
-
-  const load = useCallback(async (dir: string): Promise<void> => {
-    const res = await rpcResult('fs.listDir', { dir, showIgnored: false });
-    if (res.ok) {
-      const sorted = [...res.data.entries]
-        .filter((e) => e.kind === 'file' || e.kind === 'dir')
-        .sort((a, b) =>
-          a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1,
-        )
-        .slice(0, MAX_ENTRIES);
-      setChildren((prev) => ({ ...prev, [dir]: sorted }));
-    }
-  }, []);
+  const dirs = useWorkspaceStore((s) => s.dirs);
+  const expanded = useWorkspaceStore((s) => s.expanded);
+  const toggleExpand = useWorkspaceStore((s) => s.toggleExpand);
+  const loadDir = useWorkspaceStore((s) => s.loadDir);
 
   // Root loads on mount (expanding the project row mounts the tree).
   useEffect(() => {
-    void load('');
-  }, [load]);
-
-  const toggle = useCallback(
-    (dir: string): void => {
-      setExpanded((prev) => {
-        const next = new Set(prev);
-        if (next.has(dir)) {
-          next.delete(dir);
-        } else {
-          next.add(dir);
-          if (!children[dir]) void load(dir);
-        }
-        return next;
-      });
-    },
-    [children, load],
-  );
+    if (dirs[''] === undefined) void loadDir('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const openFile = (path: string): void => {
     void editor.openFile(path);
@@ -61,18 +39,24 @@ export function HomeProjectTree(): React.JSX.Element {
   };
 
   const renderDir = (dir: string, depth: number): React.ReactNode => {
-    const entries = children[dir];
-    if (!entries) {
+    const raw = dirs[dir];
+    if (!raw) {
       return (
         <div className="hm-tree-loading" style={{ paddingLeft: 26 + depth * 12 }}>
           Loading…
         </div>
       );
     }
+    const entries = raw
+      .filter((e: DirEntryDto) => (e.kind === 'file' || e.kind === 'dir') && !e.ignored)
+      .sort((a, b) =>
+        a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1,
+      )
+      .slice(0, MAX_ENTRIES);
     return entries.map((entry) => {
       const path = dir === '' ? entry.name : `${dir}/${entry.name}`;
       const isDir = entry.kind === 'dir';
-      const isOpen = expanded.has(path);
+      const isOpen = Boolean(expanded[path]);
       return (
         <React.Fragment key={path}>
           <button
@@ -80,7 +64,7 @@ export function HomeProjectTree(): React.JSX.Element {
             data-testid={`home-tree-${path}`}
             style={{ paddingLeft: 10 + depth * 12 }}
             title={path}
-            onClick={() => (isDir ? toggle(path) : openFile(path))}
+            onClick={() => (isDir ? toggleExpand(path) : openFile(path))}
           >
             <span className={`hm-tree-caret ${isDir ? (isOpen ? 'open' : '') : 'none'}`}>
               {isDir ? <Ic name="chevron" size={11} /> : null}

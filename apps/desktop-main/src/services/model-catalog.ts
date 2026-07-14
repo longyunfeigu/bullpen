@@ -161,6 +161,9 @@ export class ModelCatalogService {
         displayName: m.displayName,
         contextWindow: m.contextWindow ?? null,
         supportsThinking: false,
+        // Gateway-listed models expose no reasoning metadata — offer the full
+        // range; the runtime clamps per model at session creation.
+        supportedThinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
         configured: true,
         authKind: 'api-key',
       }));

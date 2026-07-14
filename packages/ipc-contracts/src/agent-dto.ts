@@ -22,7 +22,7 @@ export const TaskStateSchema = z.enum([
 export const ModelRefSchema = z.object({
   providerId: z.string(),
   modelId: z.string(),
-  thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'max']).optional(),
+  thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).optional(),
 });
 
 export const VerificationCommandSchema = z.object({
@@ -44,6 +44,8 @@ export const TaskWorktreeSchema = z.object({
   branch: z.string(),
   baseHead: z.string().nullable(),
   baseBranch: z.string().nullable(),
+  /** The worktree directory no longer exists on disk (deleted externally). */
+  missing: z.boolean().optional(),
 });
 export type TaskWorktreeDto = z.infer<typeof TaskWorktreeSchema>;
 
@@ -210,6 +212,9 @@ export const ModelDescriptorDtoSchema = z.object({
   displayName: z.string(),
   contextWindow: z.number().nullable(),
   supportsThinking: z.boolean(),
+  supportedThinkingLevels: z
+    .array(z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
+    .default(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
   configured: z.boolean(),
   authKind: z.enum(['api-key', 'oauth', 'none', 'unknown']),
 });

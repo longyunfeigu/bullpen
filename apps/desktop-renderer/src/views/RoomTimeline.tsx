@@ -19,6 +19,7 @@ import {
   type TimelineContext,
 } from './AgentPanel.js';
 import { isAnswered, stateLabel, toolVerb } from './labels.js';
+import { Markdown } from './Markdown.js';
 
 /**
  * Task Room timeline (PIVOT-032): the mockup language — ✓ milestones with
@@ -214,7 +215,9 @@ function PlanStatic({ plan }: { plan: TaskPlanDto }): React.JSX.Element {
           {plan.steps.length} step{plan.steps.length === 1 ? '' : 's'}
         </span>
       </div>
-      <div className="rt-plan-sum">{plan.summary}</div>
+      <div className="rt-plan-sum">
+        <Markdown text={plan.summary} />
+      </div>
       <ol className="rt-plan-steps">
         {plan.steps.map((s, i) => (
           <li key={s.id} className={`st-${s.status}`}>
@@ -280,7 +283,7 @@ function ReportCard({
       {agentSummary ? (
         <details className="rt-report-sum">
           <summary>Agent's own summary (unverified narrative)</summary>
-          <div>{agentSummary}</div>
+          <Markdown text={agentSummary} />
         </details>
       ) : null}
       <div className="rt-report-note">
@@ -367,7 +370,7 @@ function eventNode(
     case 'agent.message':
       return (
         <Bubble key={event.id} who="agent" testid="tl-agent">
-          {String(payload.text ?? '')}
+          <Markdown text={String(payload.text ?? '')} />
         </Bubble>
       );
     case 'tool.call': {
@@ -526,6 +529,19 @@ function eventNode(
           testid="tl-aborted"
         />
       );
+    case 'worktree.setup': {
+      const ok = payload.ok === true;
+      return (
+        <SetupRow
+          key={event.id}
+          command={String(payload.command ?? '')}
+          ok={ok}
+          exitCode={typeof payload.exitCode === 'number' ? payload.exitCode : null}
+          durationMs={typeof payload.durationMs === 'number' ? payload.durationMs : 0}
+          output={String(payload.outputTail ?? '')}
+        />
+      );
+    }
     case 'verification.started':
       return null; // the completed row carries the evidence
     case 'verification.completed': {
@@ -646,6 +662,42 @@ function VerRow({
   );
 }
 
+/** Worktree setup evidence row (deps install etc. before the agent started). */
+function SetupRow(props: {
+  command: string;
+  ok: boolean;
+  exitCode: number | null;
+  durationMs: number;
+  output: string;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const seconds = Math.round(props.durationMs / 1000);
+  return (
+    <div className={`rt-tool ${props.ok ? '' : 'failed'}`} data-testid="tl-worktree-setup">
+      <button className="rt-tool-line" onClick={() => setOpen(!open)} title="Show setup output">
+        <span className="rt-tool-ic" aria-hidden>
+          <Ic name="wrench" size={12} />
+        </span>
+        <span className="rt-tool-verb">Worktree setup</span>
+        <span className="rt-tool-target mono">{props.command}</span>
+        <span className="rt-tool-sp" />
+        {props.ok ? (
+          <span className="rt-tool-state ok">✓ {seconds > 1 ? `${seconds}s` : ''}</span>
+        ) : (
+          <span className="rt-tool-state err">
+            failed{props.exitCode !== null ? ` (exit ${props.exitCode})` : ''}
+          </span>
+        )}
+      </button>
+      {open ? (
+        <div className="rt-tool-detail">
+          <pre className="mono">{props.output || '(no output)'}</pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function pastLabel(state: string, past: boolean): string {
   if (!past) return stateLabel(state);
   // Completed phases read as achievements, mirroring the mockup.
@@ -695,7 +747,7 @@ export function RoomTimeline({ task }: { task: TaskDto }): React.JSX.Element {
           {store.timeline.map((event) => eventNode(event, context, task, msMeta))}
           {store.streaming ? (
             <Bubble who="agent" testid="tl-streaming" live>
-              {store.streaming.text}
+              <Markdown text={store.streaming.text} />
             </Bubble>
           ) : null}
         </>
