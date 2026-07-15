@@ -21,12 +21,15 @@ export async function launchApp(
     env?: Record<string, string>;
     /** Dual-form shell: 'dismiss' (default) lands tests in the IDE surface; 'keep' stays on Home. */
     home?: 'dismiss' | 'keep';
+    /** Record a video of the run (demo/evidence captures). */
+    recordVideo?: { dir: string; size?: { width: number; height: number } };
   } = {},
 ): Promise<LaunchedApp> {
   const userDataDir = options.userDataDir ?? mkdtempSync(join(tmpdir(), 'pi-ide-e2e-'));
   const app = await electron.launch({
     args: ['.'],
     cwd: root,
+    recordVideo: options.recordVideo,
     env: {
       ...process.env,
       PI_IDE_USER_DATA: userDataDir,

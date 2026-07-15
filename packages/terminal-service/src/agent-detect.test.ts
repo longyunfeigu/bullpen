@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { tmpdir } from 'node:os';
 import {
   AgentStateTracker,
   commandMatchesAgent,
   DEFAULT_AGENT_CLIS,
+  findAgentInTable,
+  TerminalManager,
   titleMatchesAgent,
+  type ProcessTableEntry,
 } from './index.js';
 
 describe('titleMatchesAgent (ADR-0017)', () => {
@@ -57,5 +61,137 @@ describe('AgentStateTracker', () => {
     const t = new AgentStateTracker(2);
     t.update('claude');
     expect(t.update('codex')).toEqual({ agent: 'codex' });
+  });
+});
+
+describe('findAgentInTable (ADR-0017 amendment: generic process-tree fallback)', () => {
+  it('finds an agent CLI anywhere below the root pid, through wrappers', () => {
+    const entries: ProcessTableEntry[] = [
+      { pid: 11, ppid: 10, command: '/bin/sh /usr/local/bin/some-wrap' },
+      { pid: 12, ppid: 11, command: 'node /Users/x/.nvm/bin/claude --resume' },
+    ];
+    expect(findAgentInTable(entries, 10, DEFAULT_AGENT_CLIS)).toBe('claude');
+  });
+
+  it('returns null when nothing below the root matches', () => {
+    const entries: ProcessTableEntry[] = [
+      { pid: 11, ppid: 10, command: 'vim notes.md' },
+      { pid: 12, ppid: 11, command: '/bin/sh' },
+    ];
+    expect(findAgentInTable(entries, 10, DEFAULT_AGENT_CLIS)).toBeNull();
+  });
+
+  it('ignores agent processes outside the root subtree', () => {
+    const entries: ProcessTableEntry[] = [
+      { pid: 21, ppid: 20, command: 'claude' }, // someone else's terminal
+      { pid: 11, ppid: 10, command: 'vim notes.md' },
+    ];
+    expect(findAgentInTable(entries, 10, DEFAULT_AGENT_CLIS)).toBeNull();
+  });
+});
+
+describe('TerminalManager.pollOnce detection gating (ADR-0017 amendment)', () => {
+  let manager: TerminalManager | null = null;
+
+  afterEach(() => {
+    manager?.dispose();
+    manager = null;
+  });
+
+  function setup(readTitle: () => string, table: () => ProcessTableEntry[] | null) {
+    const events: Array<{ id: string; agent: string | null }> = [];
+    const readProcessTable = vi.fn(table);
+    manager = new TerminalManager(
+      () => {},
+      () => {},
+      { agentPollMs: 0, readTitle, readProcessTable },
+    );
+    manager.onAgentState((e) => events.push({ id: e.id, agent: e.agent }));
+    return { m: manager, events, readProcessTable };
+  }
+
+  it('detects a version-named foreground binary via the process-tree fallback (native claude installer)', () => {
+    // Real-world shape: ~/.local/bin/claude → .../versions/2.1.209, so the
+    // kernel short name node-pty reports is "2.1.209", never "claude".
+    let title = '2.1.209';
+    let shellPid = 0;
+    const { m, events } = setup(
+      () => title,
+      () => [{ pid: 99991, ppid: shellPid, command: 'claude' }],
+    );
+    const info = m.create({ cwd: tmpdir(), shellPath: '/bin/sh' });
+    shellPid = info.pid;
+
+    m.pollOnce();
+    expect(events).toEqual([{ id: info.id, agent: 'claude' }]);
+
+    // Back at the prompt: exits after the grace streak, no scan needed.
+    title = 'sh';
+    m.pollOnce();
+    m.pollOnce();
+    expect(events).toEqual([
+      { id: info.id, agent: 'claude' },
+      { id: info.id, agent: null },
+    ]);
+  });
+
+  it('detects codex behind an arbitrary wrapper title', () => {
+    let shellPid = 0;
+    const { m, events } = setup(
+      () => 'codex-wrap',
+      () => [
+        { pid: 88001, ppid: shellPid, command: '/bin/sh /usr/local/bin/codex-wrap' },
+        { pid: 88002, ppid: 88001, command: 'codex --model gpt' },
+      ],
+    );
+    const info = m.create({ cwd: tmpdir(), shellPath: '/bin/sh' });
+    shellPid = info.pid;
+
+    m.pollOnce();
+    expect(events).toEqual([{ id: info.id, agent: 'codex' }]);
+  });
+
+  it('still detects npm-installed CLIs whose foreground title is the interpreter', () => {
+    let shellPid = 0;
+    const { m, events } = setup(
+      () => 'node',
+      () => [{ pid: 77001, ppid: shellPid, command: 'node /Users/x/.nvm/bin/claude' }],
+    );
+    const info = m.create({ cwd: tmpdir(), shellPath: '/bin/sh' });
+    shellPid = info.pid;
+
+    m.pollOnce();
+    expect(events).toEqual([{ id: info.id, agent: 'claude' }]);
+  });
+
+  it('never reads the process table while the terminal sits at a shell prompt', () => {
+    let title = 'sh'; // the session's own shell
+    const { m, events, readProcessTable } = setup(
+      () => title,
+      () => [],
+    );
+    m.create({ cwd: tmpdir(), shellPath: '/bin/sh' });
+
+    for (const idle of ['sh', 'zsh', 'bash', 'fish', '-zsh']) {
+      title = idle;
+      m.pollOnce();
+    }
+    expect(readProcessTable).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
+  it('reads the process table at most once per poll across many busy terminals', () => {
+    const { m, events, readProcessTable } = setup(
+      () => 'vim',
+      () => [],
+    );
+    m.create({ cwd: tmpdir(), shellPath: '/bin/sh' });
+    m.create({ cwd: tmpdir(), shellPath: '/bin/sh' });
+
+    m.pollOnce();
+    expect(readProcessTable).toHaveBeenCalledTimes(1);
+    m.pollOnce();
+    expect(readProcessTable).toHaveBeenCalledTimes(2);
+    expect(events).toEqual([]); // vim is busy but not an agent
   });
 });

@@ -101,3 +101,25 @@ One lifecycle, staged into the existing shell:
 - The task list, mission control and notifications treat external tasks as
   ordinary tasks (EXT-labelled); E2E covers the full lifecycle with a fake
   agent CLI driven through the real PTY.
+
+## Amendment (2026-07-15) — detection fallback widened
+
+Field failure: the native claude installer links `~/.local/bin/claude` to a
+version-named binary (`…/versions/2.1.209`). The kernel short name node-pty
+reports as the foreground title is therefore `2.1.209` — never `claude` — and
+the original interpreter-gated descendant scan (node/bun/…) never ran, so
+real sessions were invisible.
+
+Detection rule now: when the foreground title misses the CLI list, fall back
+to an argv scan of the process tree below the shell **unless** the title is a
+shell (known shell names or the session's own shell) — i.e. the terminal is
+idle at a prompt. This covers interpreters, version-named installer binaries
+and wrapper scripts for every CLI on the list (claude and codex alike). Cost
+is bounded: at most one `ps -ax` snapshot per 700 ms tick, shared across all
+terminals via `readProcessTable`/`findAgentInTable`, and none while terminals
+sit at their prompts.
+
+Recorded boundary: a non-exec shell-script wrapper keeps a shell comm and is
+still missed while its title reads as a shell; real installers exec or use
+shebangs, so this is accepted. E2E covers the version-named shape with a real
+binary (`fakeclaude → versions/9.9.9`, a zsh copy) driven on a real PTY.

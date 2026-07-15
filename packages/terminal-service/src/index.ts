@@ -30,8 +30,40 @@ interface Session {
 /** Known coding-agent CLIs; overridable via PI_IDE_EXTERNAL_CLIS (tests). */
 export const DEFAULT_AGENT_CLIS = ['claude', 'codex'] as const;
 
-/** Foreground titles that hide the real program (npm-installed CLIs run as node). */
-const INTERPRETER_TITLES = new Set(['node', 'bun', 'deno', 'python', 'python3']);
+/**
+ * Shell titles mean the terminal is idle at a prompt; any other foreground
+ * title that misses the CLI list gets the process-tree fallback. A positive
+ * interpreter list (node/bun/…) proved too narrow: the native claude/codex
+ * installers run version-named binaries (`~/.local/bin/claude →
+ * …/versions/2.1.209`), so the kernel short name node-pty reports never
+ * equals the CLI name. Boundary: a non-exec shell-script wrapper keeps a
+ * shell title and is still missed — acceptable, real installers exec or are
+ * shebang scripts.
+ */
+const KNOWN_SHELL_TITLES = new Set([
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'dash',
+  'ash',
+  'csh',
+  'tcsh',
+  'ksh',
+  'nu',
+  'xonsh',
+  'pwsh',
+  'powershell',
+  'cmd.exe',
+  'login',
+]);
+
+/** `-zsh` (login shell), `/bin/zsh` and the session's own shell all count as idle. */
+function isShellTitle(title: string, sessionShell: string): boolean {
+  const name = basename(title.trim()).toLowerCase().replace(/^-/, '');
+  if (KNOWN_SHELL_TITLES.has(name)) return true;
+  return name === basename(sessionShell).toLowerCase().replace(/^-/, '');
+}
 
 function basename(p: string): string {
   const clean = p.split('\\').join('/');
@@ -94,34 +126,59 @@ export class AgentStateTracker {
   }
 }
 
-/** Walks the live process tree below `rootPid` looking for an agent CLI. */
-export function scanDescendantsForAgent(rootPid: number, clis: readonly string[]): string | null {
+/** One row of a `ps -ax` snapshot. */
+export interface ProcessTableEntry {
+  pid: number;
+  ppid: number;
+  command: string;
+}
+
+/** One `ps -ax` snapshot; null when it cannot be read (win32, ps failure). */
+export function readProcessTable(): ProcessTableEntry[] | null {
   if (process.platform === 'win32') return null;
   try {
     const result = spawnSync('ps', ['-ax', '-o', 'pid=,ppid=,command='], { timeout: 2000 });
     if (result.status !== 0) return null;
-    const children = new Map<number, Array<{ pid: number; command: string }>>();
+    const entries: ProcessTableEntry[] = [];
     for (const line of result.stdout.toString().split('\n')) {
       const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
       if (!m) continue;
-      const ppid = Number(m[2]);
-      const list = children.get(ppid) ?? [];
-      list.push({ pid: Number(m[1]), command: m[3] ?? '' });
-      children.set(ppid, list);
+      entries.push({ pid: Number(m[1]), ppid: Number(m[2]), command: m[3] ?? '' });
     }
-    const queue = [...(children.get(rootPid) ?? [])];
-    let guard = 0;
-    while (queue.length > 0 && guard < 256) {
-      guard += 1;
-      const entry = queue.shift()!;
-      const hit = commandMatchesAgent(entry.command, clis);
-      if (hit) return hit;
-      queue.push(...(children.get(entry.pid) ?? []));
-    }
-    return null;
+    return entries;
   } catch {
     return null;
   }
+}
+
+/** Walks a process table below `rootPid` looking for an agent CLI (argv basenames). */
+export function findAgentInTable(
+  entries: readonly ProcessTableEntry[],
+  rootPid: number,
+  clis: readonly string[],
+): string | null {
+  const children = new Map<number, ProcessTableEntry[]>();
+  for (const entry of entries) {
+    const list = children.get(entry.ppid) ?? [];
+    list.push(entry);
+    children.set(entry.ppid, list);
+  }
+  const queue = [...(children.get(rootPid) ?? [])];
+  let guard = 0;
+  while (queue.length > 0 && guard < 256) {
+    guard += 1;
+    const entry = queue.shift()!;
+    const hit = commandMatchesAgent(entry.command, clis);
+    if (hit) return hit;
+    queue.push(...(children.get(entry.pid) ?? []));
+  }
+  return null;
+}
+
+/** Walks the live process tree below `rootPid` looking for an agent CLI. */
+export function scanDescendantsForAgent(rootPid: number, clis: readonly string[]): string | null {
+  const table = readProcessTable();
+  return table ? findAgentInTable(table, rootPid, clis) : null;
 }
 
 export interface TerminalManagerOptions {
@@ -131,7 +188,7 @@ export interface TerminalManagerOptions {
   agentPollMs?: number;
   /** DI seams for deterministic tests. */
   readTitle?: (session: { pty: IPty }) => string;
-  scanDescendants?: (pid: number, clis: readonly string[]) => string | null;
+  readProcessTable?: () => ProcessTableEntry[] | null;
 }
 
 function defaultShell(): string {
@@ -158,7 +215,7 @@ export class TerminalManager {
   >();
   private readonly agentClis: readonly string[];
   private readonly readTitle: (session: { pty: IPty }) => string;
-  private readonly scanDescendants: (pid: number, clis: readonly string[]) => string | null;
+  private readonly readTable: () => ProcessTableEntry[] | null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -174,7 +231,7 @@ export class TerminalManager {
             .filter(Boolean)
         : DEFAULT_AGENT_CLIS);
     this.readTitle = options.readTitle ?? ((s) => s.pty.process);
-    this.scanDescendants = options.scanDescendants ?? scanDescendantsForAgent;
+    this.readTable = options.readProcessTable ?? readProcessTable;
     const pollMs = options.agentPollMs ?? 700;
     if (pollMs > 0) {
       this.pollTimer = setInterval(() => this.pollOnce(), pollMs);
@@ -197,13 +254,20 @@ export class TerminalManager {
 
   /** One detection sample across all sessions (interval-driven; public for tests). */
   pollOnce(): void {
+    // The `ps` snapshot is shared by every session that needs the fallback —
+    // at most one subprocess per tick regardless of terminal count.
+    let table: ProcessTableEntry[] | null | undefined;
     for (const session of this.sessions.values()) {
       let match: string | null = null;
       try {
         const title = this.readTitle(session);
         match = titleMatchesAgent(title, this.agentClis);
-        if (!match && INTERPRETER_TITLES.has(basename(title.trim()).toLowerCase())) {
-          match = this.scanDescendants(session.info.pid, this.agentClis);
+        if (!match && !isShellTitle(title, session.info.shell)) {
+          // Unrecognized foreground program: an interpreter (node/bun), a
+          // version-named installer binary, a wrapper script… the argv of
+          // the tree below the shell is the reliable signal.
+          if (table === undefined) table = this.readTable();
+          if (table) match = findAgentInTable(table, session.info.pid, this.agentClis);
         }
       } catch {
         match = null; // a dying pty reads as "no agent"
