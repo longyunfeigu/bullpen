@@ -169,6 +169,8 @@ export const viewRegistry: Partial<Record<SideBarView, React.ComponentType>> = {
 export const bottomTabRegistry: Partial<Record<BottomTab, React.ComponentType>> = {};
 export const editorAreaRegistry: { main: React.ComponentType | null } = { main: null };
 export const agentPanelRegistry: { main: React.ComponentType | null } = { main: null };
+/** ADR-0017 决策 4: the promoted external-session column (renders null unless a session is promoted). */
+export const externalPanelRegistry: { main: React.ComponentType | null } = { main: null };
 export const statusBarRegistry: { left: React.ComponentType[]; right: React.ComponentType[] } = {
   left: [],
   right: [],
@@ -251,6 +253,7 @@ export function Workbench(): React.JSX.Element {
 
   const EditorMain = editorAreaRegistry.main;
   const AgentMain = agentPanelRegistry.main;
+  const ExternalMain = externalPanelRegistry.main;
 
   return (
     <div className="workbench" data-testid="workbench">
@@ -389,6 +392,11 @@ export function Workbench(): React.JSX.Element {
             </>
           ) : null}
         </div>
+
+        {/* ADR-0017「检测升格」: the promoted external session's column sits
+            between the editor and the agent panel; the component renders null
+            while no session is promoted. */}
+        {ExternalMain ? <ExternalMain /> : null}
 
         {layout.agentPanelVisible ? (
           <>

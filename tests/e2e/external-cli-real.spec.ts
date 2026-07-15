@@ -55,10 +55,12 @@ test.describe('ADR-0017 real external CLIs (manual, gated)', () => {
       );
       await page.keyboard.press('Enter');
 
-      // Detection despite the version-named binary (kernel comm = "2.1.209").
+      // Detection despite the version-named binary (kernel comm = "2.1.209"),
+      // and the ADR-0017 决策 4 promotion: the pane rises to the right column.
       await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText('claude', {
         timeout: 30000,
       });
+      await expect(page.getByTestId('external-panel')).toBeVisible();
       await page.screenshot({ path: join(SHOTS, 'claude-detected.png') });
 
       // -p exits on its own; the session must end (badge clears).
@@ -107,10 +109,12 @@ test.describe('ADR-0017 real external CLIs (manual, gated)', () => {
       await page.keyboard.press('Enter');
 
       // The user's zsh function (nvm lazy-load + proxy) wraps the real CLI;
-      // detection must see through whatever shim shape it resolves to.
+      // detection must see through whatever shim shape it resolves to, and
+      // the interactive session promotes to the right column (决策 4).
       await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText('codex', {
         timeout: 45000,
       });
+      await expect(page.getByTestId('external-panel')).toBeVisible();
       await page.screenshot({ path: join(SHOTS, 'codex-detected.png') });
 
       // An external task exists for the session (accounting armed).

@@ -167,6 +167,11 @@ export function TerminalPanel(): React.JSX.Element {
   // ADR-0017: external agent sessions decorate their terminal's tab.
   const agentByTerminal = useExternalStore((s) => s.agentByTerminal);
   const taskByTerminal = useExternalStore((s) => s.taskByTerminal);
+  // 「检测升格」(决策 4): the promoted terminal lives in the right-side column,
+  // not in the dock — its xterm belongs to the panel while the session runs.
+  const promoted = useExternalStore((s) => s.promoted);
+  const surface = useAppStore((s) => s.surface);
+  const dockItems = store.items.filter((t) => t.id !== promoted?.terminalId);
 
   useEffect(() => {
     store.init();
@@ -174,11 +179,20 @@ export function TerminalPanel(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Mount the active terminal into the host div.
+  // A promoted terminal cannot stay dock-active; hand the slot to a neighbour.
+  useEffect(() => {
+    if (!promoted || store.active !== promoted.terminalId) return;
+    const next = store.items.filter((t) => t.id !== promoted.terminalId).at(-1);
+    useTerminalStore.setState({ active: next?.id ?? null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promoted?.terminalId, store.active]);
+
+  // Mount the active terminal into the host div. The Editor surface must be
+  // in front — the room / the promoted column own their instances otherwise.
   useEffect(() => {
     const host = hostRef.current;
-    const active = store.items.find((t) => t.id === store.active);
-    if (!host || !active) return;
+    const active = store.items.find((t) => t.id === store.active && t.id !== promoted?.terminalId);
+    if (!host || !active || surface !== 'workspace') return;
     host.innerHTML = '';
     active.term.open(host);
     active.fit.fit();
@@ -192,7 +206,7 @@ export function TerminalPanel(): React.JSX.Element {
     });
     observer.observe(host);
     return () => observer.disconnect();
-  }, [store.active, store.items]);
+  }, [store.active, store.items, promoted?.terminalId, surface]);
 
   if (!workspace) {
     return <div className="empty-state">Open a workspace to use terminals.</div>;
@@ -206,7 +220,7 @@ export function TerminalPanel(): React.JSX.Element {
           style={{ flex: 1, minHeight: 0, padding: '2px 4px' }}
           data-testid="terminal-host"
         />
-        {store.items.length === 0 ? (
+        {dockItems.length === 0 ? (
           <div className="empty-state">
             <button
               className="btn primary"
@@ -234,7 +248,7 @@ export function TerminalPanel(): React.JSX.Element {
         >
           ＋ New Terminal
         </button>
-        {store.items.map((t) => (
+        {dockItems.map((t) => (
           <div key={t.id}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
               {renaming === t.id ? (

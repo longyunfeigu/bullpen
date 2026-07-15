@@ -70,33 +70,60 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await page.keyboard.type('fakeagent');
       await page.keyboard.press('Enter');
 
-      // Detection: tab renames with the EXT badge, the room entry appears.
+      // Detection: the agent badge appears, the room entry appears.
       await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText('fakeagent', {
         timeout: 15000,
       });
       const openRoom = page.locator('[data-testid^="terminal-open-room-"]');
       await expect(openRoom).toBeVisible({ timeout: 15000 });
 
-      // Enter the session room (Home surface): terminal takes the center column.
-      await openRoom.click();
+      // ADR-0017 决策 4「检测升格」: the pane promotes to a right-side vertical
+      // column (same xterm/PTY) and the dock — whose only terminal it was —
+      // collapses out of the way.
+      const panel = page.getByTestId('external-panel');
+      await expect(panel).toBeVisible({ timeout: 15000 });
+      await expect(panel).toContainText('fakeagent');
+      await expect(page.getByTestId('external-panel-terminal')).toBeVisible();
+      // The SAME xterm moved — its scrollback (the CLI's banner) must actually
+      // render in the promoted column, not stay behind in a detached host.
+      await expect(page.getByTestId('external-panel-terminal')).toContainText(
+        'fake agent session started',
+        { timeout: 10000 },
+      );
+      await expect(page.getByTestId('bottom-panel')).toHaveCount(0);
+
+      // The panel carries a live "session changes" strip; the CLI's edit
+      // lands there with a diffstat.
+      const stripRow = page.getByTestId('external-strip-file-src/util.ts');
+      await expect(stripRow).toBeVisible({ timeout: 15000 });
+      await expect(stripRow).toContainText('+1');
+
+      // Clicking a change row zooms into the session room, landing directly
+      // on that file's diff peek (the peek is a room facility, ADR-0014).
+      await stripRow.click();
       await expect(page.getByTestId('task-room')).toBeVisible();
       await expect(page.getByTestId('task-room-external-chip')).toContainText('fakeagent');
       await expect(page.getByTestId('external-terminal-column')).toBeVisible();
       await expect(page.getByTestId('external-terminal-host')).toBeVisible();
-
-      // Watcher accounting: the CLI's edit lands in the rail with a diffstat.
-      const fileRow = page.getByTestId('task-room-file-src/util.ts');
-      await expect(fileRow).toBeVisible({ timeout: 15000 });
-
-      // Peek (ADR-0014) opens on the accounted diff, conversation stays put.
-      await fileRow.click();
+      // Room takes the xterm over — content must follow it here too.
+      await expect(page.getByTestId('external-terminal-host')).toContainText(
+        'fake agent session started',
+        { timeout: 10000 },
+      );
       await expect(page.getByTestId('file-peek')).toBeVisible();
       await expect(page.getByTestId('peek-tab-src/util.ts')).toBeVisible();
 
       // Session end: never auto-accepted — REVIEW_READY with a live review entry.
       await expect(page.getByTestId('external-ended')).toBeVisible({ timeout: 20000 });
-      // Close the peek: the rail (and its decision panel) comes back (ADR-0014).
+
+      // 退出归位: the promoted pane returns to the dock, the dock comes back.
+      await expect(page.getByTestId('external-panel')).toHaveCount(0);
+      await expect(page.getByTestId('bottom-panel')).toBeVisible();
+      await expect(page.locator('[data-testid^="terminal-tab-"]')).toBeVisible();
+      // Close the peek: the rail (and its decision panel) comes back (ADR-0014),
+      // carrying the same accounted row the strip showed.
       await page.getByTestId('peek-close').click();
+      await expect(page.getByTestId('task-room-file-src/util.ts')).toBeVisible({ timeout: 15000 });
       await expect(page.getByTestId('review-open').first()).toBeVisible({ timeout: 15000 });
 
       // The accounted baseline is the PRE-session content: the diff must show

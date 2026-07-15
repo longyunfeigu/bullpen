@@ -5,12 +5,14 @@ import {
   overlayRegistry,
   editorBannerRegistry,
   statusBarRegistry,
+  externalPanelRegistry,
   initRegistry,
 } from '../workbench/Workbench.js';
 import { registerCommands } from '../commands.js';
 import { SearchView, focusSearchView } from '../views/SearchView.js';
 import { QuickOpen, useQuickOpenStore, noteRecentFile } from '../views/QuickOpen.js';
 import { TerminalPanel, useTerminalStore } from '../views/TerminalPanel.js';
+import { ExternalPanel } from '../views/ExternalPanel.js';
 import { ProblemsPanel, initProblems, useProblems, problemCounts } from '../views/ProblemsPanel.js';
 import {
   initIntelligence,
@@ -65,6 +67,7 @@ export function registerM4(): void {
   viewRegistry.search = SearchView;
   bottomTabRegistry.problems = ProblemsPanel;
   bottomTabRegistry.terminal = TerminalPanel;
+  externalPanelRegistry.main = ExternalPanel;
   overlayRegistry.push(QuickOpen, RenamePreviewOverlay);
   editorBannerRegistry.push(PythonBanner);
   statusBarRegistry.left.push(ProblemsStatusItem, TsProjectStatusItem);
