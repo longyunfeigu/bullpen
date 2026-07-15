@@ -11,7 +11,11 @@ import {
 import { registerCommands } from '../commands.js';
 import { SearchView, focusSearchView } from '../views/SearchView.js';
 import { QuickOpen, useQuickOpenStore, noteRecentFile } from '../views/QuickOpen.js';
-import { TerminalPanel, useTerminalStore } from '../views/TerminalPanel.js';
+import {
+  TerminalContextsStatusItem,
+  TerminalPanel,
+  useTerminalStore,
+} from '../views/TerminalPanel.js';
 import { ExternalPanel } from '../views/ExternalPanel.js';
 import { ProblemsPanel, initProblems, useProblems, problemCounts } from '../views/ProblemsPanel.js';
 import {
@@ -71,6 +75,7 @@ export function registerM4(): void {
   overlayRegistry.push(QuickOpen, RenamePreviewOverlay);
   editorBannerRegistry.push(PythonBanner);
   statusBarRegistry.left.push(ProblemsStatusItem, TsProjectStatusItem);
+  statusBarRegistry.right.unshift(TerminalContextsStatusItem);
 
   initRegistry.push(() => {
     initProblems();
@@ -113,7 +118,17 @@ export function registerM4(): void {
       title: 'New Terminal',
       category: 'Terminal',
       keybinding: 'ctrl+backquote',
-      run: () => void useTerminalStore.getState().create(),
+      run: () => {
+        const terminals = useTerminalStore.getState();
+        if (terminals.items.length === 0) {
+          void terminals.create();
+          return;
+        }
+        if (!terminals.active) {
+          useTerminalStore.setState({ active: terminals.items.at(-1)?.id ?? null });
+        }
+        useAppStore.getState().showBottomTab('terminal');
+      },
     },
     {
       id: 'terminal.kill',

@@ -1,5 +1,5 @@
 import './prism-setup.js';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   MDXEditor,
   headingsPlugin,
@@ -25,7 +25,6 @@ import '@mdxeditor/editor/style.css';
 import '../styles/markdown-editor.css';
 import { monaco, modelUri } from '../monaco-setup.js';
 import { replaceModelContent } from '../store/editorStore.js';
-import { useAppStore } from '../store/appStore.js';
 
 /** Dependency-free code block editing (ADR-0007: no CodeMirror). */
 const PlainCodeEditor: CodeBlockEditorDescriptor = {
@@ -64,11 +63,18 @@ export function MarkdownEditor(props: { path: string }): React.JSX.Element | nul
    * else is a real edit — including edits made the instant the editor mounts. */
   const baseline = useRef<string | null>(null);
   const pending = useRef<string | null>(null);
-  const dark =
-    useAppStore((s) => s.settings?.general.theme) === 'dark' ||
-    (useAppStore.getState().settings?.general.theme !== 'light' &&
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const [dark, setDark] = useState(() => document.documentElement.dataset.theme === 'dark');
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setDark(document.documentElement.dataset.theme === 'dark');
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme', 'data-skin'],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   // Model → rich: external reloads and conflict resolutions update the view.
   useEffect(() => {

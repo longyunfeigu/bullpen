@@ -103,6 +103,15 @@ export function installApplicationMenu(opts: { isDev: boolean }): void {
         { label: 'Theme: Light', click: send('theme.light') },
         { label: 'Theme: Dark', click: send('theme.dark') },
         { label: 'Theme: System', click: send('theme.system') },
+        {
+          label: 'Skin',
+          submenu: [
+            { label: 'Studio', click: send('skin.studio') },
+            { label: 'Terminal', click: send('skin.terminal') },
+            { label: 'Archive', click: send('skin.archive') },
+            { label: 'Index', click: send('skin.index') },
+          ],
+        },
         ...(opts.isDev
           ? ([{ type: 'separator' }, { role: 'toggleDevTools' }] as MenuItemConstructorOptions[])
           : []),

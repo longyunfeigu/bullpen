@@ -30,6 +30,12 @@ export const EVENT_CHANNELS = {
     1,
     z.object({ issues: z.array(z.string()), overrideKeys: z.array(z.string()) }),
   ),
+  /** External skill roots are watcher-driven; renderers refresh the catalog. */
+  'skills.changed': ev(
+    'skills.changed',
+    1,
+    z.object({ reason: z.string(), revision: z.number().int().nonnegative() }),
+  ),
   'workspace.changed': ev(
     'workspace.changed',
     1,
@@ -85,6 +91,7 @@ export const EVENT_CHANNELS = {
       terminalId: z.string(),
       cli: z.string(),
       status: z.enum(['active', 'ended']),
+      captureGrade: z.enum(['structured', 'observed']),
       /** Short id of the entry snapshot (git tree), null for non-git projects. */
       snapshotRef: z.string().nullable(),
       files: z.array(

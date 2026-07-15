@@ -275,6 +275,26 @@
 .rt-kind {
   color: var(--fg-faint);
 }
+.rt-conversation-refs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  margin-top: 7px;
+}
+.rt-conversation-ref {
+  display: inline-flex;
+  max-width: 260px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--fg-muted);
+  padding: 1px 7px;
+  font-size: 11px;
+}
 
 /* ADR-0018: contiguous tool evidence sinks into a recessed mono worklog with
    timestamps — the log IS the evidence surface (preset E, from mock C). */

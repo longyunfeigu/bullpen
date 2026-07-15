@@ -275,6 +275,39 @@ describe('projectActivityEvent (ADR-0006 pure projection)', () => {
     expect(items.map((i) => i.label)).toEqual(['a', 'b']);
   });
 
+  it('projects external evidence with explicit provenance and no invented semantics', () => {
+    const file = projectActivityEvent(
+      evt('external.fileChanged', {
+        cli: 'claude',
+        captureGrade: 'observed',
+        changeId: 'chg-1',
+        path: 'report.md',
+        kind: 'modified',
+        additions: 4,
+        deletions: 1,
+      }),
+    )!;
+    expect(file.source).toBe('claude');
+    expect(file.captureGrade).toBe('observed');
+    expect(file.changeIds).toEqual(['chg-1']);
+    expect(file.evidenceKinds).toEqual(['file']);
+
+    const structured = projectActivityEvent(
+      evt('external.observation', {
+        cli: 'codex',
+        captureGrade: 'structured',
+        kind: 'permission',
+        label: 'Codex requested command approval',
+        status: 'pending',
+        evidenceKinds: ['permission', 'tool'],
+      }),
+    )!;
+    expect(structured.source).toBe('codex');
+    expect(structured.captureGrade).toBe('structured');
+    expect(structured.kind).toBe('permission');
+    expect(structured.evidenceKinds).toEqual(['permission', 'tool']);
+  });
+
   it('toolPaths cleans ./ prefixes and handles renames', () => {
     expect(toolPaths('read_file', { path: './x/y.ts' })).toEqual(['x/y.ts']);
     expect(toolPaths('rename_file', { from: './a', to: 'b' })).toEqual(['a', 'b']);

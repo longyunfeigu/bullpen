@@ -129,10 +129,11 @@ export function ModelEffortControl(props: {
   onModelKey: (key: string) => void;
   thinking: ThinkingLevelId;
   onThinking: (level: ThinkingLevelId) => void;
+  onConfigureModels?: () => void;
   /** Prefix for data-testids: `${testid}-model` (trigger), `-model-opt-<key>`, `-effort-<level>`. */
   testid: string;
 }): React.JSX.Element {
-  const { models, modelKey, onModelKey, thinking, onThinking, testid } = props;
+  const { models, modelKey, onModelKey, thinking, onThinking, onConfigureModels, testid } = props;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -226,7 +227,22 @@ export function ModelEffortControl(props: {
               </React.Fragment>
             ))
           ) : (
-            <div className="me-empty">No model — add a provider key in Settings.</div>
+            <div className="me-empty">
+              <div>No model — add a provider key in Settings.</div>
+              {onConfigureModels ? (
+                <button
+                  type="button"
+                  className="btn primary"
+                  data-testid={`${testid}-model-settings`}
+                  onClick={() => {
+                    setOpen(false);
+                    onConfigureModels();
+                  }}
+                >
+                  Open Model settings
+                </button>
+              ) : null}
+            </div>
           )}
           {selected ? (
             <>

@@ -101,6 +101,119 @@
 .st-card .st-row:last-child {
   border-bottom: none;
 }
+
+/* Coordinated skin picker: code-native miniature surfaces, no screenshot
+ * assets, so the preview stays faithful to the real token sets. */
+.st-skin-block {
+  padding: 13px 2px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.st-skin-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  font-size: 13px;
+}
+.st-skin-heading small {
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.st-skin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.st-skin-option {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 7px;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: none;
+}
+.st-skin-option:hover {
+  border-color: var(--border-strong);
+}
+.st-skin-option.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.st-skin-preview {
+  height: 57px;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: max(1px, var(--radius-chip));
+  background: var(--bg-editor);
+  color: var(--fg);
+}
+.st-skin-preview-side {
+  width: 29%;
+  padding: 9px 5px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.st-skin-preview-side i,
+.st-skin-preview-code i {
+  display: block;
+  height: 3px;
+  background: var(--fg-faint);
+  border-radius: 2px;
+}
+.st-skin-preview-side i:nth-child(2) {
+  width: 72%;
+  background: var(--accent);
+}
+.st-skin-preview-code {
+  flex: 1;
+  padding: 10px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.st-skin-preview-code .kw {
+  width: 38%;
+  background: var(--accent);
+}
+.st-skin-preview-code .tx {
+  width: 82%;
+  background: var(--fg-muted);
+}
+.st-skin-preview-code .str {
+  width: 64%;
+  background: var(--success);
+}
+.st-skin-preview-code .short {
+  width: 47%;
+}
+.st-skin-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 650;
+  font-size: 12px;
+}
+.st-skin-name svg {
+  color: var(--accent);
+}
+.st-skin-description {
+  min-height: 26px;
+  color: var(--fg-faint);
+  font-size: 9.5px;
+  line-height: 1.35;
+}
 .st-row-label {
   font-size: 13px;
 }
@@ -303,6 +416,76 @@
   color: var(--warning);
   margin-top: 1px;
 }
+.st-sources {
+  margin: 12px 0 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 9px 10px 4px;
+  background: color-mix(in srgb, var(--bg-hover) 45%, transparent);
+}
+.st-source-row {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-muted);
+  font-size: 11.5px;
+}
+.st-source-row > svg {
+  flex: none;
+  color: var(--fg-faint);
+}
+.st-source-row.missing {
+  opacity: 0.62;
+}
+.st-source-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 9px;
+}
+.st-source-name {
+  color: var(--fg);
+  font-weight: 620;
+  white-space: nowrap;
+}
+.st-source-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-faint);
+  font-size: 10.5px;
+}
+.st-source-state {
+  flex: none;
+  color: var(--fg-faint);
+  font-size: 10.5px;
+}
+.st-source-state.ok {
+  color: var(--success);
+}
+.st-source-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.st-source-check.on {
+  color: var(--fg);
+}
+.st-source-check.disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+.st-source-check input {
+  margin: 0;
+  accent-color: var(--success);
+}
 .st-skill-row {
   display: flex;
   align-items: center;
@@ -321,7 +504,8 @@
   gap: 7px;
   font-weight: 600;
   flex: none;
-  max-width: 40%;
+  max-width: 46%;
+  flex-wrap: wrap;
 }
 .st-skill-badge {
   font-size: 10px;
@@ -338,6 +522,23 @@
 .st-skill-badge.script {
   color: var(--warning);
   background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+.st-skill-badge.source {
+  color: var(--fg-muted);
+  background: var(--bg-chip);
+}
+.st-skill-badge.live {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.st-skill-badge.conflict,
+.st-skill-badge.review {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
+}
+.st-skill-badge.invalid {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 .st-skill-desc {
   flex: 1;
@@ -415,6 +616,20 @@
   max-height: 220px;
   overflow: auto;
   margin: 0;
+}
+.st-skill-origin {
+  color: var(--fg-faint);
+  font-size: 10px;
+  margin: -2px 0 7px;
+}
+.st-skill-issues {
+  margin-top: 8px;
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+  font-size: 10.5px;
+  line-height: 1.5;
 }
 .st-skill-gate {
   margin-top: 9px;

@@ -66,6 +66,8 @@ interface TaskStore {
     isolation?: 'none' | 'worktree';
     /** ADR-0009 am.2: command run once inside the fresh worktree (deps, codegen). */
     worktreeSetup?: string;
+    /** Up to three existing task conversations used as background context. */
+    conversationRefTaskIds?: string[];
   }): Promise<boolean>;
   send(
     text: string,
@@ -75,7 +77,7 @@ interface TaskStore {
   ): Promise<void>;
   stop(): Promise<void>;
   /** Restart an INTERRUPTED/FAILED task's run (M10 recovery). */
-  resumeTask(): Promise<void>;
+  resumeTask(taskId?: string): Promise<void>;
   decidePermission(input: {
     requestId: string;
     kind: 'allow' | 'deny';
@@ -309,6 +311,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       ...(input.projectPath ? { projectPath: input.projectPath } : {}),
       isolation: input.isolation ?? 'none',
       ...(input.worktreeSetup?.trim() ? { worktreeSetup: input.worktreeSetup.trim() } : {}),
+      conversationRefTaskIds: input.conversationRefTaskIds ?? [],
     });
     if (!create.ok) {
       useAppStore.getState().pushToast('error', create.error.userMessage);
@@ -350,9 +353,15 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     await rpcResult('task.stop', { taskId });
   },
 
-  async resumeTask() {
-    const taskId = get().activeTaskId;
+  async resumeTask(requestedTaskId) {
+    const taskId = requestedTaskId ?? get().activeTaskId;
     if (!taskId) return;
+    const task = get().tasks.find((item) => item.id === taskId);
+    if (task?.external) {
+      const { useExternalStore } = await import('./externalStore.js');
+      await useExternalStore.getState().resumeTask(task);
+      return;
+    }
     const res = await rpcResult('task.start', { taskId });
     if (!res.ok) useAppStore.getState().pushToast('error', res.error.userMessage);
     else if (res.data.queued) {
@@ -558,6 +567,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       useAppStore.getState().pushToast('error', res.error.userMessage);
     } else if (!res.data.configured) {
       useAppStore.getState().pushToast('info', 'No verification commands are configured.');
+    } else {
+      useAppStore.getState().pushToast('success', 'Verification finished. Results are recorded.');
     }
   },
 }));

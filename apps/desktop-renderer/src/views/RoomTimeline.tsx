@@ -412,10 +412,38 @@ function eventNode(
     }
     case 'user.message': {
       const kind = typeof payload.kind === 'string' ? payload.kind : null;
+      const conversationRefs = Array.isArray(payload.conversationRefs)
+        ? payload.conversationRefs.flatMap((value) => {
+            if (!value || typeof value !== 'object') return [];
+            const ref = value as Record<string, unknown>;
+            if (typeof ref.taskId !== 'string' || typeof ref.title !== 'string') return [];
+            return [
+              {
+                taskId: ref.taskId,
+                title: ref.title,
+                projectName: typeof ref.projectName === 'string' ? ref.projectName : '',
+              },
+            ];
+          })
+        : [];
       return (
         <Bubble key={event.id} who="you" testid="tl-user">
           {kind === 'answer' ? <span className="rt-kind">answer · </span> : null}
           {String(payload.text ?? '')}
+          {conversationRefs.length > 0 ? (
+            <span className="rt-conversation-refs" aria-label="Referenced conversations">
+              {conversationRefs.map((ref) => (
+                <span
+                  key={ref.taskId}
+                  className="rt-conversation-ref"
+                  data-testid={`tl-conversation-ref-${ref.taskId}`}
+                  title={ref.projectName ? `${ref.title} · ${ref.projectName}` : ref.title}
+                >
+                  @{ref.title}
+                </span>
+              ))}
+            </span>
+          ) : null}
         </Bubble>
       );
     }
@@ -449,6 +477,7 @@ function eventNode(
     case 'agent.toolProposed':
       return null;
     case 'agent.planProposed': {
+      if (!context.visiblePlanSeqs.has(event.sequence)) return null;
       const plan = payload.plan as TaskPlanDto;
       const open =
         event.sequence === context.openPlanSeq && context.taskState === 'AWAITING_PLAN_APPROVAL';
@@ -864,7 +893,7 @@ export function RoomTimeline({ task }: { task: TaskDto }): React.JSX.Element {
   const store = useTaskStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
-  const context = useTimelineContext(task.state);
+  const context = useTimelineContext(task.state, task.verification.length);
 
   // PIVOT-036: restore the per-task reading position once the timeline loads —
   // the same memory the Editor agent panel uses, so ⌘E round-trips keep it.

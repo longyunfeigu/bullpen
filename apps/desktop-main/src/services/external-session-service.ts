@@ -1,16 +1,30 @@
-import type { Logger } from '@pi-ide/foundation';
+import { productError, ProductFailure, type Logger } from '@pi-ide/foundation';
 import { GitService } from '@pi-ide/git-service';
 import type { TerminalManager } from '@pi-ide/terminal-service';
-import { WorkspaceWatcher, type FsChange } from '@pi-ide/workspace-service';
+import { openWorkspaceInfo, WorkspaceWatcher, type FsChange } from '@pi-ide/workspace-service';
 import type { ChangeSet } from '@pi-ide/change-service';
+import type { TaskWorktreeDto } from '@pi-ide/ipc-contracts';
 import { broadcast } from '../broadcast.js';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { TaskService } from './task-service.js';
+import { ExternalStructuredReplayParser } from './external-replay-parser.js';
 
 /** Paths never attributed to an external session (product/tooling noise). */
 const IGNORED_SEGMENTS = ['node_modules', '.git'];
 const IGNORED_BASENAMES = ['.DS_Store'];
 const IGNORED_PREFIXES = ['.pi-ide-chg.'];
+const MAX_TERMINAL_REPLAY_BYTES = 2 * 1024 * 1024;
+const TERMINAL_EVENT_CHARS = 12_000;
+
+function countPatchLines(patch: string | null): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch?.split('\n') ?? []) {
+    if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
+    else if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+  }
+  return { additions, deletions };
+}
 
 export function isAccountablePath(relativePath: string): boolean {
   const parts = relativePath.split('/');
@@ -27,6 +41,7 @@ export interface ExternalSessionSnapshot {
   cli: string;
   snapshotRef: string | null;
   status: 'active' | 'ended';
+  captureGrade: 'structured' | 'observed';
   files: Array<{
     path: string;
     status: 'created' | 'modified' | 'deleted' | 'renamed';
@@ -47,10 +62,31 @@ interface LiveSession {
   unsubscribe: () => void;
   seen: Set<string>;
   recomputeTimer: ReturnType<typeof setTimeout> | null;
+  terminalFlushTimer: ReturnType<typeof setTimeout> | null;
+  terminalBuffer: string;
+  terminalBytes: number;
+  terminalTruncated: boolean;
+  captureGrade: 'structured' | 'observed';
+  parser: ExternalStructuredReplayParser;
   lastFiles: ExternalSessionSnapshot['files'];
   /** Serializes baseline capture; watcher batches can overlap. */
   work: Promise<void>;
   ended: boolean;
+}
+
+interface PendingResume {
+  taskId: string;
+  cli: string;
+  timer: ReturnType<typeof setTimeout>;
+  resolve: () => void;
+  reject: (error: ProductFailure) => void;
+}
+
+/** Only known CLIs get a host-written command; custom detected programs stay review-only. */
+export function externalResumeCommand(cli: string): string | null {
+  if (cli === 'claude') return 'claude --continue';
+  if (cli === 'codex') return 'codex resume --last';
+  return null;
 }
 
 /**
@@ -63,7 +99,9 @@ interface LiveSession {
  */
 export class ExternalSessionService {
   private readonly byTerminal = new Map<string, LiveSession>();
+  private readonly pendingResumes = new Map<string, PendingResume>();
   private readonly unsubscribeManager: () => void;
+  private readonly unsubscribeData: () => void;
 
   constructor(
     private readonly terminals: TerminalManager,
@@ -75,6 +113,7 @@ export class ExternalSessionService {
       if (agent) void this.onAgentEnter(id, agent, cwd);
       else void this.onAgentExit(id);
     });
+    this.unsubscribeData = terminals.onDataEvent(({ id, data }) => this.onTerminalData(id, data));
     // App-quit strandings: close them out into review on startup.
     tasks.recoverExternalTasks();
   }
@@ -87,22 +126,126 @@ export class ExternalSessionService {
       cli: s.cli,
       snapshotRef: s.snapshotRef,
       status: s.ended ? 'ended' : 'active',
+      captureGrade: s.captureGrade,
       files: s.lastFiles,
     }));
   }
 
+  private onTerminalData(terminalId: string, data: string): void {
+    const session = this.byTerminal.get(terminalId);
+    if (!session || session.ended) return;
+
+    const parsed = session.parser.feed(session.cli, data);
+    if (parsed.structured && session.captureGrade !== 'structured') {
+      session.captureGrade = 'structured';
+      this.tasks.updateExternalCaptureGrade(session.taskId, 'structured');
+      this.tasks.recordEvent(session.taskId, 'external.observation', {
+        cli: session.cli,
+        captureGrade: 'structured',
+        kind: 'state',
+        label: `${session.cli} structured event stream detected`,
+        detail:
+          'Tool calls, results and provider lifecycle events can now be replayed semantically.',
+        status: 'ok',
+        evidenceKinds: ['tool', 'result'],
+      });
+      void this.publish(session, 'active');
+    }
+    for (const observation of parsed.observations) {
+      this.tasks.recordEvent(session.taskId, 'external.observation', {
+        cli: session.cli,
+        captureGrade: session.captureGrade,
+        ...observation,
+      });
+    }
+
+    this.bufferTerminalText(session, parsed.terminalText);
+  }
+
+  private bufferTerminalText(session: LiveSession, cleaned: string): void {
+    if (session.terminalBytes >= MAX_TERMINAL_REPLAY_BYTES) {
+      this.noteTerminalTruncation(session);
+      return;
+    }
+    if (!cleaned.trim()) return;
+    const remaining = MAX_TERMINAL_REPLAY_BYTES - session.terminalBytes;
+    const bytes = Buffer.from(cleaned, 'utf8');
+    const accepted =
+      bytes.length <= remaining ? cleaned : bytes.subarray(0, remaining).toString('utf8');
+    session.terminalBytes += Buffer.byteLength(accepted);
+    session.terminalBuffer += accepted;
+    if (session.terminalBuffer.length >= TERMINAL_EVENT_CHARS) {
+      this.flushTerminal(session);
+    } else if (!session.terminalFlushTimer) {
+      session.terminalFlushTimer = setTimeout(() => {
+        session.terminalFlushTimer = null;
+        this.flushTerminal(session);
+      }, 750);
+      session.terminalFlushTimer.unref?.();
+    }
+    if (bytes.length > remaining) this.noteTerminalTruncation(session);
+  }
+
+  private noteTerminalTruncation(session: LiveSession): void {
+    if (session.terminalTruncated) return;
+    session.terminalTruncated = true;
+    this.tasks.recordEvent(session.taskId, 'external.observation', {
+      cli: session.cli,
+      captureGrade: session.captureGrade,
+      kind: 'system',
+      label: 'Terminal replay reached its 2 MB safety limit',
+      detail: 'File versions and structured events continue to be recorded.',
+      status: 'warn',
+      evidenceKinds: ['terminal'],
+    });
+  }
+
+  private flushTerminal(session: LiveSession): void {
+    if (!session.terminalBuffer) return;
+    const body = session.terminalBuffer;
+    session.terminalBuffer = '';
+    this.tasks.recordEvent(session.taskId, 'external.terminal', {
+      cli: session.cli,
+      captureGrade: session.captureGrade,
+      text: body,
+    });
+  }
+
   private async onAgentEnter(terminalId: string, cli: string, cwd: string): Promise<void> {
+    const pending = this.pendingResumes.get(terminalId);
+    if (pending && pending.cli === cli) {
+      clearTimeout(pending.timer);
+      this.pendingResumes.delete(terminalId);
+      const session = this.byTerminal.get(terminalId);
+      if (session) {
+        broadcast('terminal.agentState', { id: terminalId, agent: cli, taskId: pending.taskId });
+        this.logger.info('external session resumed', {
+          terminalId,
+          cli,
+          taskId: pending.taskId,
+        });
+        pending.resolve();
+        return;
+      }
+    }
     // A stale session on this terminal (previous CLI still open) ends first.
     if (this.byTerminal.has(terminalId)) await this.onAgentExit(terminalId);
 
-    const ws = this.workspace.current;
-    const inWorkspace =
-      ws !== null && (cwd === ws.canonicalPath || cwd.startsWith(ws.canonicalPath + '/'));
-    if (!ws || !inWorkspace) {
-      // Detection UI still works (badge), but there is nothing to account
-      // against — worktree terminals and foreign cwds are bounded out (ADR-0017).
+    const terminal = this.terminals.list().find((item) => item.id === terminalId);
+    const focused = this.workspace.current;
+    // vNext terminals carry their server-resolved owner. The focused workspace
+    // is only a backward-compatible fallback for sessions created before the
+    // metadata existed; it is no longer the accounting boundary.
+    const projectPath =
+      terminal?.projectPath ??
+      (focused && (cwd === focused.canonicalPath || cwd.startsWith(focused.canonicalPath + '/'))
+        ? focused.canonicalPath
+        : null);
+    if (!terminal || !projectPath) {
+      // Scratch has no project accounting by design. Detection still decorates
+      // the terminal but never claims snapshot/watcher coverage.
       broadcast('terminal.agentState', { id: terminalId, agent: cli, taskId: null });
-      this.logger.info('external session without accounting (cwd outside workspace)', {
+      this.logger.info('external session without project accounting', {
         terminalId,
         cli,
         cwd,
@@ -110,8 +253,31 @@ export class ExternalSessionService {
       return;
     }
 
-    const root = ws.canonicalPath;
-    const git = ws.isGitRepo ? new GitService(root) : null;
+    let worktree: TaskWorktreeDto | null = null;
+    if (terminal.contextTaskId) {
+      try {
+        const ownerTask = this.tasks.getTask(terminal.contextTaskId);
+        if (ownerTask.worktree && !ownerTask.worktree.missing && ownerTask.worktree.path === cwd) {
+          worktree = ownerTask.worktree;
+        }
+      } catch {
+        worktree = null;
+      }
+    }
+    const root = worktree?.path ?? projectPath;
+    let rootInfo;
+    try {
+      rootInfo = await openWorkspaceInfo(root);
+    } catch (error) {
+      broadcast('terminal.agentState', { id: terminalId, agent: cli, taskId: null });
+      this.logger.warn('external session context disappeared before accounting', {
+        terminalId,
+        root,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    const git = rootInfo.isGitRepo ? new GitService(root) : null;
     let snapshotRef: string | null = null;
     if (git) {
       try {
@@ -129,7 +295,9 @@ export class ExternalSessionService {
       const task = await this.tasks.createExternalTask({
         cli,
         terminalId,
-        projectPath: root,
+        cwd,
+        projectPath,
+        worktree,
         snapshotRef,
       });
       taskId = task.id;
@@ -148,13 +316,19 @@ export class ExternalSessionService {
       taskId,
       cli,
       root,
-      isGitRepo: ws.isGitRepo,
+      isGitRepo: rootInfo.isGitRepo,
       snapshotRef,
       git,
       watcher,
       unsubscribe: () => {},
       seen: new Set(),
       recomputeTimer: null,
+      terminalFlushTimer: null,
+      terminalBuffer: '',
+      terminalBytes: 0,
+      terminalTruncated: false,
+      captureGrade: 'observed',
+      parser: new ExternalStructuredReplayParser(),
       lastFiles: [],
       work: Promise.resolve(),
       ended: false,
@@ -162,6 +336,8 @@ export class ExternalSessionService {
     session.unsubscribe = watcher.onBatch((changes) => this.onBatch(session, changes));
     watcher.start();
     this.byTerminal.set(terminalId, session);
+    const leadIn = this.terminals.recentData(terminalId);
+    if (leadIn) this.onTerminalData(terminalId, leadIn);
 
     broadcast('terminal.agentState', { id: terminalId, agent: cli, taskId });
     broadcast('external.sessionChanged', {
@@ -169,6 +345,7 @@ export class ExternalSessionService {
       terminalId,
       cli,
       status: 'active',
+      captureGrade: session.captureGrade,
       snapshotRef,
       files: [],
     });
@@ -200,12 +377,23 @@ export class ExternalSessionService {
               await context.changes.ensureBaseline(session.taskId, change.relativePath);
             }
           }
-          context.changes.recordExternalChange(
+          const record = await context.changes.recordExternalChange(
             session.taskId,
             change.relativePath,
             change.kind,
-            null,
           );
+          const stats = countPatchLines(record.patch);
+          this.tasks.recordEvent(session.taskId, 'external.fileChanged', {
+            cli: session.cli,
+            captureGrade: session.captureGrade,
+            changeId: record.id,
+            path: record.relativePath,
+            kind: record.kind,
+            additions: stats.additions,
+            deletions: stats.deletions,
+            beforeHash: record.beforeHash,
+            afterHash: record.afterHash,
+          });
         } catch (e) {
           this.logger.warn('external accounting skipped a path', {
             taskId: session.taskId,
@@ -240,6 +428,7 @@ export class ExternalSessionService {
         terminalId: session.terminalId,
         cli: session.cli,
         status,
+        captureGrade: session.captureGrade,
         snapshotRef: session.snapshotRef,
         files: session.lastFiles,
       });
@@ -257,7 +446,12 @@ export class ExternalSessionService {
       broadcast('terminal.agentState', { id: terminalId, agent: null, taskId: null });
       return;
     }
+    // Complete a final partial line through the same structured-data filter.
+    this.onTerminalData(terminalId, '\n');
     session.ended = true;
+    if (session.terminalFlushTimer) clearTimeout(session.terminalFlushTimer);
+    session.terminalFlushTimer = null;
+    this.flushTerminal(session);
     if (session.recomputeTimer) clearTimeout(session.recomputeTimer);
     session.recomputeTimer = null;
     session.unsubscribe();
@@ -265,7 +459,11 @@ export class ExternalSessionService {
     this.byTerminal.delete(terminalId);
     await this.publish(session, 'ended');
     try {
-      this.tasks.finishExternalSession(session.taskId, session.lastFiles.length);
+      this.tasks.finishExternalSession(
+        session.taskId,
+        session.lastFiles.length,
+        session.captureGrade,
+      );
     } catch (e) {
       this.logger.warn('external session finish failed', {
         taskId: session.taskId,
@@ -280,8 +478,142 @@ export class ExternalSessionService {
     });
   }
 
+  /**
+   * User-invoked continuation of an ended Claude/Codex TUI. The command is a
+   * fixed product mapping (never renderer-controlled shell text). Accounting
+   * resumes against the SAME task baseline; detection confirms the CLI really
+   * started before this RPC succeeds.
+   */
+  async resume(taskId: string, terminalId: string): Promise<{ terminalId: string; cli: string }> {
+    const task = this.tasks.getTask(taskId);
+    const external = task.external;
+    if (!external) {
+      throw new ProductFailure(
+        productError('EXTERNAL_SESSION_REQUIRED', {
+          userMessage: 'This task is not an external terminal session.',
+        }),
+      );
+    }
+    const command = externalResumeCommand(external.cli);
+    if (!command) {
+      throw new ProductFailure(
+        productError('EXTERNAL_RESUME_UNSUPPORTED', {
+          userMessage: `${external.cli} does not have a supported session-resume command.`,
+        }),
+      );
+    }
+    if (this.byTerminal.has(terminalId) || this.pendingResumes.has(terminalId)) {
+      throw new ProductFailure(
+        productError('EXTERNAL_SESSION_ACTIVE', {
+          userMessage: `This terminal already has an active external session.`,
+        }),
+      );
+    }
+    const terminal = this.terminals.list().find((item) => item.id === terminalId);
+    if (!terminal) {
+      throw new ProductFailure(
+        productError('TERMINAL_NOT_FOUND', {
+          userMessage:
+            'The original terminal is no longer available. Open a new terminal and try again.',
+        }),
+      );
+    }
+    const expectedCwd = external.cwd ?? task.projectPath;
+    if (terminal.cwd !== expectedCwd) {
+      throw new ProductFailure(
+        productError('EXTERNAL_RESUME_CWD_MISMATCH', {
+          userMessage: `The resume terminal must start in ${expectedCwd}.`,
+        }),
+      );
+    }
+
+    const git = task.gitBaseline ? new GitService(task.projectPath) : null;
+    const watcher = new WorkspaceWatcher(task.projectPath);
+    const changeSet = await this.tasks.contextForTask(taskId).changes.changeSet(taskId);
+    const session: LiveSession = {
+      terminalId,
+      taskId,
+      cli: external.cli,
+      root: task.projectPath,
+      isGitRepo: git !== null,
+      snapshotRef: external.snapshotRef,
+      git,
+      watcher,
+      unsubscribe: () => {},
+      seen: new Set(),
+      recomputeTimer: null,
+      terminalFlushTimer: null,
+      terminalBuffer: '',
+      terminalBytes: 0,
+      terminalTruncated: false,
+      captureGrade: external.captureGrade === 'structured' ? 'structured' : 'observed',
+      parser: new ExternalStructuredReplayParser(),
+      lastFiles: changeSet.files.map((file) => ({
+        path: file.path,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+      })),
+      work: Promise.resolve(),
+      ended: false,
+    };
+    session.unsubscribe = watcher.onBatch((changes) => this.onBatch(session, changes));
+    watcher.start();
+    this.byTerminal.set(terminalId, session);
+    this.tasks.resumeExternalSession(taskId, terminalId);
+    broadcast('external.sessionChanged', {
+      taskId,
+      terminalId,
+      cli: external.cli,
+      status: 'active',
+      captureGrade: session.captureGrade,
+      snapshotRef: external.snapshotRef,
+      files: session.lastFiles,
+    });
+
+    const detected = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingResumes.delete(terminalId);
+        void this.onAgentExit(terminalId).finally(() =>
+          reject(
+            new ProductFailure(
+              productError('EXTERNAL_RESUME_NOT_DETECTED', {
+                userMessage: `${external.cli} did not start in the terminal. The task remains safe and ready for review.`,
+              }),
+            ),
+          ),
+        );
+      }, 12_000);
+      timer.unref?.();
+      this.pendingResumes.set(terminalId, {
+        taskId,
+        cli: external.cli,
+        timer,
+        resolve,
+        reject,
+      });
+    });
+
+    // Fresh shells can discard keystrokes during startup; the short delay is
+    // harmless for an existing prompt and makes restart recovery reliable.
+    await new Promise<void>((resolve) => setTimeout(resolve, 350));
+    this.terminals.write(terminalId, `${command}\r`);
+    await detected;
+    return { terminalId, cli: external.cli };
+  }
+
   dispose(): void {
     this.unsubscribeManager();
+    this.unsubscribeData();
+    for (const pending of this.pendingResumes.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(
+        new ProductFailure(
+          productError('CANCELLED', { userMessage: 'The app closed before the session resumed.' }),
+        ),
+      );
+    }
+    this.pendingResumes.clear();
     for (const [terminalId] of [...this.byTerminal]) {
       void this.onAgentExit(terminalId);
     }

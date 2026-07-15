@@ -10,7 +10,7 @@ import {
   shell,
 } from 'electron';
 import { join, normalize } from 'node:path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { productError, toProductError, type Logger, type ProductError } from '@pi-ide/foundation';
@@ -71,11 +71,20 @@ let m5Ref: M5Services | null = null;
 let agentHostRef: AgentHost | null = null;
 let taskServiceRef: TaskService | null = null;
 let externalSessionsRef: ExternalSessionService | null = null;
+let skillStoreRef: SkillStore | null = null;
 export function getM5(): M5Services | null {
   return m5Ref;
 }
 const quitBlockers = new Map<number, string[]>();
 let forceQuit = false;
+
+function windowBackground(skin: string, dark: boolean): string {
+  if (skin === 'studio') return dark ? '#1a1917' : '#fbfaf7';
+  if (skin === 'terminal') return dark ? '#0d120f' : '#f0f6f1';
+  if (skin === 'archive') return dark ? '#291f19' : '#fbf2df';
+  if (skin === 'index') return dark ? '#070707' : '#ffffff';
+  return dark ? '#1a1917' : '#fbfaf7';
+}
 
 const CSP = [
   "default-src 'self'",
@@ -198,7 +207,10 @@ function createMainWindow(bootstrap: Bootstrap): BrowserWindow {
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 10 } }
       : {}),
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#f5f5f5',
+    backgroundColor: windowBackground(
+      bootstrap.settings?.effective.general.skin ?? 'studio',
+      nativeTheme.shouldUseDarkColors,
+    ),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -421,10 +433,19 @@ if (!gotLock) {
       nativeTheme.themeSource = settings.effective.general.theme;
       settings.onChange((s) => {
         nativeTheme.themeSource = s.effective.general.theme;
+        mainWindow?.setBackgroundColor(
+          windowBackground(s.effective.general.skin, nativeTheme.shouldUseDarkColors),
+        );
         broadcast('settings.changed', { issues: s.issues, overrideKeys: s.overrideKeys });
       });
     }
     nativeTheme.on('updated', () => {
+      mainWindow?.setBackgroundColor(
+        windowBackground(
+          settings?.effective.general.skin ?? 'studio',
+          nativeTheme.shouldUseDarkColors,
+        ),
+      );
       broadcast('app.themeChanged', {
         theme: (settings?.effective.general.theme ?? 'system') as 'light' | 'dark' | 'system',
         effective: nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
@@ -441,14 +462,51 @@ if (!gotLock) {
       registerWorkspaceHandlers(workspaceHost, state, logger.child('ipc'));
       m4 = new M4Services(workspaceHost, settings, logger.child('m4'));
       m4Ref = m4;
-      registerM4Handlers(m4, workspaceHost, logger.child('ipc'), (taskId) => {
-        try {
-          const task = taskServiceRef?.getTask(taskId);
-          const wt = task?.worktree;
-          return wt && !wt.missing ? wt.path : null;
-        } catch {
-          return null;
-        }
+      registerM4Handlers(m4, workspaceHost, logger.child('ipc'), {
+        recent(projectPath) {
+          const project = state
+            .recentWorkspaces()
+            .find((item) => item.exists && item.path === projectPath);
+          if (!project) return null;
+          return {
+            cwd: project.path,
+            projectName: project.displayName,
+            projectPath: project.path,
+            contextKind: 'recent' as const,
+            contextLabel: project.displayName,
+            contextTaskId: null,
+          };
+        },
+        task(taskId) {
+          try {
+            const task = taskServiceRef?.getTask(taskId);
+            if (!task) return null;
+            const worktree = task.worktree && !task.worktree.missing ? task.worktree : null;
+            return {
+              cwd: worktree?.path ?? task.external?.cwd ?? task.projectPath,
+              projectName: task.projectName,
+              projectPath: task.projectPath,
+              contextKind: 'task' as const,
+              contextLabel: task.title,
+              contextTaskId: task.id,
+            };
+          } catch {
+            return null;
+          }
+        },
+        scratch() {
+          const root = join(paths.runtimeDir, 'scratch');
+          mkdirSync(root, { recursive: true });
+          const cwd = mkdtempSync(join(root, 'terminal-'));
+          return {
+            cwd,
+            projectName: 'Scratch',
+            projectPath: null,
+            contextKind: 'scratch' as const,
+            contextLabel: 'Temporary commands',
+            contextTaskId: null,
+          };
+        },
       });
       m5Ref = new M5Services(workspaceHost, state, paths, logger.child('m5'));
       registerM5Handlers(m5Ref, workspaceHost, logger.child('ipc'));
@@ -459,9 +517,17 @@ if (!gotLock) {
         secretService,
         logger.child('agent-host'),
       );
-      // ADR-0015: managed skills store — imported SKILL.md folders, never
-      // discovered inside projects (AG-014).
-      const skillStore = new SkillStore(paths.skillsDir, logger.child('skills'));
+      // ADR-0019: discover user-level Agent/Codex/Claude sources while keeping
+      // project directories opt-in (AG-014). E2E only discovers an explicitly
+      // supplied fake home, never the developer machine's real home folder.
+      const skillHome = process.env.PI_IDE_SKILLS_HOME;
+      const skillStore = new SkillStore(paths.skillsDir, logger.child('skills'), {
+        discoverExternal: !process.env.PI_IDE_E2E || Boolean(skillHome),
+        ...(skillHome ? { homeDir: skillHome } : {}),
+        onDidChange: (event) => broadcast('skills.changed', event),
+      });
+      skillStoreRef = skillStore;
+      skillStore.startWatching();
       registerSkillsHandlers(skillStore, logger.child('ipc'));
       const taskService = new TaskService(
         state.db,
@@ -616,6 +682,7 @@ if (!gotLock) {
   app.on('will-quit', (event) => {
     if (cleanupDone) return;
     event.preventDefault();
+    skillStoreRef?.dispose();
     externalSessionsRef?.dispose(); // before terminals: sessions close into review while the DB is open
     taskServiceRef?.shutdown();
     m4Ref?.dispose();
@@ -645,5 +712,8 @@ if (!gotLock) {
     if (BrowserWindow.getAllWindows().length === 0 && app.isReady() && boot) {
       mainWindow = createMainWindow(boot);
     }
+  });
+  app.on('browser-window-focus', () => {
+    skillStoreRef?.rescan('focus');
   });
 }

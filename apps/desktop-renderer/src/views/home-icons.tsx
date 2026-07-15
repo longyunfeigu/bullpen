@@ -85,6 +85,7 @@ const PATHS: Record<string, React.JSX.Element> = {
     </>
   ),
   check: <path d="M20 6 9 17l-5-5" />,
+  circle: <circle cx="12" cy="12" r="9" />,
   archive: (
     <>
       <rect width="20" height="5" x="2" y="3" rx="1" />
@@ -248,7 +249,8 @@ export function Ic(props: {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
-      {...(className ? { className } : {})}
+      className={['app-icon', className].filter(Boolean).join(' ')}
+      data-icon={name}
       style={{ flex: 'none' }}
     >
       {PATHS[name] ?? null}

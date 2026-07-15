@@ -55,9 +55,13 @@ export type TaskWorktreeDto = z.infer<typeof TaskWorktreeSchema>;
 export const TaskExternalSchema = z.object({
   cli: z.string(),
   terminalId: z.string(),
+  /** Working directory used by the CLI; resume commands must run from here. */
+  cwd: z.string().optional(),
   /** Entry snapshot (git tree hash), null for non-git projects. */
   snapshotRef: z.string().nullable(),
   status: z.enum(['active', 'ended']),
+  /** Highest positively observed replay fidelity for this session. */
+  captureGrade: z.enum(['structured', 'observed']).optional(),
 });
 export type TaskExternalDto = z.infer<typeof TaskExternalSchema>;
 

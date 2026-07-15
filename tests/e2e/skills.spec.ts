@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
@@ -114,5 +114,77 @@ test('skills: manager (toggle/audit) + "/" picker + /skill: task through the moc
     await expect(page.getByTestId('home-skill-item-pdf-fill')).toHaveCount(0);
   } finally {
     await app.close();
+  }
+});
+
+test('skills: discovers and live-syncs a trusted external Agent Skills source', async () => {
+  test.setTimeout(120000);
+  const userDataDir = mkdtempSync(join(tmpdir(), 'pi-ide-live-skills-'));
+  const skillHome = mkdtempSync(join(tmpdir(), 'pi-ide-skill-home-'));
+  const agentsRoot = join(skillHome, '.agents', 'skills');
+  const alphaDir = join(agentsRoot, 'live-alpha');
+  seedSkill(agentsRoot, 'live-alpha', { description: 'Live description version one.' });
+
+  const fixture = createGitFixture();
+  const { app, page } = await launchApp({
+    userDataDir,
+    env: {
+      PI_IDE_OPEN_WORKSPACE: fixture,
+      PI_IDE_FORCE_MOCK: '1',
+      PI_IDE_SKILLS_HOME: skillHome,
+    },
+  });
+  try {
+    await page.getByTestId('surface-home').click();
+    await page.getByTestId('home-settings').click();
+    await page.locator('.st-nav-item', { hasText: 'Agent' }).click();
+
+    const source = page.getByTestId('skill-source-agents');
+    await expect(source).toContainText('1 found');
+    const alphaRow = page.locator('.st-skill-row', { hasText: 'live-alpha' });
+    await expect(alphaRow).toBeVisible();
+    await expect(alphaRow).toContainText('Agent Skills');
+    await expect(alphaRow).toContainText('live');
+    await expect(alphaRow).toHaveClass(/off/); // discovery is not trust
+
+    // Trust the root and opt into automatic enablement for existing/future
+    // skills that do not have a per-skill override.
+    await page.getByTestId('skill-source-trust-agents').check();
+    await page.getByTestId('skill-source-auto-agents').check();
+    await expect(alphaRow).not.toHaveClass(/off/);
+
+    // Atomic-ish editor update + newly added folder are reconciled by the
+    // watcher and broadcast to the already-open Settings surface.
+    writeFileSync(
+      join(alphaDir, 'SKILL.md'),
+      [
+        '---',
+        'name: live-alpha',
+        'description: Live description version two.',
+        '---',
+        'Updated live instructions.',
+      ].join('\n'),
+    );
+    seedSkill(agentsRoot, 'live-beta', { description: 'Added after app launch.' });
+    await expect(source).toContainText('2 found', { timeout: 15000 });
+    await expect(alphaRow).toContainText('Live description version two.');
+    const betaRow = page.locator('.st-skill-row', { hasText: 'live-beta' });
+    await expect(betaRow).toBeVisible();
+    await expect(betaRow).not.toHaveClass(/off/);
+
+    // Deletion propagates too; Charter never owns or recreates linked files.
+    rmSync(alphaDir, { recursive: true, force: true });
+    await expect(source).toContainText('1 found', { timeout: 15000 });
+    await expect(alphaRow).toHaveCount(0);
+
+    await page.getByTestId('overlay-settings').getByLabel('Close').click();
+    const intent = page.getByTestId('home-intent');
+    await intent.click();
+    await intent.press('/');
+    await expect(page.getByTestId('home-skill-item-live-beta')).toBeVisible();
+    await expect(page.getByTestId('home-skill-item-live-alpha')).toHaveCount(0);
+  } finally {
+    await app.close();
+    rmSync(skillHome, { recursive: true, force: true });
   }
 });

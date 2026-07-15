@@ -1,24 +1,18 @@
-/* Studio visual language (ADR-0008, PIVOT-024).
- * Tokens are ported 1:1 from docs/design/direction-picker.html [data-dir='studio'];
- * the dark theme is the warm-paper palette inverted (same hue family, ink flips
- * to paper). Both surfaces (Home + Editor) share these tokens — no VS Code blue.
+/* Four coordinated visual languages. A skin owns color, typography, icon
+ * geometry and syntax highlighting; data-theme supplies its light/dark variant.
+ * Studio/light is repeated on :root so the first paint is stable before the
+ * persisted setting arrives from Main.
  */
-:root {
+:root,
+[data-skin='studio'][data-theme='light'] {
+  color-scheme: light;
   --font-ui:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'PingFang SC', 'Microsoft YaHei',
     sans-serif;
   --font-display: 'Charter', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
   --font-mono: Menlo, Monaco, 'SF Mono', Consolas, 'Courier New', monospace;
-  --titlebar-height: 38px;
-  --statusbar-height: 24px;
-  --activitybar-width: 48px;
-  --radius-card: 14px;
-  --radius-chip: 9px;
-}
-
-[data-theme='light'] {
-  color-scheme: light;
-  /* mockup: --backdrop / --side / --main / --card */
+  --icon-stroke-width: 1.5;
+  --letter-ui: 0;
   --bg-app: #eceae5;
   --bg-titlebar: #f6f5f1;
   --bg-sidebar: #f6f5f1;
@@ -27,24 +21,20 @@
   --bg-statusbar: #f6f5f1;
   --bg-input: #ffffff;
   --bg-card: #ffffff;
-  /* mockup: --chip / --chip-hover */
+  --bg-chip: #edeae3;
   --bg-hover: #e8e5de;
   --bg-active: #e2dfd7;
   --bg-selected: #e9e6df;
   --bg-overlay: rgba(32, 30, 26, 0.4);
-  /* mockup: --border / --border-soft */
   --border: #e5e1d8;
   --border-soft: #edeae3;
   --border-strong: #cfcabf;
-  /* mockup: --text / --text2 / --text3 */
   --fg: #201e1a;
   --fg-muted: #6e6a61;
   --fg-faint: #a39e94;
   --fg-inverse: #fbfaf7;
-  /* Studio ink primary (mockup --accent / --accent-text) */
   --accent: #1b1a16;
   --accent-fg: #ffffff;
-  /* mockup state colors + soft backgrounds */
   --danger: #c4453d;
   --danger-bg: #fdecea;
   --warning: #b06f10;
@@ -57,13 +47,27 @@
   --diff-del-bg: rgba(196, 69, 61, 0.12);
   --focus-ring: #1b1a16;
   --scrollbar: rgba(110, 106, 97, 0.35);
-  /* mockup: --card-shadow / --win-shadow */
   --shadow-card: 0 1px 2px rgba(30, 26, 18, 0.05), 0 14px 40px rgba(30, 26, 18, 0.08);
   --shadow-menu: 0 30px 90px rgba(30, 26, 18, 0.22);
+  --radius-card: 14px;
+  --radius-chip: 9px;
 }
 
-[data-theme='dark'] {
+:root {
+  --titlebar-height: 38px;
+  --statusbar-height: 24px;
+  --activitybar-width: 48px;
+}
+
+[data-skin='studio'][data-theme='dark'] {
   color-scheme: dark;
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'PingFang SC', 'Microsoft YaHei',
+    sans-serif;
+  --font-display: 'Charter', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  --font-mono: Menlo, Monaco, 'SF Mono', Consolas, 'Courier New', monospace;
+  --icon-stroke-width: 1.5;
+  --letter-ui: 0;
   --bg-app: #171614;
   --bg-titlebar: #1d1c19;
   --bg-sidebar: #1d1c19;
@@ -72,6 +76,7 @@
   --bg-statusbar: #1d1c19;
   --bg-input: #24231f;
   --bg-card: #21201c;
+  --bg-chip: #292823;
   --bg-hover: #292823;
   --bg-active: #31302a;
   --bg-selected: #33322b;
@@ -83,7 +88,6 @@
   --fg-muted: #a29d92;
   --fg-faint: #6e6a61;
   --fg-inverse: #1a1917;
-  /* Ink flips to paper in the dark theme (console-style inversion). */
   --accent: #e8e6e0;
   --accent-fg: #1a1917;
   --danger: #e06b62;
@@ -100,6 +104,329 @@
   --scrollbar: rgba(162, 157, 146, 0.3);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 40px rgba(0, 0, 0, 0.35);
   --shadow-menu: 0 30px 90px rgba(0, 0, 0, 0.6);
+  --radius-card: 14px;
+  --radius-chip: 9px;
+}
+
+[data-skin='archive'][data-theme='light'] {
+  color-scheme: light;
+  --font-ui: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, 'Songti SC', serif;
+  --font-display: 'Charter', 'Iowan Old Style', Georgia, 'Songti SC', serif;
+  --font-mono: 'Courier Prime', 'American Typewriter', 'SFMono-Regular', Menlo, monospace;
+  --icon-stroke-width: 1.55;
+  --letter-ui: 0.002em;
+  --bg-app: #ded2bc;
+  --bg-titlebar: #f2e6cf;
+  --bg-sidebar: #f5ead5;
+  --bg-editor: #fbf2df;
+  --bg-panel: #f2e6cf;
+  --bg-statusbar: #ead9bc;
+  --bg-input: #fffaf0;
+  --bg-card: #fff8e9;
+  --bg-chip: #eadbc2;
+  --bg-hover: #eee0c8;
+  --bg-active: #e3d0b0;
+  --bg-selected: #ead7b9;
+  --bg-overlay: rgba(48, 34, 25, 0.48);
+  --border: #d8c4a3;
+  --border-soft: #e9d9bd;
+  --border-strong: #b99d78;
+  --fg: #392a21;
+  --fg-muted: #795f4f;
+  --fg-faint: #a48570;
+  --fg-inverse: #fff8e9;
+  --accent: #b94e32;
+  --accent-fg: #fffaf0;
+  --danger: #a43129;
+  --danger-bg: #f5d7ce;
+  --warning: #a46220;
+  --warning-bg: #f3e0b6;
+  --success: #4f754d;
+  --success-bg: #dde8d2;
+  --info: #3f6674;
+  --info-bg: #dbe7e6;
+  --diff-add-bg: rgba(79, 117, 77, 0.18);
+  --diff-del-bg: rgba(185, 78, 50, 0.16);
+  --focus-ring: #b94e32;
+  --scrollbar: rgba(121, 95, 79, 0.34);
+  --shadow-card: 0 1px 1px rgba(62, 40, 25, 0.06), 0 12px 32px rgba(62, 40, 25, 0.1);
+  --shadow-menu: 0 28px 80px rgba(55, 36, 23, 0.28);
+  --radius-card: 10px;
+  --radius-chip: 6px;
+}
+
+[data-skin='archive'][data-theme='dark'] {
+  color-scheme: dark;
+  --font-ui: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Songti SC', serif;
+  --font-display: 'Charter', 'Iowan Old Style', Georgia, 'Songti SC', serif;
+  --font-mono: 'Courier Prime', 'American Typewriter', 'SFMono-Regular', Menlo, monospace;
+  --icon-stroke-width: 1.55;
+  --letter-ui: 0.002em;
+  --bg-app: #17110e;
+  --bg-titlebar: #241a15;
+  --bg-sidebar: #211713;
+  --bg-editor: #291f19;
+  --bg-panel: #241a15;
+  --bg-statusbar: #1e1511;
+  --bg-input: #32251e;
+  --bg-card: #30231c;
+  --bg-chip: #3c2c23;
+  --bg-hover: #3a2b23;
+  --bg-active: #4b362a;
+  --bg-selected: #50382b;
+  --bg-overlay: rgba(0, 0, 0, 0.66);
+  --border: #4b382d;
+  --border-soft: #3a2b23;
+  --border-strong: #73543f;
+  --fg: #f0dfbd;
+  --fg-muted: #bea88c;
+  --fg-faint: #806c5b;
+  --fg-inverse: #281d17;
+  --accent: #ef7b57;
+  --accent-fg: #241510;
+  --danger: #f17b67;
+  --danger-bg: #48231d;
+  --warning: #dca35c;
+  --warning-bg: #42321b;
+  --success: #8fb37d;
+  --success-bg: #293824;
+  --info: #86aeb7;
+  --info-bg: #27363a;
+  --diff-add-bg: rgba(143, 179, 125, 0.18);
+  --diff-del-bg: rgba(239, 123, 87, 0.16);
+  --focus-ring: #ef7b57;
+  --scrollbar: rgba(190, 168, 140, 0.28);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 14px 38px rgba(0, 0, 0, 0.28);
+  --shadow-menu: 0 28px 80px rgba(0, 0, 0, 0.62);
+  --radius-card: 10px;
+  --radius-chip: 6px;
+}
+
+[data-skin='terminal'][data-theme='light'] {
+  color-scheme: light;
+  --font-ui: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Microsoft YaHei UI', monospace;
+  --font-display: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+  --font-mono: 'Berkeley Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+  --icon-stroke-width: 1.4;
+  --letter-ui: 0.015em;
+  --bg-app: #d9e4da;
+  --bg-titlebar: #e6eee7;
+  --bg-sidebar: #e1eae2;
+  --bg-editor: #f0f6f1;
+  --bg-panel: #e6eee7;
+  --bg-statusbar: #dce9de;
+  --bg-input: #f7fbf7;
+  --bg-card: #f5faf5;
+  --bg-chip: #d6e5d8;
+  --bg-hover: #d8e7da;
+  --bg-active: #c7ddca;
+  --bg-selected: #cfe4d2;
+  --bg-overlay: rgba(9, 22, 13, 0.48);
+  --border: #b9d0bd;
+  --border-soft: #cedfd0;
+  --border-strong: #7ca887;
+  --fg: #102417;
+  --fg-muted: #45654e;
+  --fg-faint: #76907c;
+  --fg-inverse: #f0fff3;
+  --accent: #087c32;
+  --accent-fg: #effff3;
+  --danger: #a9343d;
+  --danger-bg: #f4dadd;
+  --warning: #946615;
+  --warning-bg: #efe4c7;
+  --success: #087c32;
+  --success-bg: #d4ead9;
+  --info: #1d6661;
+  --info-bg: #d5e9e7;
+  --diff-add-bg: rgba(8, 124, 50, 0.16);
+  --diff-del-bg: rgba(169, 52, 61, 0.14);
+  --focus-ring: #087c32;
+  --scrollbar: rgba(32, 96, 51, 0.3);
+  --shadow-card: 0 0 0 1px rgba(8, 124, 50, 0.05), 0 8px 22px rgba(12, 53, 25, 0.09);
+  --shadow-menu: 0 24px 72px rgba(5, 27, 12, 0.3);
+  --radius-card: 3px;
+  --radius-chip: 2px;
+}
+
+[data-skin='terminal'][data-theme='dark'] {
+  color-scheme: dark;
+  --font-ui: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Microsoft YaHei UI', monospace;
+  --font-display: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+  --font-mono: 'Berkeley Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+  --icon-stroke-width: 1.4;
+  --letter-ui: 0.015em;
+  --bg-app: #070a08;
+  --bg-titlebar: #0b0f0c;
+  --bg-sidebar: #0a0e0b;
+  --bg-editor: #0d120f;
+  --bg-panel: #0a0f0c;
+  --bg-statusbar: #080c09;
+  --bg-input: #111813;
+  --bg-card: #101712;
+  --bg-chip: #152019;
+  --bg-hover: #142018;
+  --bg-active: #1a2b20;
+  --bg-selected: #1b3022;
+  --bg-overlay: rgba(0, 0, 0, 0.74);
+  --border: #203528;
+  --border-soft: #17261d;
+  --border-strong: #31563d;
+  --fg: #b9f6c8;
+  --fg-muted: #72a980;
+  --fg-faint: #45694f;
+  --fg-inverse: #071009;
+  --accent: #52ff78;
+  --accent-fg: #041006;
+  --danger: #ff6677;
+  --danger-bg: #351218;
+  --warning: #e7c75f;
+  --warning-bg: #302911;
+  --success: #52ff78;
+  --success-bg: #12321b;
+  --info: #5ce1d4;
+  --info-bg: #102b2a;
+  --diff-add-bg: rgba(82, 255, 120, 0.18);
+  --diff-del-bg: rgba(255, 102, 119, 0.15);
+  --focus-ring: #52ff78;
+  --scrollbar: rgba(82, 255, 120, 0.28);
+  --shadow-card: 0 0 0 1px rgba(82, 255, 120, 0.06), 0 0 22px rgba(35, 255, 91, 0.05);
+  --shadow-menu: 0 28px 84px rgba(0, 0, 0, 0.78);
+  --radius-card: 3px;
+  --radius-chip: 2px;
+}
+
+[data-skin='index'][data-theme='light'] {
+  color-scheme: light;
+  --font-ui: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  --icon-stroke-width: 2.05;
+  --letter-ui: 0;
+  --bg-app: #d9d9d9;
+  --bg-titlebar: #ffffff;
+  --bg-sidebar: #f4f4f2;
+  --bg-editor: #ffffff;
+  --bg-panel: #f4f4f2;
+  --bg-statusbar: #111111;
+  --bg-input: #ffffff;
+  --bg-card: #ffffff;
+  --bg-chip: #e7e7e5;
+  --bg-hover: #ededeb;
+  --bg-active: #dededb;
+  --bg-selected: #f1dadd;
+  --bg-overlay: rgba(0, 0, 0, 0.64);
+  --border: #c5c5c1;
+  --border-soft: #dededb;
+  --border-strong: #111111;
+  --fg: #0b0b0b;
+  --fg-muted: #4c4c49;
+  --fg-faint: #858581;
+  --fg-inverse: #ffffff;
+  --accent: #d20f2f;
+  --accent-fg: #ffffff;
+  --danger: #d20f2f;
+  --danger-bg: #f4d9de;
+  --warning: #8b5b00;
+  --warning-bg: #f2e4c5;
+  --success: #176d3a;
+  --success-bg: #d9eadf;
+  --info: #1c4f8f;
+  --info-bg: #dce6f2;
+  --diff-add-bg: rgba(23, 109, 58, 0.15);
+  --diff-del-bg: rgba(210, 15, 47, 0.14);
+  --focus-ring: #d20f2f;
+  --scrollbar: rgba(11, 11, 11, 0.32);
+  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.04), 4px 4px 0 rgba(0, 0, 0, 0.08);
+  --shadow-menu: 8px 10px 0 rgba(0, 0, 0, 0.24);
+  --radius-card: 0px;
+  --radius-chip: 0px;
+}
+
+[data-skin='index'][data-theme='dark'] {
+  color-scheme: dark;
+  --font-ui: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  --icon-stroke-width: 2.05;
+  --letter-ui: 0;
+  --bg-app: #000000;
+  --bg-titlebar: #090909;
+  --bg-sidebar: #101010;
+  --bg-editor: #070707;
+  --bg-panel: #101010;
+  --bg-statusbar: #f4f4f2;
+  --bg-input: #111111;
+  --bg-card: #0d0d0d;
+  --bg-chip: #1c1c1c;
+  --bg-hover: #191919;
+  --bg-active: #262626;
+  --bg-selected: #321016;
+  --bg-overlay: rgba(0, 0, 0, 0.82);
+  --border: #343434;
+  --border-soft: #242424;
+  --border-strong: #f1f1ef;
+  --fg: #f5f5f2;
+  --fg-muted: #b2b2ae;
+  --fg-faint: #6f6f6c;
+  --fg-inverse: #090909;
+  --accent: #ff304f;
+  --accent-fg: #ffffff;
+  --danger: #ff405c;
+  --danger-bg: #3d1018;
+  --warning: #e8b34c;
+  --warning-bg: #35280e;
+  --success: #5ec986;
+  --success-bg: #12301f;
+  --info: #76a9ed;
+  --info-bg: #14243b;
+  --diff-add-bg: rgba(94, 201, 134, 0.16);
+  --diff-del-bg: rgba(255, 48, 79, 0.17);
+  --focus-ring: #ff304f;
+  --scrollbar: rgba(245, 245, 242, 0.3);
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.05), 4px 4px 0 rgba(255, 48, 79, 0.16);
+  --shadow-menu: 8px 10px 0 rgba(255, 48, 79, 0.28);
+  --radius-card: 0px;
+  --radius-chip: 0px;
+}
+
+[data-skin='studio'] {
+  --syntax-comment: #008000;
+  --syntax-keyword: #0000ff;
+  --syntax-string: #a31515;
+  --syntax-number: #098658;
+  --syntax-function: #795e26;
+}
+[data-skin='studio'][data-theme='dark'] {
+  --syntax-comment: #6a9955;
+  --syntax-keyword: #569cd6;
+  --syntax-string: #ce9178;
+  --syntax-number: #b5cea8;
+  --syntax-function: #dcdcaa;
+}
+[data-skin='terminal'] {
+  --syntax-comment: var(--fg-faint);
+  --syntax-keyword: var(--accent);
+  --syntax-string: var(--success);
+  --syntax-number: var(--warning);
+  --syntax-function: var(--info);
+}
+[data-skin='archive'] {
+  --syntax-comment: #9b7965;
+  --syntax-keyword: var(--accent);
+  --syntax-string: var(--success);
+  --syntax-number: var(--warning);
+  --syntax-function: var(--info);
+}
+[data-skin='archive'][data-theme='dark'] {
+  --syntax-comment: #927962;
+}
+[data-skin='index'] {
+  --syntax-comment: var(--fg-faint);
+  --syntax-keyword: var(--accent);
+  --syntax-string: var(--fg);
+  --syntax-number: var(--danger);
+  --syntax-function: var(--fg);
 }
 
 * {
@@ -119,7 +446,42 @@ body {
   font-size: 13px;
   background: var(--bg-app);
   color: var(--fg);
+  letter-spacing: var(--letter-ui);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Icon geometry is part of the skin, not a component-by-component accident. */
+.app-icon {
+  stroke-width: var(--icon-stroke-width);
+}
+[data-skin='terminal'] .app-icon,
+[data-skin='index'] .app-icon {
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+[data-skin='terminal'] .app-icon {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, currentColor 32%, transparent));
+}
+
+/* Signature hierarchy: archive reads like a field notebook; terminal and
+ * index use terse instrument labels. Studio retains the original shell. */
+[data-skin='archive'] :is(.hm-brand b, .tr-title, .st-card-title, .es-title) {
+  font-family: var(--font-display);
+  letter-spacing: -0.012em;
+}
+[data-skin='terminal'] :is(.hm-sec, .section-title, .panel-title, .st-skill-cap),
+[data-skin='index'] :is(.hm-sec, .section-title, .panel-title, .st-skill-cap) {
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.82em;
+}
+[data-skin='index'] :is(.hm-row.active, .hm-nav-item.active, .st-nav-item.active, .ab-btn.active) {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+[data-skin='index'] :is(.primary, .btn.primary) {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
 }
 
 ::-webkit-scrollbar {

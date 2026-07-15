@@ -8,6 +8,49 @@ import { createTsSmallFixture } from './helpers/fixtures';
  * E2E-009..018 — these tests cover the new shell semantics.
  */
 test.describe('Home v2 — advanced charter, mission control, context feeding', () => {
+  test('Codex-style @ picker references a completed conversation in a new task', async () => {
+    const fixture = createTsSmallFixture();
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
+    });
+    try {
+      await page.getByTestId('surface-home').click();
+      await page.getByTestId('home-mode-ask').click();
+      await page.getByTestId('home-intent').fill('[scenario:ask-basic] source conversation marker');
+      await page.getByTestId('home-submit').click();
+      await expect(page.getByTestId('tl-agent').first()).toBeVisible({ timeout: 30000 });
+      await page.getByTestId('task-room-back').click();
+
+      await page.getByTestId('home-attach').click();
+      await page.getByTestId('home-file-input').fill('source conversation marker');
+      const sourceItem = page
+        .locator('[data-testid^="home-conversation-item-"]')
+        .filter({ hasText: 'source conversation marker' })
+        .first();
+      await expect(sourceItem).toBeVisible();
+      const sourceTestId = await sourceItem.getAttribute('data-testid');
+      const sourceTaskId = sourceTestId!.replace('home-conversation-item-', '');
+      await sourceItem.click();
+      await expect(page.getByTestId(`home-conversation-ref-${sourceTaskId}`)).toContainText(
+        'source conversation marker',
+      );
+
+      await page
+        .getByTestId('home-intent')
+        .fill('[scenario:ask-basic] continue with the referenced decision');
+      await page.getByTestId('home-submit').click();
+      await expect(page.getByTestId(`tl-conversation-ref-${sourceTaskId}`)).toContainText(
+        'source conversation marker',
+        { timeout: 30000 },
+      );
+      await expect(page.getByTestId('tl-user').first()).toContainText(
+        'continue with the referenced decision',
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
   test('PIVOT-012/015: advanced fields and @refs land in the task charter', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({
@@ -108,6 +151,41 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
     }
   });
 
+  test('configured checks are distinguished from unconfigured tasks and can be run from review', async () => {
+    const fixture = createTsSmallFixture();
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
+    });
+    try {
+      await page.getByTestId('surface-home').click();
+      await page.getByTestId('home-advanced-toggle').click();
+      await page.getByTestId('home-verif-npm test').click();
+      await page.getByTestId('home-mode-auto').click();
+      await page.getByTestId('home-intent').fill('[scenario:edit-basic] verified change');
+      await page.getByTestId('home-submit').click();
+
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
+      await expect(page.getByTestId('report-unverified')).toContainText(
+        '1 configured check has not run',
+      );
+      await page.getByTestId('review-bar-run-verification').click();
+      await expect(page.getByTestId('tl-verification-passed')).toBeVisible({ timeout: 30000 });
+      await expect(page.getByTestId('report-unverified')).toHaveCount(0);
+      await expect(page.getByTestId('report-verification')).toContainText('1 passed');
+
+      await page.getByTestId('task-room-open-editor').click();
+      await page.keyboard.press(process.platform === 'darwin' ? 'Meta+j' : 'Control+j');
+      await page.getByRole('tab', { name: 'Tests' }).click();
+      await expect(page.getByTestId('tests-verification-panel')).toContainText('npm test');
+      await expect(page.getByTestId('tests-verification-panel')).toContainText('passed');
+      await expect(page.getByTestId('tests-run-verification')).toContainText('Re-run all checks');
+    } finally {
+      await app.close();
+    }
+  });
+
   test('PIVOT-011/014: follow-system theme is applied and notifications are configurable', async () => {
     const { app, page } = await launchApp({ home: 'keep' });
     try {
@@ -121,6 +199,25 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
       await expect(toggle).toBeChecked(); // default on (PIVOT-014)
       await toggle.uncheck();
       await expect(toggle).not.toBeChecked();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('no-model state blocks submission and links directly to Model settings', async () => {
+    const { app, page } = await launchApp({ home: 'keep' });
+    try {
+      await expect(page.getByTestId('home-model')).toContainText('No model', { timeout: 15000 });
+      await page.getByTestId('home-intent').fill('Start a task that should stay blocked');
+      await expect(page.getByTestId('home-submit')).toBeDisabled();
+
+      await page.getByTestId('home-model').click();
+      await page.getByTestId('home-model-settings').click();
+      await expect(page.getByTestId('overlay-settings')).toBeVisible();
+      await expect(page.getByTestId('settings-section-models')).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
     } finally {
       await app.close();
     }

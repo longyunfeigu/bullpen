@@ -140,6 +140,7 @@ export function useExternalFiles(task: TaskDto): ExternalSessionFile[] {
             cli: task.external!.cli,
             snapshotRef: task.external!.snapshotRef,
             status: task.external!.status,
+            captureGrade: task.external!.captureGrade ?? 'observed',
             files,
           },
         },

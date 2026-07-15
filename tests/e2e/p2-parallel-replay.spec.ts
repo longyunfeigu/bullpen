@@ -81,6 +81,25 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
       await expect(page.getByTestId('replay-diff')).toContainText('+  return add(3, 4);');
       await expect(page.getByTestId('replay-files')).toContainText('src/index.ts');
 
+      if (process.env.CHARTER_CAPTURE_REPLAY === '1') {
+        await page.screenshot({ path: '/tmp/replay-prod-a.png' });
+        for (const mode of ['b', 'c', 'd', 'e'] as const) {
+          await page.getByTestId(`replay-mode-${mode}`).click();
+          await page.waitForTimeout(120);
+          await page.screenshot({ path: `/tmp/replay-prod-${mode}.png` });
+        }
+        await page.getByTestId('replay-mode-a').click();
+        await app.evaluate(({ BrowserWindow }) => {
+          BrowserWindow.getAllWindows()[0]?.setSize(1024, 768);
+        });
+        await page.waitForTimeout(150);
+        await page.screenshot({ path: '/tmp/replay-prod-narrow.png' });
+        await app.evaluate(({ BrowserWindow }) => {
+          BrowserWindow.getAllWindows()[0]?.setSize(1440, 900);
+        });
+        await page.waitForTimeout(150);
+      }
+
       // Keyboard: ← steps back; Escape closes; the working tree was never touched.
       await page.keyboard.press('ArrowLeft');
       await expect(page.getByTestId('replay-step')).not.toContainText('Edited src/index.ts');

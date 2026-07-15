@@ -3,12 +3,17 @@ import { z } from 'zod';
 export const SETTINGS_SCHEMA_VERSION = 1;
 
 export const ThemeSchema = z.enum(['light', 'dark', 'system']);
+export const SkinSchema = z.enum(['studio', 'terminal', 'archive', 'index']);
+export const DEFAULT_EDITOR_FONT_FAMILY =
+  "Menlo, Monaco, 'SF Mono', Consolas, 'Courier New', monospace";
 
 export const SettingsSchema = z.object({
   schemaVersion: z.number().int().default(SETTINGS_SCHEMA_VERSION),
   general: z
     .object({
       theme: ThemeSchema.default('system'),
+      /** Coordinated color, typography, icon and syntax-highlight language. */
+      skin: SkinSchema.default('studio'),
       uiScale: z.number().min(0.8).max(2).default(1),
       confirmOnQuitWithRunningAgent: z.boolean().default(true),
     })
@@ -16,9 +21,7 @@ export const SettingsSchema = z.object({
   editor: z
     .object({
       fontSize: z.number().min(8).max(40).default(13),
-      fontFamily: z
-        .string()
-        .default("Menlo, Monaco, 'SF Mono', Consolas, 'Courier New', monospace"),
+      fontFamily: z.string().default(DEFAULT_EDITOR_FONT_FAMILY),
       lineHeight: z.number().min(1).max(3).default(1.55),
       tabSize: z.number().int().min(1).max(8).default(2),
       insertSpaces: z.boolean().default(true),

@@ -6,6 +6,7 @@ import { useActivityStore } from './activityStore.js';
 // Runtime-only access (inside handlers), so the module cycle with
 // TerminalPanel → externalStore is harmless under ESM live bindings.
 import { useTerminalStore } from '../views/TerminalPanel.js';
+import type { TaskDto } from '@pi-ide/ipc-contracts';
 
 export interface ExternalSessionFile {
   path: string;
@@ -20,6 +21,7 @@ export interface ExternalSession {
   cli: string;
   snapshotRef: string | null;
   status: 'active' | 'ended';
+  captureGrade: 'structured' | 'observed';
   files: ExternalSessionFile[];
 }
 
@@ -29,6 +31,10 @@ export interface PromotedSession {
   taskId: string;
   /** The (terminal-only) dock was collapsed on promote; restore it on return. */
   collapsedDock: boolean;
+  /** The managed-task rail was visible; restore it after the external rail leaves. */
+  collapsedAgentPanel: boolean;
+  /** A narrow window needed the primary sidebar temporarily closed. */
+  collapsedSideBar: boolean;
 }
 
 interface ExternalStore {
@@ -51,14 +57,19 @@ interface ExternalStore {
   promoted: PromotedSession | null;
   /** Side panel width (px); floor keeps the TUI at a usable column count. */
   panelWidth: number;
+  /** Task currently waiting for its CLI process to confirm a real resume. */
+  resumingTaskId: string | null;
   setFollow(taskId: string, on: boolean): void;
   /** ADR-0017 rev.2 「意图升格」— move a session terminal to the side panel. */
   promote(terminalId: string): void;
   /** 「归位」— return the side-panel terminal to the dock. */
   unpromote(): void;
+  /** Keep a useful editor/dock width when the application window narrows. */
+  ensureSidePanelSpace(): void;
   setPanelWidth(width: number): void;
   /** Terminal closed/killed — drop its session UI state (panel, bar, badge). */
   handleTerminalClosed(terminalId: string): void;
+  resumeTask(task: TaskDto): Promise<void>;
   init(): void;
 }
 
@@ -67,6 +78,26 @@ let seq = 0;
 export const PANEL_MIN_WIDTH = 480;
 export const PANEL_MAX_WIDTH = 900;
 export const PANEL_DEFAULT_WIDTH = 600;
+export const FOCUS_SLOT_MIN_CENTER_WIDTH = 360;
+const WORKBENCH_FIXED_CHROME_WIDTH = 64;
+
+function effectivePanelWidth(panelWidth: number): number {
+  return Math.min(
+    panelWidth,
+    Math.max(0, window.innerWidth - FOCUS_SLOT_MIN_CENTER_WIDTH - WORKBENCH_FIXED_CHROME_WIDTH),
+  );
+}
+
+function sidePanelWouldCrushCenter(panelWidth: number): boolean {
+  const layout = useAppStore.getState().layout;
+  if (!layout.sideBarVisible) return false;
+  const remaining =
+    window.innerWidth -
+    effectivePanelWidth(panelWidth) -
+    layout.sideBarWidth -
+    WORKBENCH_FIXED_CHROME_WIDTH;
+  return remaining < FOCUS_SLOT_MIN_CENTER_WIDTH;
+}
 
 /** New/changed paths between two accounting states — drives the glow pulses. */
 export function sessionDelta(
@@ -91,30 +122,64 @@ export const useExternalStore = create<ExternalStore>((set, get) => ({
   follow: {},
   promoted: null,
   panelWidth: PANEL_DEFAULT_WIDTH,
+  resumingTaskId: null,
 
   setFollow(taskId, on) {
     set({ follow: { ...get().follow, [taskId]: on } });
   },
 
   promote(terminalId) {
-    // One side-panel slot (mock shape). A second concurrent session keeps its
-    // bar + room entry but cannot steal the slot.
-    if (get().promoted) return;
     const taskId = get().taskByTerminal[terminalId];
     if (!taskId) return;
+    const current = get().promoted;
+    if (current?.terminalId === terminalId) {
+      useTerminalStore
+        .getState()
+        .items.find((item) => item.id === terminalId)
+        ?.term.focus();
+      return;
+    }
+    if (current) {
+      // Atomic focus-slot swap: placement changes, PTYs do not. Preserve the
+      // layout snapshot from the original promotion and return the prior side
+      // terminal to the selected dock slot in the same synchronous turn.
+      set({
+        promoted: {
+          ...current,
+          terminalId,
+          taskId,
+        },
+      });
+      useTerminalStore.setState({ active: current.terminalId });
+      return;
+    }
     const app = useAppStore.getState();
     const others = useTerminalStore.getState().items.filter((t) => t.id !== terminalId).length;
     const collapsedDock =
       others === 0 && app.layout.bottomPanelVisible && app.layout.bottomTab === 'terminal';
-    if (collapsedDock) app.setLayout({ bottomPanelVisible: false });
-    set({ promoted: { terminalId, taskId, collapsedDock } });
+    const collapsedAgentPanel = app.layout.agentPanelVisible;
+    const collapsedSideBar = sidePanelWouldCrushCenter(get().panelWidth);
+    if (collapsedDock || collapsedAgentPanel || collapsedSideBar) {
+      app.setLayout({
+        ...(collapsedDock ? { bottomPanelVisible: false } : {}),
+        ...(collapsedAgentPanel ? { agentPanelVisible: false } : {}),
+        ...(collapsedSideBar ? { sideBarVisible: false } : {}),
+      });
+    }
+    set({
+      promoted: { terminalId, taskId, collapsedDock, collapsedAgentPanel, collapsedSideBar },
+    });
   },
 
   unpromote() {
     const p = get().promoted;
     if (!p) return;
-    if (p.collapsedDock) {
-      useAppStore.getState().setLayout({ bottomPanelVisible: true, bottomTab: 'terminal' });
+    if (p.collapsedDock || p.collapsedAgentPanel || p.collapsedSideBar) {
+      useAppStore.getState().setLayout({
+        ...(p.collapsedDock ? { bottomPanelVisible: true, bottomTab: 'terminal' as const } : {}),
+        ...(p.collapsedAgentPanel ? { agentPanelVisible: true } : {}),
+        ...(p.collapsedSideBar ? { sideBarVisible: true } : {}),
+      });
     }
     // Hand the dock slot back to the returning terminal (it was excluded from
     // the dock while promoted, so `active` had moved on or gone null).
@@ -123,6 +188,13 @@ export const useExternalStore = create<ExternalStore>((set, get) => ({
       useTerminalStore.setState({ active: p.terminalId });
     }
     set({ promoted: null });
+  },
+
+  ensureSidePanelSpace() {
+    const current = get().promoted;
+    if (!current || !sidePanelWouldCrushCenter(get().panelWidth)) return;
+    set({ promoted: { ...current, collapsedSideBar: true } });
+    useAppStore.getState().setLayout({ sideBarVisible: false });
   },
 
   setPanelWidth(width) {
@@ -136,6 +208,40 @@ export const useExternalStore = create<ExternalStore>((set, get) => ({
     delete tasks[terminalId];
     if (get().promoted?.terminalId === terminalId) get().unpromote();
     set({ agentByTerminal: agents, taskByTerminal: tasks });
+  },
+
+  async resumeTask(task) {
+    const external = task.external;
+    if (!external || get().resumingTaskId) return;
+    if (external.cli !== 'claude' && external.cli !== 'codex') {
+      useAppStore
+        .getState()
+        .pushToast('error', `${external.cli} does not support one-click session resume.`);
+      return;
+    }
+    set({ resumingTaskId: task.id });
+    try {
+      const terminals = useTerminalStore.getState();
+      let terminalId = terminals.items.find(
+        (item) => item.id === external.terminalId && !item.exited,
+      )?.id;
+      if (!terminalId) {
+        terminalId =
+          (await terminals.create({ taskId: task.id, title: `${external.cli} resume` })) ??
+          undefined;
+      }
+      if (!terminalId) return;
+      useTerminalStore.setState({ active: terminalId });
+      const result = await rpcResult('external.resumeSession', { taskId: task.id, terminalId });
+      if (!result.ok) {
+        useAppStore.getState().pushToast('error', result.error.userMessage);
+        return;
+      }
+      useAppStore.getState().pushToast('success', `Resumed the previous ${external.cli} session.`);
+      await useTaskStore.getState().refreshTasks();
+    } finally {
+      set({ resumingTaskId: null });
+    }
   },
 
   init() {
@@ -214,10 +320,8 @@ export const useExternalStore = create<ExternalStore>((set, get) => ({
       });
     });
 
-    onEvent('workspace.changed', () => {
-      // Terminals were disposed with the workspace; drop every session surface.
-      set({ agentByTerminal: {}, taskByTerminal: {}, promoted: null });
-    });
+    // Focused-workspace changes intentionally do not clear terminal/session
+    // placement. Each PTY now owns its own host-resolved project context.
 
     void rpcResult('external.listSessions', {}).then((res) => {
       if (!res.ok) return;

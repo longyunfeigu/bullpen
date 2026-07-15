@@ -27,4 +27,28 @@ describe('IPC channel registry', () => {
       expect(bad.error.code).toBe('IPC_SCHEMA_VIOLATION');
     }
   });
+
+  it('accepts at most three conversation references when creating a task', () => {
+    const base = {
+      title: 'Use prior context',
+      goalMd: 'Continue the earlier work',
+      acceptance: [],
+      mode: 'ask',
+      model: { providerId: 'mock', modelId: 'mock-1' },
+      verification: [],
+      isolation: 'none',
+    };
+    expect(
+      validateChannelRequest('task.create', {
+        ...base,
+        conversationRefTaskIds: ['task_1', 'task_2', 'task_3'],
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateChannelRequest('task.create', {
+        ...base,
+        conversationRefTaskIds: ['task_1', 'task_2', 'task_3', 'task_4'],
+      }).ok,
+    ).toBe(false);
+  });
 });

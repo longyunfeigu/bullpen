@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { SkillDto } from '@pi-ide/ipc-contracts';
-import { rpcResult } from '../bridge.js';
+import type { SkillDto, SkillSourceDto } from '@pi-ide/ipc-contracts';
+import { onEvent, rpcResult } from '../bridge.js';
 import { useAppStore } from './appStore.js';
 
 /**
@@ -9,9 +9,16 @@ import { useAppStore } from './appStore.js';
  */
 interface SkillsStore {
   skills: SkillDto[];
+  sources: SkillSourceDto[];
   loaded: boolean;
+  initialized: boolean;
+  init(): void;
   refresh(): Promise<void>;
+  rescan(): Promise<void>;
   importSkill(dir?: string): Promise<SkillDto | null>;
+  addSource(dir?: string): Promise<SkillSourceDto | null>;
+  removeSource(id: string): Promise<void>;
+  setSourcePolicy(id: string, patch: { trusted?: boolean; autoEnableNew?: boolean }): Promise<void>;
   remove(id: string): Promise<void>;
   setEnabled(id: string, enabled: boolean): Promise<void>;
   read(id: string, relPath?: string): Promise<{ path: string; content: string } | null>;
@@ -19,11 +26,30 @@ interface SkillsStore {
 
 export const useSkillsStore = create<SkillsStore>((set, get) => ({
   skills: [],
+  sources: [],
   loaded: false,
+  initialized: false,
+
+  init() {
+    if (get().initialized) return;
+    set({ initialized: true });
+    onEvent('skills.changed', () => void get().refresh());
+    void get().refresh();
+  },
 
   async refresh() {
     const res = await rpcResult('skills.list', {});
-    if (res.ok) set({ skills: res.data.skills, loaded: true });
+    if (res.ok) set({ skills: res.data.skills, sources: res.data.sources, loaded: true });
+  },
+
+  async rescan() {
+    const res = await rpcResult('skills.rescan', {});
+    if (res.ok) {
+      set({ skills: res.data.skills, sources: res.data.sources, loaded: true });
+      useAppStore.getState().pushToast('success', 'Skill sources rescanned.');
+    } else {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+    }
   },
 
   async importSkill(dir) {
@@ -37,6 +63,38 @@ export const useSkillsStore = create<SkillsStore>((set, get) => ({
       useAppStore.getState().pushToast('success', `Skill "${res.data.skill.name}" imported.`);
     }
     return res.data.skill;
+  },
+
+  async addSource(dir) {
+    const res = await rpcResult('skills.addSource', dir ? { dir } : {});
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      return null;
+    }
+    if (res.data.source) {
+      await get().refresh();
+      useAppStore.getState().pushToast('success', `${res.data.source.label} connected.`);
+    }
+    return res.data.source;
+  },
+
+  async removeSource(id) {
+    const res = await rpcResult('skills.removeSource', { id });
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      return;
+    }
+    await get().refresh();
+  },
+
+  async setSourcePolicy(id, patch) {
+    const res = await rpcResult('skills.setSourcePolicy', { id, ...patch });
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      await get().refresh();
+      return;
+    }
+    await get().refresh();
   },
 
   async remove(id) {

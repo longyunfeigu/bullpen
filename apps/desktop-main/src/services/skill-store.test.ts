@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -70,6 +70,12 @@ describe('SkillStore (ADR-0015)', () => {
       description: '',
       explicitOnly: false,
     });
+    expect(
+      parseSkillFrontmatter(
+        '---\nname: folded\ndescription: >\n  First line\n  second line\n---\nBody',
+        'fb',
+      ).description,
+    ).toBe('First line second line');
   });
 
   it('slugs names for ids and /skill: matching', () => {
@@ -157,5 +163,108 @@ describe('SkillStore (ADR-0015)', () => {
     expect(store.remove('alpha')).toBe(true);
     expect(store.list()).toHaveLength(0);
     expect(store.remove('alpha')).toBe(false);
+  });
+
+  it('discovers well-known Agent/Claude/Codex roots without trusting them', () => {
+    const home = mkdtempSync(join(tmpdir(), 'skills-home-'));
+    try {
+      makeSkillFolder(join(home, '.agents', 'skills'), 'shared');
+      makeSkillFolder(join(home, '.claude', 'skills'), 'claude-only');
+      makeSkillFolder(join(home, '.codex', 'skills', '.system'), 'codex-system');
+      const discovered = new SkillStore(root, logger, {
+        discoverExternal: true,
+        homeDir: home,
+      });
+      const snapshot = discovered.snapshot();
+      expect(snapshot.sources.map((source) => source.id)).toEqual([
+        'managed',
+        'agents',
+        'claude',
+        'codex',
+      ]);
+      expect(snapshot.skills.map((skill) => skill.displayName).sort()).toEqual([
+        'claude-only',
+        'codex-system',
+        'shared',
+      ]);
+      expect(snapshot.skills.every((skill) => !skill.enabled)).toBe(true);
+
+      const shared = snapshot.skills.find((skill) => skill.displayName === 'shared')!;
+      expect(discovered.setEnabled(shared.id, true).enabled).toBe(true);
+      expect(discovered.sources().find((source) => source.id === 'agents')?.trusted).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('reconciles linked additions, updates and deletion from the source of truth', () => {
+    const home = mkdtempSync(join(tmpdir(), 'skills-live-home-'));
+    try {
+      const agents = join(home, '.agents', 'skills');
+      const alpha = makeSkillFolder(agents, 'alpha', { description: 'Version one.' });
+      const discovered = new SkillStore(root, logger, {
+        discoverExternal: true,
+        homeDir: home,
+      });
+      discovered.setSourcePolicy('agents', { trusted: true, autoEnableNew: true });
+      expect(discovered.list().find((skill) => skill.displayName === 'alpha')?.enabled).toBe(true);
+
+      writeFileSync(
+        join(alpha, 'SKILL.md'),
+        '---\nname: alpha\ndescription: Version two.\n---\nUpdated instructions.\n',
+      );
+      makeSkillFolder(agents, 'beta');
+      discovered.rescan('test-update');
+      expect(discovered.list().find((skill) => skill.displayName === 'alpha')?.description).toBe(
+        'Version two.',
+      );
+      expect(discovered.list().find((skill) => skill.displayName === 'beta')?.enabled).toBe(true);
+
+      rmSync(alpha, { recursive: true, force: true });
+      discovered.rescan('test-delete');
+      expect(discovered.list().some((skill) => skill.displayName === 'alpha')).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('connects and disconnects custom roots without deleting their files', () => {
+    const custom = mkdtempSync(join(tmpdir(), 'skills-custom-'));
+    try {
+      makeSkillFolder(custom, 'custom-one');
+      const source = store.addSource(custom);
+      expect(source.kind).toBe('custom');
+      expect(source.skillCount).toBe(1);
+      expect(store.list().find((skill) => skill.displayName === 'custom-one')?.enabled).toBe(false);
+      expect(store.removeSource(source.id)).toBe(true);
+      expect(store.list().some((skill) => skill.displayName === 'custom-one')).toBe(false);
+      expect(existsSync(join(custom, 'custom-one', 'SKILL.md'))).toBe(true);
+    } finally {
+      rmSync(custom, { recursive: true, force: true });
+    }
+  });
+
+  it('qualifies duplicate invocation names and rejects escaping bundled symlinks', () => {
+    const home = mkdtempSync(join(tmpdir(), 'skills-conflict-home-'));
+    const outside = join(home, 'outside.txt');
+    try {
+      store.import(makeSkillFolder(src, 'duplicate'));
+      const external = makeSkillFolder(join(home, '.claude', 'skills'), 'duplicate');
+      writeFileSync(outside, 'secret');
+      symlinkSync(outside, join(external, 'outside-link.txt'));
+
+      const discovered = new SkillStore(root, logger, {
+        discoverExternal: true,
+        homeDir: home,
+      });
+      const copies = discovered.list().filter((skill) => skill.displayName === 'duplicate');
+      expect(copies.map((skill) => skill.name)).toEqual(['duplicate', 'duplicate@claude']);
+      expect(copies.every((skill) => skill.status !== 'ready')).toBe(true);
+      const linked = copies.find((skill) => skill.source === 'claude')!;
+      expect(linked.status).toBe('invalid');
+      expect(() => discovered.setEnabled(linked.id, true)).toThrowError(/Symlink escapes/);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

@@ -12,6 +12,7 @@ import { useEditorStore } from '../store/editorStore.js';
 import { NewTaskDialog } from './NewTaskDialog.js';
 import { PathChips } from './PathLinks.js';
 import { useDraftStore } from '../store/draftStore.js';
+import { useExternalStore } from '../store/externalStore.js';
 import { restoreScroll, saveScroll } from './scrollMemory.js';
 import { Markdown } from './Markdown.js';
 import { Ic } from './home-icons.js';
@@ -628,6 +629,15 @@ export interface TimelineContext {
   answeredCallIds: Set<string>;
   /** Sequence of the latest plan proposal that has no decision after it. */
   openPlanSeq: number | null;
+  /** Latest proposal from each approval cycle; superseded drafts stay in the audit log only. */
+  visiblePlanSeqs: Set<number>;
+  verificationCommands: number;
+  verificationRuns: Array<{
+    label: string;
+    state: string;
+    stale?: boolean;
+    superseded?: boolean;
+  }>;
   taskState: string;
 }
 
@@ -641,6 +651,7 @@ function TimelineCard({
   const payload = event.payload as Record<string, unknown>;
   switch (event.type) {
     case 'agent.planProposed': {
+      if (!context.visiblePlanSeqs.has(event.sequence)) return null;
       const plan = payload.plan as TaskPlanDto;
       const open =
         event.sequence === context.openPlanSeq && context.taskState === 'AWAITING_PLAN_APPROVAL';
@@ -748,6 +759,10 @@ function TimelineCard({
       );
     }
     case 'tool.call': {
+      const toolName = String(payload.name);
+      // The plan card and its decision/progress notes are the presentation;
+      // repeating the underlying plan-channel call adds no user information.
+      if (toolName === 'propose_plan' || toolName === 'update_plan') return null;
       const ok = payload.ok === true;
       const state = String(payload.state ?? '');
       const denied = state === 'DENIED';
@@ -762,17 +777,14 @@ function TimelineCard({
       return (
         <Card
           icon={denied ? 'ban' : !terminal ? 'clock' : ok ? 'wrench' : 'alert'}
-          title={`${toolVerb(String(payload.name))}${stateWord ? ` — ${stateWord}` : ''}`}
+          title={`${toolVerb(toolName)}${stateWord ? ` — ${stateWord}` : ''}`}
           tone={denied ? 'warning' : !terminal || ok ? 'default' : 'danger'}
-          testid={`tl-tool-${String(payload.name)}`}
+          testid={`tl-tool-${toolName}`}
           dataState={state}
           collapsible
         >
           <div className="text-muted">{String(payload.summary ?? '')}</div>
-          <PathChips
-            paths={toolPaths(String(payload.name), payload.input)}
-            testidPrefix="tl-path"
-          />
+          <PathChips paths={toolPaths(toolName, payload.input)} testidPrefix="tl-path" />
           <pre
             className="mono"
             style={{ fontSize: 11, overflow: 'auto', maxHeight: 160, whiteSpace: 'pre-wrap' }}
@@ -916,11 +928,27 @@ function TimelineCard({
         | undefined;
       const agentSummary = typeof payload.agentSummary === 'string' ? payload.agentSummary : null;
       const risks = (payload.unresolvedRisks ?? []) as string[];
+      const effectiveVerification =
+        verification && verification.runs.length > 0
+          ? verification
+          : context.verificationRuns.length > 0
+            ? {
+                runs: context.verificationRuns,
+                passed: context.verificationRuns.filter((run) => run.state === 'passed').length,
+                failed: context.verificationRuns.filter((run) => run.state !== 'passed').length,
+                note: null,
+              }
+            : verification;
+      const effectivelyUnverified = unverified && context.verificationRuns.length === 0;
       return (
         <Card
           icon="clipboard"
           title="Final report"
-          tone={unverified || (verification?.failed ?? 0) > 0 ? 'warning' : 'success'}
+          tone={
+            effectivelyUnverified || (effectiveVerification?.failed ?? 0) > 0
+              ? 'warning'
+              : 'success'
+          }
           testid="tl-report"
         >
           <div>Outcome: {String(payload.outcome)}</div>
@@ -940,11 +968,12 @@ function TimelineCard({
               />
             </div>
           ) : null}
-          {verification && verification.runs.length > 0 ? (
+          {effectiveVerification && effectiveVerification.runs.length > 0 ? (
             <div data-testid="report-verification">
-              Verification: {verification.passed} passed, {verification.failed} failed
+              Verification: {effectiveVerification.passed} passed, {effectiveVerification.failed}{' '}
+              failed
               <ul style={{ margin: '2px 0 2px 16px', padding: 0, fontSize: 11.5 }}>
-                {verification.runs.map((r, i) => (
+                {effectiveVerification.runs.map((r, i) => (
                   <li key={i} className={r.state === 'passed' ? '' : 'text-warning'}>
                     {r.label} — {r.state}
                     {r.stale ? ' (stale)' : ''}
@@ -954,9 +983,11 @@ function TimelineCard({
               </ul>
             </div>
           ) : null}
-          {unverified ? (
+          {effectivelyUnverified ? (
             <div className="text-warning" data-testid="report-unverified">
-              Unverified — no verification commands were run.
+              {context.verificationCommands > 0
+                ? `${context.verificationCommands} configured check${context.verificationCommands === 1 ? '' : 's'} ${context.verificationCommands === 1 ? 'has' : 'have'} not run.`
+                : 'Unverified — no verification commands were run.'}
             </div>
           ) : null}
           {risks.length > 0 ? (
@@ -995,6 +1026,15 @@ function TimelineCard({
               >
                 Review changes
               </button>
+              {context.verificationCommands > 0 ? (
+                <button
+                  className="btn"
+                  data-testid="report-run-verification"
+                  onClick={() => void useTaskStore.getState().runVerification()}
+                >
+                  {context.verificationRuns.length > 0 ? 'Re-run checks' : 'Run checks'}
+                </button>
+              ) : null}
               <span style={{ flex: 1 }} />
               <ConfirmDangerButton
                 label="Roll back all…"
@@ -1057,12 +1097,15 @@ function TimelineCard({
 }
 
 /** Cross-event context shared by every timeline consumer (panel + Task Room). */
-export function useTimelineContext(taskState: string): TimelineContext {
+export function useTimelineContext(taskState: string, verificationCommands = 0): TimelineContext {
   const timeline = useTaskStore((s) => s.timeline);
   return React.useMemo(() => {
     const permissionResolutions = new Map<string, { outcome: string; scope?: string | null }>();
     const answeredCallIds = new Set<string>();
+    const visiblePlanSeqs = new Set<number>();
+    const verificationByLabel = new Map<string, { label: string; state: string }>();
     let openPlanSeq: number | null = null;
+    let pendingPlanSeq: number | null = null;
     for (const event of timeline) {
       const payload = event.payload as Record<string, unknown>;
       if (event.type === 'permission.decided' && typeof payload.requestId === 'string') {
@@ -1074,11 +1117,36 @@ export function useTimelineContext(taskState: string): TimelineContext {
       if (event.type === 'user.message' && typeof payload.callId === 'string') {
         answeredCallIds.add(payload.callId);
       }
-      if (event.type === 'agent.planProposed') openPlanSeq = event.sequence;
-      if (event.type === 'user.planDecision') openPlanSeq = null;
+      if (event.type === 'agent.planProposed') {
+        openPlanSeq = event.sequence;
+        pendingPlanSeq = event.sequence;
+      }
+      if (event.type === 'user.planDecision') {
+        if (pendingPlanSeq !== null) visiblePlanSeqs.add(pendingPlanSeq);
+        pendingPlanSeq = null;
+        openPlanSeq = null;
+      }
+      if (event.type === 'verification.completed') {
+        const run = payload.run as { label?: unknown; state?: unknown } | undefined;
+        if (run && typeof run.label === 'string') {
+          verificationByLabel.set(run.label, {
+            label: run.label,
+            state: String(run.state ?? ''),
+          });
+        }
+      }
     }
-    return { permissionResolutions, answeredCallIds, openPlanSeq, taskState };
-  }, [timeline, taskState]);
+    if (pendingPlanSeq !== null) visiblePlanSeqs.add(pendingPlanSeq);
+    return {
+      permissionResolutions,
+      answeredCallIds,
+      openPlanSeq,
+      visiblePlanSeqs,
+      verificationCommands,
+      verificationRuns: [...verificationByLabel.values()],
+      taskState,
+    };
+  }, [timeline, taskState, verificationCommands]);
 }
 
 /** The scrollable event list (auto-scrolls on growth). Used by panel + room. */
@@ -1086,7 +1154,10 @@ export function TimelineList({ taskState }: { taskState: string }): React.JSX.El
   const store = useTaskStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
-  const timelineContext = useTimelineContext(taskState);
+  const timelineContext = useTimelineContext(
+    taskState,
+    activeTask(store)?.verification.length ?? 0,
+  );
   const taskId = store.activeTaskId;
 
   // PIVOT-036: the reading position is shared with the Task Room timeline —
@@ -1233,6 +1304,7 @@ export function AgentPanel(): React.JSX.Element {
   const store = useTaskStore();
   const workspace = useWorkspaceStore((s) => s.workspace);
   const task = activeTask(store);
+  const resumingExternalTaskId = useExternalStore((s) => s.resumingTaskId);
 
   useEffect(() => {
     store.init();
@@ -1249,6 +1321,12 @@ export function AgentPanel(): React.JSX.Element {
   }
 
   const running = task ? RUNNING_TASK_STATES.has(task.state) : false;
+  const externalCanResume = Boolean(
+    task?.external?.status === 'ended' &&
+    (task.external.cli === 'claude' || task.external.cli === 'codex') &&
+    ['REVIEW_READY', 'INTERRUPTED', 'FAILED'].includes(task.state),
+  );
+  const externalResuming = task?.id === resumingExternalTaskId;
 
   return (
     <div
@@ -1259,7 +1337,8 @@ export function AgentPanel(): React.JSX.Element {
         style={{
           padding: '8px 10px',
           borderBottom: '1px solid var(--border)',
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
           gap: 8,
           alignItems: 'center',
         }}
@@ -1268,7 +1347,6 @@ export function AgentPanel(): React.JSX.Element {
           <>
             <span
               style={{
-                flex: 1,
                 minWidth: 0,
                 fontWeight: 600,
                 overflow: 'hidden',
@@ -1276,78 +1354,121 @@ export function AgentPanel(): React.JSX.Element {
                 whiteSpace: 'nowrap',
               }}
               title={task.title}
+              data-testid="agent-task-title"
             >
               {task.title}
             </span>
             <StateBadge state={task.state} />
-            {task.state === 'REVIEW_READY' ? (
+            <div
+              style={{
+                gridColumn: '1 / -1',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 6,
+                alignItems: 'center',
+              }}
+            >
+              {task.state === 'REVIEW_READY' ? (
+                <>
+                  {externalCanResume ? (
+                    <button
+                      className="btn primary"
+                      data-testid="task-resume"
+                      disabled={externalResuming}
+                      title={`Continue the previous ${task.external!.cli} conversation in its terminal`}
+                      onClick={() => void store.resumeTask(task.id)}
+                    >
+                      {externalResuming
+                        ? 'Resuming…'
+                        : `Resume ${task.external!.cli === 'claude' ? 'Claude' : 'Codex'}`}
+                    </button>
+                  ) : null}
+                  <button
+                    className={`btn ${externalCanResume ? '' : 'primary'}`}
+                    data-testid="review-open"
+                    onClick={() => void store.openReview()}
+                  >
+                    Review
+                  </button>
+                </>
+              ) : null}
+              {task.state === 'INTERRUPTED' || task.state === 'FAILED' ? (
+                // M10 recovery: pick up where it stopped, inspect, or restore.
+                <>
+                  <button
+                    className="btn primary"
+                    data-testid="task-resume"
+                    disabled={externalResuming}
+                    title={
+                      externalCanResume
+                        ? `Continue the previous ${task.external!.cli} conversation in its terminal`
+                        : 'Start a new run for this task'
+                    }
+                    onClick={() => void store.resumeTask(task.id)}
+                  >
+                    {externalResuming
+                      ? 'Resuming…'
+                      : externalCanResume
+                        ? `Resume ${task.external!.cli === 'claude' ? 'Claude' : 'Codex'}`
+                        : 'Resume'}
+                  </button>
+                  <button
+                    className="btn"
+                    data-testid="review-open"
+                    title="Inspect what changed before deciding"
+                    onClick={() => void store.openReview()}
+                  >
+                    Review
+                  </button>
+                  <ConfirmDangerButton
+                    label="Roll back…"
+                    confirmLabel="Confirm — roll back"
+                    testid="task-rollback"
+                    quiet
+                    title="Restore every touched file to its pre-task state"
+                    onConfirm={() => void store.rollbackTask()}
+                  />
+                </>
+              ) : null}
+              <button
+                className="btn"
+                data-testid="replay-open"
+                title="Replay what the agent did, step by step"
+                onClick={() => store.openReplay()}
+              >
+                Replay
+              </button>
+              {running ? (
+                <button
+                  className="btn danger"
+                  data-testid="agent-stop"
+                  onClick={() => void store.stop()}
+                >
+                  Stop
+                </button>
+              ) : null}
               <button
                 className="btn primary"
-                data-testid="review-open"
-                onClick={() => void store.openReview()}
+                style={{ marginLeft: 'auto' }}
+                data-testid="new-task-btn"
+                onClick={() => store.setNewTaskOpen(true)}
               >
-                Review
+                + Task
               </button>
-            ) : null}
-            {task.state === 'INTERRUPTED' || task.state === 'FAILED' ? (
-              // M10 recovery: pick up where it stopped, inspect, or restore.
-              <>
-                <button
-                  className="btn primary"
-                  data-testid="task-resume"
-                  title="Start a new run for this task"
-                  onClick={() => void store.resumeTask()}
-                >
-                  Resume
-                </button>
-                <button
-                  className="btn"
-                  data-testid="review-open"
-                  title="Inspect what changed before deciding"
-                  onClick={() => void store.openReview()}
-                >
-                  Review
-                </button>
-                <ConfirmDangerButton
-                  label="Roll back…"
-                  confirmLabel="Confirm — roll back"
-                  testid="task-rollback"
-                  quiet
-                  title="Restore every touched file to its pre-task state"
-                  onConfirm={() => void store.rollbackTask()}
-                />
-              </>
-            ) : null}
-            <button
-              className="btn"
-              data-testid="replay-open"
-              title="Replay what the agent did, step by step"
-              onClick={() => store.openReplay()}
-            >
-              Replay
-            </button>
-            {running ? (
-              <button
-                className="btn danger"
-                data-testid="agent-stop"
-                onClick={() => void store.stop()}
-              >
-                Stop
-              </button>
-            ) : null}
+            </div>
           </>
         ) : (
-          <span style={{ flex: 1 }} className="text-muted">
-            No task selected
-          </span>
+          <>
+            <span className="text-muted">No task selected</span>
+            <button
+              className="btn primary"
+              data-testid="new-task-btn"
+              onClick={() => store.setNewTaskOpen(true)}
+            >
+              + Task
+            </button>
+          </>
         )}
-        <button
-          className="btn primary"
-          data-testid="new-task-btn"
-          onClick={() => store.setNewTaskOpen(true)}
-        >
-          + Task
-        </button>
       </div>
 
       {task ? (

@@ -98,4 +98,57 @@ test.describe('M3 workspace and editor', () => {
       await app.close();
     }
   });
+
+  test('agent edit refreshes an already-open clean model and review closes without Monaco errors', async () => {
+    const fixture = createTsSmallFixture();
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
+    });
+    const consoleErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+    try {
+      await page.getByTestId('tree-item-src').click();
+      await page.getByTestId('tree-item-src/index.ts').click();
+      const editor = page.locator('.monaco-editor').first();
+      await expect(editor).toContainText('add(2, 3)');
+
+      await page.getByTestId('new-task-btn').click();
+      await page.getByTestId('task-title').fill('Keep the open editor synchronized');
+      await page.getByTestId('task-goal').fill('[scenario:edit-basic] update the call');
+      await page.getByTestId('mode-auto').check();
+      await page.getByTestId('task-create-start').click();
+
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
+      await expect(page.getByTestId('agent-task-title')).toContainText(
+        'Keep the open editor synchronized',
+      );
+      await expect(editor).toContainText('add(3, 4)', { timeout: 15000 });
+      await expect(editor).not.toContainText('add(2, 3)');
+      await expect(page.getByTestId('conflict-bar')).toHaveCount(0);
+      await expect(page.getByTestId('status-dirty')).toHaveCount(0);
+
+      await page.getByTestId('review-open').click();
+      await expect(page.getByTestId('review-diff')).toBeVisible();
+      await expect(page.locator('[data-testid="review-diff"] .monaco-diff-editor')).toBeVisible({
+        timeout: 15000,
+      });
+      await page.getByTestId('review-close').click();
+      await expect(page.getByTestId('review-view')).toHaveCount(0);
+      await page.waitForTimeout(500);
+
+      expect(
+        consoleErrors.filter(
+          (message) =>
+            message.includes('Could not find source file: review://') ||
+            message.includes('TextModel got disposed before DiffEditorWidget model got reset'),
+        ),
+      ).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
 });

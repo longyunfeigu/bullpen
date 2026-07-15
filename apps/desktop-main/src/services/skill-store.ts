@@ -1,31 +1,46 @@
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
+  watch,
   writeFileSync,
+  type FSWatcher,
 } from 'node:fs';
-import { basename, join, resolve, sep } from 'node:path';
+import { createHash } from 'node:crypto';
+import { homedir } from 'node:os';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { productError, ProductFailure, type Logger } from '@pi-ide/foundation';
-import type { SkillDto } from '@pi-ide/ipc-contracts';
+import type { SkillDto, SkillSourceDto, SkillSourceKind } from '@pi-ide/ipc-contracts';
 
 /**
- * Managed skills store (ADR-0015). Skills are SKILL.md folders the user
- * explicitly imported; they live under appData/skills — the product NEVER
- * discovers skills inside project directories (AG-014 stays intact).
+ * Multi-source skill catalog (ADR-0015 + ADR-0019).
  *
- * Loading is auditable by construction: auto-invocation goes through the
- * `load_skill` gateway tool (recorded in the task timeline like every tool
- * call), and explicit `/skill:name` expansion is deterministic from this store.
+ * - Managed imports remain copied snapshots under appData/skills.
+ * - User-level Agent/Codex/Claude roots are discovered without copying.
+ * - Discovery is not trust: external skills stay unavailable to the model
+ *   until a skill or its source is explicitly trusted.
+ * - Project directories are never scanned implicitly (AG-014).
+ * - Watchers are only a latency optimization; periodic/full rescans are the
+ *   source of truth, so dropped file-system events cannot permanently desync.
  */
 
 const SKILL_FILE = 'SKILL.md';
+const STATE_FILE = 'skills.json';
 const MAX_FILES = 500;
 const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
+const MAX_DISCOVERY_DEPTH = 5;
+const MAX_DISCOVERED_SKILLS = 2_000;
 const READ_CAP = 256 * 1024;
+const WATCH_DEBOUNCE_MS = 450;
+const RECONCILE_MS = 45_000;
+const STALE_SCAN_MS = 2_000;
+const IGNORED_DISCOVERY_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.cache']);
 const SCRIPT_EXTS = new Set([
   '.sh',
   '.bash',
@@ -48,27 +63,61 @@ export interface SkillFrontmatter {
   explicitOnly: boolean;
 }
 
-/** Minimal YAML frontmatter parse — name/description/disable-model-invocation. */
+/**
+ * Parse the portable Agent Skills fields without evaluating arbitrary YAML.
+ * Supports quoted scalars plus YAML `|`/`>` block descriptions, which covers
+ * Claude/Codex skills while keeping the parser dependency-free and inert.
+ */
 export function parseSkillFrontmatter(content: string, fallbackName: string): SkillFrontmatter {
   let name = fallbackName;
   let description = '';
   let explicitOnly = false;
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
-  if (match) {
-    for (const line of match[1]!.split(/\r?\n/)) {
-      const kv = /^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/.exec(line);
-      if (!kv) continue;
-      const key = kv[1]!.toLowerCase();
-      const value = kv[2]!.trim().replace(/^['"]|['"]$/g, '');
-      if (key === 'name' && value) name = value;
-      else if (key === 'description') description = value;
-      else if (key === 'disable-model-invocation') explicitOnly = value === 'true';
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content);
+  if (!match) return { name, description, explicitOnly };
+
+  const lines = match[1]!.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    const kv = /^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/.exec(line);
+    if (!kv) continue;
+    const key = kv[1]!.toLowerCase();
+    let value = kv[2]!.trim();
+    if ((value === '|' || value === '>') && key === 'description') {
+      const folded = value === '>';
+      const block: string[] = [];
+      while (index + 1 < lines.length) {
+        const next = lines[index + 1]!;
+        if (next.trim() && !/^\s+/.test(next)) break;
+        index += 1;
+        block.push(next.replace(/^\s{1,4}/, ''));
+      }
+      value = folded ? block.join(' ').replace(/\s+/g, ' ').trim() : block.join('\n').trim();
+    } else {
+      value = unquoteYamlScalar(value);
     }
+    if (key === 'name' && value) name = value;
+    else if (key === 'description') description = value;
+    else if (key === 'disable-model-invocation') explicitOnly = value.toLowerCase() === 'true';
   }
   return { name, description, explicitOnly };
 }
 
-/** Slug = stable id + the `/skill:<slug>` command token. */
+function unquoteYamlScalar(value: string): string {
+  if (value.length < 2) return value;
+  const first = value[0];
+  const last = value[value.length - 1];
+  if (first === "'" && last === "'") return value.slice(1, -1).replace(/''/g, "'");
+  if (first === '"' && last === '"') {
+    try {
+      return JSON.parse(value) as string;
+    } catch {
+      return value.slice(1, -1);
+    }
+  }
+  return value;
+}
+
+/** Slug used for portable invocation names. */
 export function skillSlug(name: string): string {
   return (
     name
@@ -79,257 +128,802 @@ export function skillSlug(name: string): string {
   );
 }
 
-/** Strip the YAML frontmatter, keeping the instruction body. */
 function stripFrontmatter(content: string): string {
   return content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 }
 
-function walkFiles(root: string): string[] {
-  const out: string[] = [];
-  const visit = (dir: string, rel: string): void => {
-    let names: string[] = [];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      return;
-    }
-    for (const name of names.sort()) {
-      if (out.length >= MAX_FILES) return;
-      if (name === '.DS_Store' || name === '.git') continue;
-      const abs = join(dir, name);
-      const relPath = rel ? `${rel}/${name}` : name;
-      let stat;
-      try {
-        stat = statSync(abs);
-      } catch {
-        continue;
-      }
-      if (stat.isDirectory()) visit(abs, relPath);
-      else out.push(relPath);
-    }
-  };
-  visit(root, '');
-  return out;
+function isInside(root: string, target: string): boolean {
+  return target === root || target.startsWith(root + sep);
+}
+
+function shortHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 12);
 }
 
 function isScript(relPath: string): boolean {
-  const dot = relPath.lastIndexOf('.');
-  return dot >= 0 && SCRIPT_EXTS.has(relPath.slice(dot).toLowerCase());
+  return SCRIPT_EXTS.has(extname(relPath).toLowerCase());
 }
 
-/** One enabled skill as the gateway tool + prompts consume it. */
+function displayPath(path: string, home: string): string {
+  const absolute = resolve(path);
+  const homeAbsolute = resolve(home);
+  return isInside(homeAbsolute, absolute)
+    ? `~${absolute.slice(homeAbsolute.length).replaceAll(sep, '/')}`
+    : absolute;
+}
+
+interface SourceDefinition {
+  id: string;
+  label: string;
+  kind: SkillSourceKind;
+  root: string;
+  removable: boolean;
+  live: boolean;
+}
+
+interface SourcePolicy {
+  trusted: boolean;
+  autoEnableNew: boolean;
+}
+
+interface CustomSourceState {
+  id: string;
+  label: string;
+  path: string;
+}
+
+interface StoreState {
+  version: 2;
+  /** Per-skill override. Managed absent = on; external absent = source policy. */
+  enabled: Record<string, boolean>;
+  sourcePolicies: Record<string, SourcePolicy>;
+  customSources: CustomSourceState[];
+}
+
+interface FileWalkResult {
+  files: string[];
+  totalBytes: number;
+  latestMtimeMs: number;
+  unsafeLinks: string[];
+  truncated: boolean;
+  revisionParts: string[];
+}
+
+interface CatalogEntry {
+  id: string;
+  source: SourceDefinition;
+  root: string;
+  rootReal: string;
+  displayName: string;
+  baseName: string;
+  description: string;
+  explicitOnly: boolean;
+  files: string[];
+  scriptCount: number;
+  importedAt: string;
+  updatedAt: string;
+  revision: string;
+  status: 'ready' | 'invalid';
+  compatibility: 'compatible' | 'needs-review';
+  issues: string[];
+  dto?: SkillDto;
+}
+
 export interface SkillToolEntry {
   name: string;
   description: string;
   dir: string;
+  canonicalDir: string;
   explicitOnly: boolean;
+  revision: string;
+  source: string;
 }
 
-interface StoreState {
-  version: 1;
-  /** Per-skill enabled flag; absent = enabled (imports default to Auto). */
-  enabled: Record<string, boolean>;
+export interface SkillCatalogSnapshot {
+  skills: SkillDto[];
+  sources: SkillSourceDto[];
+}
+
+export interface SkillStoreOptions {
+  /** Tests default to managed-only; production opts into well-known home roots. */
+  discoverExternal?: boolean;
+  homeDir?: string;
+  onDidChange?: (event: { reason: string; revision: number }) => void;
 }
 
 export class SkillStore {
   private readonly stateFile: string;
+  private readonly home: string;
+  private readonly discoverExternal: boolean;
+  private readonly onDidChange: (event: { reason: string; revision: number }) => void;
+  private state: StoreState;
+  private entries: CatalogEntry[] = [];
+  private skillDtos: SkillDto[] = [];
+  private sourceDtos: SkillSourceDto[] = [];
+  private catalogSignature = '';
+  private catalogRevision = 0;
+  private lastScanAt = 0;
+  private scanning = false;
+  private watching = false;
+  private watchers = new Map<string, FSWatcher>();
+  private watchTimer: NodeJS.Timeout | null = null;
+  private reconcileTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly dir: string,
     private readonly logger: Logger,
+    options: SkillStoreOptions = {},
   ) {
     mkdirSync(dir, { recursive: true });
-    this.stateFile = join(dir, 'skills.json');
+    this.stateFile = join(dir, STATE_FILE);
+    this.home = resolve(options.homeDir ?? homedir());
+    this.discoverExternal = options.discoverExternal ?? false;
+    this.onDidChange = options.onDidChange ?? (() => undefined);
+    this.state = this.loadState();
+    this.rescan('startup', false);
   }
 
   private loadState(): StoreState {
     try {
-      const parsed = JSON.parse(readFileSync(this.stateFile, 'utf8')) as StoreState;
-      if (parsed && typeof parsed === 'object' && parsed.enabled) return parsed;
+      const parsed = JSON.parse(readFileSync(this.stateFile, 'utf8')) as Partial<StoreState> & {
+        enabled?: Record<string, boolean>;
+      };
+      if (parsed && typeof parsed === 'object') {
+        return {
+          version: 2,
+          enabled:
+            parsed.enabled && typeof parsed.enabled === 'object'
+              ? parsed.enabled
+              : Object.create(null),
+          sourcePolicies:
+            parsed.sourcePolicies && typeof parsed.sourcePolicies === 'object'
+              ? parsed.sourcePolicies
+              : Object.create(null),
+          customSources: Array.isArray(parsed.customSources)
+            ? parsed.customSources.filter((item): item is CustomSourceState =>
+                Boolean(
+                  item &&
+                  typeof item.id === 'string' &&
+                  typeof item.label === 'string' &&
+                  typeof item.path === 'string',
+                ),
+              )
+            : [],
+        };
+      }
     } catch {
-      // first run / unreadable state → defaults
+      // First run / unreadable state -> defaults. Catalog remains derived.
     }
-    return { version: 1, enabled: {} };
+    return { version: 2, enabled: {}, sourcePolicies: {}, customSources: [] };
   }
 
-  private saveState(state: StoreState): void {
+  private saveState(): void {
     const tmp = `${this.stateFile}.tmp`;
-    writeFileSync(tmp, JSON.stringify(state, null, 2));
+    writeFileSync(tmp, JSON.stringify(this.state, null, 2));
     cpSync(tmp, this.stateFile);
     rmSync(tmp, { force: true });
   }
 
-  private skillDir(id: string): string {
-    // ids are slugs we created — but never trust them as path segments blindly.
-    const safe = skillSlug(id);
-    return join(this.dir, safe);
+  private definitions(): SourceDefinition[] {
+    const sources: SourceDefinition[] = [
+      {
+        id: 'managed',
+        label: 'Charter Managed',
+        kind: 'managed',
+        root: resolve(this.dir),
+        removable: false,
+        live: false,
+      },
+    ];
+    if (this.discoverExternal) {
+      sources.push(
+        {
+          id: 'agents',
+          label: 'Agent Skills',
+          kind: 'agents',
+          root: join(this.home, '.agents', 'skills'),
+          removable: false,
+          live: true,
+        },
+        {
+          id: 'claude',
+          label: 'Claude Code',
+          kind: 'claude',
+          root: join(this.home, '.claude', 'skills'),
+          removable: false,
+          live: true,
+        },
+        {
+          id: 'codex',
+          label: 'Codex',
+          kind: 'codex',
+          root: join(this.home, '.codex', 'skills'),
+          removable: false,
+          live: true,
+        },
+      );
+    }
+    for (const custom of this.state.customSources) {
+      sources.push({
+        id: custom.id,
+        label: custom.label,
+        kind: 'custom',
+        root: resolve(custom.path),
+        removable: true,
+        live: true,
+      });
+    }
+    return sources;
   }
 
-  private readSkill(id: string, enabled: boolean): SkillDto | null {
-    const root = this.skillDir(id);
-    const skillFile = join(root, SKILL_FILE);
-    if (!existsSync(skillFile)) return null;
-    let content = '';
-    try {
-      content = readFileSync(skillFile, 'utf8');
-    } catch {
-      return null;
+  private policyFor(source: SourceDefinition): SourcePolicy {
+    if (source.kind === 'managed') return { trusted: true, autoEnableNew: true };
+    return this.state.sourcePolicies[source.id] ?? { trusted: false, autoEnableNew: false };
+  }
+
+  /** Start near-real-time watchers plus a reconciliation safety net. */
+  startWatching(): void {
+    if (this.watching) return;
+    this.watching = true;
+    this.refreshWatchers();
+    this.reconcileTimer = setInterval(() => this.rescan('periodic'), RECONCILE_MS);
+    this.reconcileTimer.unref();
+  }
+
+  dispose(): void {
+    this.watching = false;
+    if (this.watchTimer) clearTimeout(this.watchTimer);
+    if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+    this.watchTimer = null;
+    this.reconcileTimer = null;
+    for (const watcher of this.watchers.values()) watcher.close();
+    this.watchers.clear();
+  }
+
+  private scheduleRescan(): void {
+    if (this.watchTimer) clearTimeout(this.watchTimer);
+    this.watchTimer = setTimeout(() => {
+      this.watchTimer = null;
+      this.rescan('filesystem');
+    }, WATCH_DEBOUNCE_MS);
+    this.watchTimer.unref();
+  }
+
+  private refreshWatchers(): void {
+    if (!this.watching) return;
+    const desired = new Set<string>();
+    for (const source of this.definitions()) {
+      const target = existsSync(source.root) ? source.root : dirname(source.root);
+      if (!existsSync(target)) continue;
+      let canonical: string;
+      try {
+        canonical = realpathSync(target);
+      } catch {
+        continue;
+      }
+      desired.add(canonical);
+      if (this.watchers.has(canonical)) continue;
+      let watcher: FSWatcher;
+      try {
+        watcher = watch(canonical, { recursive: true }, () => this.scheduleRescan());
+      } catch {
+        try {
+          watcher = watch(canonical, () => this.scheduleRescan());
+        } catch (error) {
+          this.logger.warn('skill source watcher unavailable', {
+            source: source.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          continue;
+        }
+      }
+      watcher.on('error', (error) => {
+        this.logger.warn('skill source watcher failed', {
+          source: source.id,
+          error: error.message,
+        });
+        watcher.close();
+        this.watchers.delete(canonical);
+      });
+      this.watchers.set(canonical, watcher);
     }
-    const fm = parseSkillFrontmatter(content, id);
-    const files = walkFiles(root);
-    let importedAt = new Date(0).toISOString();
-    try {
-      importedAt = statSync(root).birthtime.toISOString();
-    } catch {
-      // keep epoch fallback
+    for (const [path, watcher] of this.watchers) {
+      if (desired.has(path)) continue;
+      watcher.close();
+      this.watchers.delete(path);
     }
+  }
+
+  /** Full source reconciliation. Events merely schedule this operation. */
+  rescan(reason = 'manual', emit = true): SkillCatalogSnapshot {
+    if (this.scanning) return this.snapshot();
+    this.scanning = true;
+    try {
+      const scannedAt = new Date().toISOString();
+      const definitions = this.definitions();
+      const entries: CatalogEntry[] = [];
+      const counts = new Map<string, number>();
+      for (const source of definitions) {
+        const roots = this.findSkillRoots(source);
+        counts.set(source.id, roots.length);
+        for (const root of roots) {
+          const entry = this.inspectSkill(source, root);
+          if (entry) entries.push(entry);
+        }
+      }
+      entries.sort(compareEntries);
+      this.applyRuntimeNames(entries);
+      this.entries = entries;
+      this.skillDtos = entries.flatMap((entry) => (entry.dto ? [entry.dto] : []));
+      this.sourceDtos = definitions.map((source) => {
+        const policy = this.policyFor(source);
+        return {
+          id: source.id,
+          label: source.label,
+          kind: source.kind,
+          path: displayPath(source.root, this.home),
+          available: isDirectory(source.root),
+          trusted: policy.trusted,
+          autoEnableNew: policy.autoEnableNew,
+          removable: source.removable,
+          live: source.live,
+          skillCount: counts.get(source.id) ?? 0,
+          lastScannedAt: scannedAt,
+        };
+      });
+      this.lastScanAt = Date.now();
+      const signature = createHash('sha256')
+        .update(
+          JSON.stringify({
+            skills: this.skillDtos.map((skill) => ({
+              id: skill.id,
+              name: skill.name,
+              enabled: skill.enabled,
+              revision: skill.revision,
+              status: skill.status,
+            })),
+            sources: this.sourceDtos.map((source) => ({
+              id: source.id,
+              available: source.available,
+              trusted: source.trusted,
+              autoEnableNew: source.autoEnableNew,
+              skillCount: source.skillCount,
+            })),
+          }),
+        )
+        .digest('hex');
+      if (signature !== this.catalogSignature) {
+        this.catalogSignature = signature;
+        this.catalogRevision += 1;
+        if (emit) this.onDidChange({ reason, revision: this.catalogRevision });
+      }
+      this.refreshWatchers();
+      return this.snapshot();
+    } finally {
+      this.scanning = false;
+    }
+  }
+
+  private rescanIfStale(): void {
+    if (Date.now() - this.lastScanAt > STALE_SCAN_MS) this.rescan('on-demand');
+  }
+
+  snapshot(): SkillCatalogSnapshot {
     return {
-      id,
-      name: skillSlug(fm.name),
-      description: fm.description,
-      enabled,
-      explicitOnly: fm.explicitOnly,
-      source: 'local',
-      files,
-      scriptCount: files.filter(isScript).length,
-      importedAt,
+      skills: this.skillDtos.map((skill) => ({
+        ...skill,
+        files: [...skill.files],
+        issues: [...skill.issues],
+      })),
+      sources: this.sourceDtos.map((source) => ({ ...source })),
     };
   }
 
   list(): SkillDto[] {
-    const state = this.loadState();
-    const out: SkillDto[] = [];
-    let ids: string[] = [];
-    try {
-      ids = readdirSync(this.dir).filter((name) => {
-        try {
-          return statSync(join(this.dir, name)).isDirectory();
-        } catch {
-          return false;
-        }
-      });
-    } catch {
-      return out;
-    }
-    for (const id of ids.sort()) {
-      const dto = this.readSkill(id, state.enabled[id] ?? true);
-      if (dto) out.push(dto);
-    }
-    return out;
+    this.rescanIfStale();
+    return this.snapshot().skills;
   }
 
-  /**
-   * Import a SKILL.md folder into the managed store (copy — the source stays
-   * untouched). Validates the folder before copying; oversized or script-bomb
-   * folders are rejected with a clear error.
-   */
+  sources(): SkillSourceDto[] {
+    this.rescanIfStale();
+    return this.snapshot().sources;
+  }
+
+  private findSkillRoots(source: SourceDefinition): string[] {
+    if (!isDirectory(source.root)) return [];
+    const roots: string[] = [];
+    const visited = new Set<string>();
+    const visit = (logicalDir: string, depth: number, isLinked = false): void => {
+      if (roots.length >= MAX_DISCOVERED_SKILLS || depth > MAX_DISCOVERY_DEPTH) return;
+      let real: string;
+      try {
+        real = realpathSync(logicalDir);
+      } catch {
+        return;
+      }
+      if (visited.has(real)) return;
+      visited.add(real);
+      if (existsSync(join(logicalDir, SKILL_FILE))) {
+        roots.push(logicalDir);
+        return; // Bundled references may themselves contain docs named SKILL.md.
+      }
+      // A linked child is treated as one skill root, never as an unbounded tree.
+      if (isLinked) return;
+      let names: string[];
+      try {
+        names = readdirSync(logicalDir).sort();
+      } catch {
+        return;
+      }
+      for (const name of names) {
+        if (roots.length >= MAX_DISCOVERED_SKILLS) return;
+        if (IGNORED_DISCOVERY_DIRS.has(name)) continue;
+        if (source.kind === 'managed' && name === '.snapshots') continue;
+        const child = join(logicalDir, name);
+        try {
+          const lst = lstatSync(child);
+          if (lst.isSymbolicLink()) {
+            if (statSync(child).isDirectory()) visit(child, depth + 1, true);
+          } else if (lst.isDirectory()) {
+            visit(child, depth + 1);
+          }
+        } catch {
+          // Concurrent source changes are reconciled on the next scan.
+        }
+      }
+    };
+    visit(source.root, 0);
+    return roots;
+  }
+
+  private inspectSkill(source: SourceDefinition, root: string): CatalogEntry | null {
+    let rootReal: string;
+    let content: string;
+    try {
+      rootReal = realpathSync(root);
+      const skillReal = realpathSync(join(root, SKILL_FILE));
+      if (!isInside(rootReal, skillReal)) return null;
+      content = readFileSync(skillReal, 'utf8');
+    } catch {
+      return null;
+    }
+    const relativePath = relative(source.root, root) || basename(root);
+    const fm = parseSkillFrontmatter(content, basename(root));
+    const walked = walkSkillFiles(root, rootReal);
+    const issues: string[] = [];
+    try {
+      const sourceReal = realpathSync(source.root);
+      if (!isInside(sourceReal, rootReal)) {
+        issues.push('Skill directory symlink resolves outside its trusted source root.');
+      }
+    } catch {
+      issues.push('Skill source is no longer available.');
+    }
+    if (walked.truncated || walked.files.length >= MAX_FILES) {
+      issues.push(`Skill contains ${MAX_FILES}+ files.`);
+    }
+    if (walked.totalBytes > MAX_TOTAL_BYTES) issues.push('Skill is larger than 20 MB.');
+    if (walked.unsafeLinks.length > 0) {
+      issues.push(`Symlink escapes the skill root: ${walked.unsafeLinks[0]}`);
+    }
+    if (!fm.description) issues.push('SKILL.md has no description.');
+    const status: 'ready' | 'invalid' = issues.some((issue) => !issue.includes('no description'))
+      ? 'invalid'
+      : 'ready';
+    const compatibility = detectCompatibility(content);
+    if (compatibility === 'needs-review') {
+      issues.push(
+        'Instructions reference agent-specific tools or integrations; review before use.',
+      );
+    }
+    const id =
+      source.kind === 'managed'
+        ? skillSlug(relativePath.split(sep)[0] ?? relativePath)
+        : `${source.id}-${shortHash(relativePath.replaceAll(sep, '/'))}`;
+    let importedAt = new Date(0).toISOString();
+    try {
+      importedAt = statSync(root).birthtime.toISOString();
+    } catch {
+      // Epoch fallback is deterministic for unusual file systems.
+    }
+    const updatedAt = new Date(walked.latestMtimeMs || 0).toISOString();
+    const revision = createHash('sha256')
+      .update(content)
+      .update('\0')
+      .update(walked.revisionParts.join('\0'))
+      .digest('hex');
+    return {
+      id,
+      source,
+      root: resolve(root),
+      rootReal,
+      displayName: fm.name,
+      baseName: skillSlug(fm.name),
+      description: fm.description,
+      explicitOnly: fm.explicitOnly,
+      files: walked.files,
+      scriptCount: walked.files.filter(isScript).length,
+      importedAt,
+      updatedAt,
+      revision,
+      status,
+      compatibility,
+      issues,
+    };
+  }
+
+  private applyRuntimeNames(entries: CatalogEntry[]): void {
+    const groups = new Map<string, CatalogEntry[]>();
+    for (const entry of entries) {
+      const list = groups.get(entry.baseName) ?? [];
+      list.push(entry);
+      groups.set(entry.baseName, list);
+    }
+    for (const entry of entries) {
+      const group = groups.get(entry.baseName)!;
+      const preferred = [...group].sort(compareEntries)[0]!;
+      const conflict = group.length > 1;
+      const runtimeName =
+        !conflict || preferred === entry
+          ? entry.baseName
+          : `${entry.baseName.slice(0, Math.max(1, 63 - entry.source.id.length))}@${entry.source.id}`;
+      const policy = this.policyFor(entry.source);
+      const defaultEnabled =
+        entry.source.kind === 'managed' ? true : policy.trusted && policy.autoEnableNew;
+      const desired = this.state.enabled[entry.id] ?? defaultEnabled;
+      const enabled = entry.status !== 'invalid' && policy.trusted && desired;
+      const issues = [...entry.issues];
+      if (conflict) {
+        issues.push(
+          preferred === entry
+            ? `Name conflict: this source keeps /skill:${entry.baseName}; other sources use qualified names.`
+            : `Name conflict: invoke this copy as /skill:${runtimeName}.`,
+        );
+      }
+      entry.dto = {
+        id: entry.id,
+        name: runtimeName,
+        displayName: entry.displayName,
+        description: entry.description,
+        enabled,
+        explicitOnly: entry.explicitOnly,
+        source: entry.source.kind,
+        sourceId: entry.source.id,
+        sourceLabel: entry.source.label,
+        sourcePath: displayPath(entry.root, this.home),
+        live: entry.source.live,
+        status: conflict && entry.status === 'ready' ? 'conflict' : entry.status,
+        compatibility: entry.compatibility,
+        issues,
+        revision: entry.revision,
+        files: [...entry.files],
+        scriptCount: entry.scriptCount,
+        importedAt: entry.importedAt,
+        updatedAt: entry.updatedAt,
+      };
+    }
+  }
+
   import(sourceDir: string): SkillDto {
     const src = resolve(sourceDir);
-    if (src === resolve(this.dir) || src.startsWith(resolve(this.dir) + sep)) {
+    if (isInside(resolve(this.dir), src)) {
       throw new ProductFailure(
         productError('SKILL_IMPORT_INVALID', {
           userMessage: 'That folder is already inside the managed skills store.',
         }),
       );
     }
-    const skillFile = join(src, SKILL_FILE);
-    if (!existsSync(skillFile)) {
+    const source: SourceDefinition = {
+      id: 'import-check',
+      label: 'Import',
+      kind: 'custom',
+      root: dirname(src),
+      removable: false,
+      live: true,
+    };
+    const inspected = existsSync(join(src, SKILL_FILE)) ? this.inspectSkill(source, src) : null;
+    if (!inspected) {
       throw new ProductFailure(
         productError('SKILL_IMPORT_INVALID', {
           userMessage: `The folder has no ${SKILL_FILE} — pick the skill's root folder.`,
         }),
       );
     }
-    const files = walkFiles(src);
-    if (files.length >= MAX_FILES) {
+    if (inspected.status === 'invalid') {
       throw new ProductFailure(
         productError('SKILL_IMPORT_TOO_LARGE', {
-          userMessage: `The folder has ${MAX_FILES}+ files — that does not look like a skill.`,
+          userMessage: inspected.issues[0] ?? 'The skill failed validation.',
         }),
       );
     }
-    let total = 0;
-    for (const rel of files) {
-      try {
-        total += statSync(join(src, rel)).size;
-      } catch {
-        // unreadable entries are skipped by the copy too
-      }
-    }
-    if (total > MAX_TOTAL_BYTES) {
-      throw new ProductFailure(
-        productError('SKILL_IMPORT_TOO_LARGE', {
-          userMessage: 'The folder is larger than 20 MB — that does not look like a skill.',
-        }),
-      );
-    }
-    const fm = parseSkillFrontmatter(readFileSync(skillFile, 'utf8'), basename(src));
-    let id = skillSlug(fm.name);
+    let id = inspected.baseName;
     let suffix = 2;
-    while (existsSync(this.skillDir(id))) {
-      id = `${skillSlug(fm.name)}-${suffix}`;
+    while (existsSync(join(this.dir, id))) {
+      id = `${inspected.baseName}-${suffix}`;
       suffix += 1;
     }
-    cpSync(src, this.skillDir(id), { recursive: true });
-    this.logger.info('skill imported', { id, files: files.length, scripts: fm.explicitOnly });
-    const dto = this.readSkill(id, true);
+    // Import is deliberately a snapshot: dereference safe in-root links.
+    cpSync(src, join(this.dir, id), { recursive: true, dereference: true });
+    this.logger.info('skill imported', { id, files: inspected.files.length });
+    this.rescan('import');
+    const dto = this.skillDtos.find((skill) => skill.id === id);
     if (!dto) {
       throw new ProductFailure(
         productError('SKILL_IMPORT_INVALID', { userMessage: 'The skill could not be imported.' }),
       );
     }
-    return dto;
+    return { ...dto };
+  }
+
+  addSource(sourceDir: string): SkillSourceDto {
+    const src = resolve(sourceDir);
+    if (!isDirectory(src)) {
+      throw new ProductFailure(
+        productError('SKILL_SOURCE_INVALID', {
+          userMessage: 'That skill source folder is missing.',
+        }),
+      );
+    }
+    const canonical = realpathSync(src);
+    if (isInside(resolve(this.dir), canonical) || isInside(canonical, resolve(this.dir))) {
+      throw new ProductFailure(
+        productError('SKILL_SOURCE_INVALID', {
+          userMessage: 'The managed skills library cannot also be connected as an external source.',
+        }),
+      );
+    }
+    const duplicate = this.definitions().find((source) => {
+      try {
+        return realpathSync(source.root) === canonical;
+      } catch {
+        return false;
+      }
+    });
+    if (duplicate) {
+      const existing = this.sourceDtos.find((source) => source.id === duplicate.id);
+      if (existing) return { ...existing };
+    }
+    const id = `custom-${shortHash(canonical)}`;
+    this.state.customSources.push({
+      id,
+      label: basename(canonical) || 'Custom Skills',
+      path: canonical,
+    });
+    this.state.sourcePolicies[id] = { trusted: false, autoEnableNew: false };
+    this.saveState();
+    this.rescan('source-added');
+    const source = this.sourceDtos.find((item) => item.id === id);
+    if (!source) {
+      throw new ProductFailure(
+        productError('SKILL_SOURCE_INVALID', { userMessage: 'The source could not be connected.' }),
+      );
+    }
+    return { ...source };
+  }
+
+  removeSource(id: string): boolean {
+    const index = this.state.customSources.findIndex((source) => source.id === id);
+    if (index < 0) return false;
+    this.state.customSources.splice(index, 1);
+    delete this.state.sourcePolicies[id];
+    for (const key of Object.keys(this.state.enabled)) {
+      if (key.startsWith(`${id}-`)) delete this.state.enabled[key];
+    }
+    this.saveState();
+    this.rescan('source-removed');
+    return true;
+  }
+
+  setSourcePolicy(
+    id: string,
+    patch: { trusted?: boolean; autoEnableNew?: boolean },
+  ): SkillSourceDto {
+    const source = this.definitions().find((item) => item.id === id);
+    if (!source) {
+      throw new ProductFailure(
+        productError('SKILL_SOURCE_NOT_FOUND', {
+          userMessage: 'This skill source no longer exists.',
+        }),
+      );
+    }
+    if (source.kind === 'managed') return this.sourceDtos.find((item) => item.id === id)!;
+    const current = this.policyFor(source);
+    const trusted = patch.trusted ?? current.trusted;
+    const autoEnableNew = trusted ? (patch.autoEnableNew ?? current.autoEnableNew) : false;
+    this.state.sourcePolicies[id] = { trusted, autoEnableNew };
+    this.saveState();
+    this.rescan('source-policy');
+    return { ...this.sourceDtos.find((item) => item.id === id)! };
   }
 
   remove(id: string): boolean {
-    const root = this.skillDir(id);
-    const existed = existsSync(join(root, SKILL_FILE));
-    rmSync(root, { recursive: true, force: true });
-    const state = this.loadState();
-    delete state.enabled[skillSlug(id)];
-    this.saveState(state);
+    const entry = this.entries.find((item) => item.id === id);
+    if (!entry) return false;
+    if (entry.source.kind !== 'managed') {
+      throw new ProductFailure(
+        productError('SKILL_EXTERNAL_OWNED', {
+          userMessage: 'This is a linked skill. Disable it or disconnect its source instead.',
+        }),
+      );
+    }
+    const existed = existsSync(join(entry.root, SKILL_FILE));
+    rmSync(entry.root, { recursive: true, force: true });
+    delete this.state.enabled[id];
+    this.saveState();
+    this.rescan('remove');
     if (existed) this.logger.info('skill removed', { id });
     return existed;
   }
 
   setEnabled(id: string, enabled: boolean): SkillDto {
-    const safe = skillSlug(id);
-    const state = this.loadState();
-    state.enabled[safe] = enabled;
-    this.saveState(state);
-    const dto = this.readSkill(safe, enabled);
+    const entry = this.entries.find((item) => item.id === id);
+    if (!entry || !entry.dto) {
+      throw new ProductFailure(
+        productError('SKILL_NOT_FOUND', { userMessage: 'This skill no longer exists on disk.' }),
+      );
+    }
+    if (enabled && entry.status === 'invalid') {
+      throw new ProductFailure(
+        productError('SKILL_INVALID', {
+          userMessage: entry.issues[0] ?? 'This skill failed validation and cannot be enabled.',
+        }),
+      );
+    }
+    if (enabled && entry.source.kind !== 'managed') {
+      const current = this.policyFor(entry.source);
+      this.state.sourcePolicies[entry.source.id] = { ...current, trusted: true };
+    }
+    this.state.enabled[id] = enabled;
+    this.saveState();
+    this.rescan('skill-policy');
+    const dto = this.skillDtos.find((skill) => skill.id === id);
     if (!dto) {
       throw new ProductFailure(
         productError('SKILL_NOT_FOUND', { userMessage: 'This skill no longer exists on disk.' }),
       );
     }
-    this.logger.info('skill toggled', { id: safe, enabled });
-    return dto;
+    this.logger.info('skill toggled', { id, enabled, source: entry.source.id });
+    return { ...dto };
   }
 
-  /** Audit view / load_skill: read one bundled file, traversal-guarded. */
+  /** Audit view. Actual path containment follows symlinks before the read. */
   readFile(id: string, relPath = SKILL_FILE): { path: string; content: string; binary: boolean } {
-    const root = resolve(this.skillDir(id));
-    const abs = resolve(root, relPath);
-    if (abs !== root && !abs.startsWith(root + sep)) {
+    this.rescan('audit-demand');
+    const entry = this.entries.find((item) => item.id === id);
+    if (!entry) {
+      throw new ProductFailure(
+        productError('SKILL_NOT_FOUND', { userMessage: 'This skill no longer exists on disk.' }),
+      );
+    }
+    const logical = resolve(entry.root, relPath);
+    if (!isInside(resolve(entry.root), logical)) {
       throw new ProductFailure(
         productError('SKILL_PATH_OUTSIDE', {
           userMessage: 'That path is outside the skill folder.',
         }),
       );
     }
+    let actual: string;
     let raw: Buffer;
     try {
-      raw = readFileSync(abs);
-    } catch {
+      actual = realpathSync(logical);
+      if (!isInside(entry.rootReal, actual)) throw new Error('outside');
+      raw = readFileSync(actual);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'outside') {
+        throw new ProductFailure(
+          productError('SKILL_PATH_OUTSIDE', {
+            userMessage: 'That linked file resolves outside the skill folder.',
+          }),
+        );
+      }
       throw new ProductFailure(
         productError('SKILL_FILE_NOT_FOUND', {
           userMessage: `${relPath} does not exist in this skill.`,
         }),
       );
     }
-    const head = raw.subarray(0, 8192);
-    const binary = head.includes(0);
+    const binary = raw.subarray(0, 8192).includes(0);
     return {
       path: relPath,
       content: binary ? '' : raw.subarray(0, READ_CAP).toString('utf8'),
@@ -337,31 +931,34 @@ export class SkillStore {
     };
   }
 
-  /** Enabled skills for the gateway tool + preamble (dir = absolute store path). */
   enabledSkills(): SkillToolEntry[] {
-    return this.list()
-      .filter((s) => s.enabled)
-      .map((s) => ({
-        name: s.name,
-        description: s.description,
-        dir: this.skillDir(s.id),
-        explicitOnly: s.explicitOnly,
-      }));
+    // Runtime demand is an explicit consistency boundary. Watchers make this
+    // cheap in the common case, while this scan guarantees the revision and
+    // enablement offered to load_skill are current even after a dropped event.
+    this.rescan('runtime-demand');
+    return this.entries.flatMap((entry) => {
+      const dto = entry.dto;
+      if (!dto?.enabled || dto.status === 'invalid') return [];
+      return [
+        {
+          name: dto.name,
+          description: dto.description,
+          dir: entry.root,
+          canonicalDir: entry.rootReal,
+          explicitOnly: dto.explicitOnly,
+          revision: dto.revision,
+          source: dto.sourceLabel,
+        },
+      ];
+    });
   }
 
-  /**
-   * `<available_skills>` block for the session preamble. Lists enabled skills
-   * the model may auto-invoke (explicit-only skills are excluded — SKILL.md
-   * frontmatter `disable-model-invocation`, honored per the Agent Skills
-   * standard). The model loads a skill through the `load_skill` gateway tool,
-   * so every load is recorded in the task timeline (AG-014 auditability).
-   */
   preambleBlock(): string {
-    const visible = this.enabledSkills().filter((s) => !s.explicitOnly);
+    const visible = this.enabledSkills().filter((skill) => !skill.explicitOnly);
     if (visible.length === 0) return '';
     const lines = [
       'The following skills provide specialized instructions for specific tasks.',
-      "When a task matches a skill's description, call the load_skill tool with its name to get its full instructions before proceeding. Load bundled reference files the instructions mention with load_skill too (name + file).",
+      "When a task matches a skill's description, call load_skill with its exact name before proceeding. Load referenced bundled files with load_skill too.",
       '<available_skills>',
     ];
     for (const skill of visible) {
@@ -369,6 +966,7 @@ export class SkillStore {
         '  <skill>',
         `    <name>${escapeXml(skill.name)}</name>`,
         `    <description>${escapeXml(skill.description)}</description>`,
+        `    <revision>${skill.revision.slice(0, 12)}</revision>`,
         '  </skill>',
       );
     }
@@ -376,15 +974,10 @@ export class SkillStore {
     return lines.join('\n');
   }
 
-  /**
-   * Explicit invocation: expand a leading `/skill:name [args…]` into the
-   * skill's instruction body (mirrors the pi CLI's expansion format so skills
-   * behave identically). Unknown/disabled skills pass through unchanged.
-   */
   expandCommand(text: string): string {
-    const match = /^\/skill:([A-Za-z0-9-_]+)[ \t]?/.exec(text);
+    const match = /^\/skill:([A-Za-z0-9_@-]+)[ \t]?/.exec(text);
     if (!match) return text;
-    const skill = this.enabledSkills().find((s) => s.name === skillSlug(match[1]!));
+    const skill = this.enabledSkills().find((item) => item.name === match[1]!.toLowerCase());
     if (!skill) return text;
     let body: string;
     try {
@@ -393,13 +986,116 @@ export class SkillStore {
       return text;
     }
     const args = text.slice(match[0].length).trim();
-    const block = `<skill name="${skill.name}">\nLoad bundled files this skill references with the load_skill tool (name + file).\n\n${body}\n</skill>`;
+    const block = `<skill name="${skill.name}">\nRevision: ${skill.revision.slice(0, 12)}. Load bundled files this skill references with load_skill (name + file).\n\n${body}\n</skill>`;
     return args ? `${block}\n\n${args}` : block;
   }
 }
 
-function escapeXml(str: string): string {
-  return str
+function walkSkillFiles(root: string, rootReal: string): FileWalkResult {
+  const out: FileWalkResult = {
+    files: [],
+    totalBytes: 0,
+    latestMtimeMs: 0,
+    unsafeLinks: [],
+    truncated: false,
+    revisionParts: [],
+  };
+  const visited = new Set<string>();
+  const visit = (logicalDir: string, relDir: string): void => {
+    if (out.files.length >= MAX_FILES) {
+      out.truncated = true;
+      return;
+    }
+    let realDir: string;
+    try {
+      realDir = realpathSync(logicalDir);
+    } catch {
+      return;
+    }
+    if (!isInside(rootReal, realDir) || visited.has(realDir)) return;
+    visited.add(realDir);
+    let names: string[];
+    try {
+      names = readdirSync(logicalDir).sort();
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (out.files.length >= MAX_FILES) {
+        out.truncated = true;
+        return;
+      }
+      if (name === '.DS_Store' || name === '.git') continue;
+      const logical = join(logicalDir, name);
+      const rel = relDir ? `${relDir}/${name}` : name;
+      try {
+        const lst = lstatSync(logical);
+        let actual = logical;
+        if (lst.isSymbolicLink()) {
+          actual = realpathSync(logical);
+          if (!isInside(rootReal, actual)) {
+            out.unsafeLinks.push(rel);
+            continue;
+          }
+        }
+        const stat = statSync(actual);
+        if (stat.isDirectory()) {
+          if (lst.isSymbolicLink() && visited.has(realpathSync(actual))) {
+            out.unsafeLinks.push(`${rel} (directory link cycle/alias)`);
+            continue;
+          }
+          visit(logical, rel);
+        } else if (stat.isFile()) {
+          out.files.push(rel);
+          out.totalBytes += stat.size;
+          out.latestMtimeMs = Math.max(out.latestMtimeMs, stat.mtimeMs);
+          out.revisionParts.push(`${rel}:${stat.size}:${Math.trunc(stat.mtimeMs)}`);
+        }
+      } catch {
+        // Source changed during scan; the next reconciliation settles it.
+      }
+    }
+  };
+  visit(root, '');
+  return out;
+}
+
+function detectCompatibility(content: string): 'compatible' | 'needs-review' {
+  const agentSpecific = [
+    /\bWebSearch\b/,
+    /\bmcp__[A-Za-z0-9_-]+/,
+    /\bClaude Code\b/i,
+    /\bCodex (?:manual|MCP|plugin)\b/i,
+    /\bTask\s*\(.*subagent/i,
+  ];
+  return agentSpecific.some((pattern) => pattern.test(content)) ? 'needs-review' : 'compatible';
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function compareEntries(a: CatalogEntry, b: CatalogEntry): number {
+  const priority: Record<SkillSourceKind, number> = {
+    managed: 0,
+    custom: 1,
+    agents: 2,
+    claude: 3,
+    codex: 4,
+  };
+  return (
+    priority[a.source.kind] - priority[b.source.kind] ||
+    a.baseName.localeCompare(b.baseName) ||
+    a.root.localeCompare(b.root)
+  );
+}
+
+function escapeXml(value: string): string {
+  return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

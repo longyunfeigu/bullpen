@@ -109,11 +109,35 @@ export interface ContextAttachment {
   content?: string;
 }
 
+/** A completed, user-visible turn copied from another task. Tool calls,
+ * reasoning, system messages and transient streaming state are intentionally
+ * excluded from referenced conversation context. */
+export interface PriorConversationTurn {
+  role: 'user' | 'assistant';
+  text: string;
+  at: string;
+}
+
+/** Immutable snapshot captured when a task references an earlier conversation. */
+export interface PriorConversationContext {
+  sourceTaskId: string;
+  title: string;
+  projectName: string;
+  projectPath: string;
+  turns: PriorConversationTurn[];
+  /** Current net unified diff from the source task at capture time. */
+  latestDiff: string | null;
+  capturedAt: string;
+}
+
 export interface StartRunInput {
   sessionRef: RuntimeSessionRef;
   runId: string;
   prompt: string;
   contextAttachments?: ContextAttachment[];
+  /** Up to three untrusted background conversations. Runtimes must preserve
+   * turn boundaries so normal context compaction can operate on them. */
+  priorConversations?: PriorConversationContext[];
 }
 
 export interface VisibleMessage {

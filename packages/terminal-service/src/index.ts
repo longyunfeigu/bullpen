@@ -9,6 +9,12 @@ export interface TerminalInfo {
   shell: string;
   pid: number;
   cwd: string;
+  projectName: string;
+  projectPath: string | null;
+  contextKind: 'focused' | 'recent' | 'task' | 'scratch';
+  contextLabel: string;
+  contextTaskId: string | null;
+  launch: 'shell' | 'claude' | 'codex';
 }
 
 export interface CreateTerminalOptions {
@@ -17,12 +23,19 @@ export interface CreateTerminalOptions {
   cols?: number;
   rows?: number;
   scrollback?: number;
+  projectName?: string;
+  projectPath?: string | null;
+  contextKind?: 'focused' | 'recent' | 'task' | 'scratch';
+  contextLabel?: string;
+  contextTaskId?: string | null;
+  launch?: 'shell' | 'claude' | 'codex';
 }
 
 interface Session {
   info: TerminalInfo;
   pty: IPty;
   tracker: AgentStateTracker;
+  recentData: string;
 }
 
 // ---------- external agent CLI detection (ADR-0017) ----------
@@ -210,6 +223,7 @@ export function hasChildProcesses(pid: number): boolean {
 /** User terminal sessions (separate security domain from agent commands, TERM-005). */
 export class TerminalManager {
   private readonly sessions = new Map<string, Session>();
+  private readonly dataListeners = new Set<(info: { id: string; data: string }) => void>();
   private readonly agentListeners = new Set<
     (info: { id: string; agent: string | null; cwd: string }) => void
   >();
@@ -247,9 +261,32 @@ export class TerminalManager {
     return () => this.agentListeners.delete(listener);
   }
 
+  /**
+   * Subscribe to the exact PTY stream. The renderer still receives the
+   * original callback; this second fan-out lets accountable external-agent
+   * sessions persist a bounded replay without coupling TerminalManager to the
+   * task database.
+   */
+  onDataEvent(listener: (info: { id: string; data: string }) => void): () => void {
+    this.dataListeners.add(listener);
+    return () => this.dataListeners.delete(listener);
+  }
+
+  private emitData(id: string, data: string): void {
+    const session = this.sessions.get(id);
+    if (session) session.recentData = `${session.recentData}${data}`.slice(-64 * 1024);
+    this.onData(id, data);
+    for (const listener of this.dataListeners) listener({ id, data });
+  }
+
   /** Current agent CLI running in a terminal, if any. */
   agentFor(id: string): string | null {
     return this.sessions.get(id)?.tracker.agent ?? null;
+  }
+
+  /** Small in-memory lead-in so session detection cannot miss fast JSON init events. */
+  recentData(id: string): string {
+    return this.sessions.get(id)?.recentData ?? '';
   }
 
   /** One detection sample across all sessions (interval-driven; public for tests). */
@@ -300,15 +337,21 @@ export class TerminalManager {
       shell,
       pid: pty.pid,
       cwd: options.cwd,
+      projectName: options.projectName ?? basename(options.cwd),
+      projectPath: options.projectPath ?? null,
+      contextKind: options.contextKind ?? 'focused',
+      contextLabel: options.contextLabel ?? options.projectName ?? basename(options.cwd),
+      contextTaskId: options.contextTaskId ?? null,
+      launch: options.launch ?? 'shell',
     };
-    pty.onData((data) => this.onData(id, data));
+    pty.onData((data) => this.emitData(id, data));
     pty.onExit(({ exitCode }) => {
       const session = this.sessions.get(id);
       this.sessions.delete(id);
       this.fireAgentExitIfActive(id, session);
       this.onExit(id, exitCode);
     });
-    this.sessions.set(id, { info, pty, tracker: new AgentStateTracker() });
+    this.sessions.set(id, { info, pty, tracker: new AgentStateTracker(), recentData: '' });
     return info;
   }
 
@@ -377,6 +420,7 @@ export class TerminalManager {
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = null;
     this.disposeAll();
+    this.dataListeners.clear();
     this.agentListeners.clear();
   }
 }

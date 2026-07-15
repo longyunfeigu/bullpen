@@ -24,7 +24,9 @@ import { GitService } from '@pi-ide/git-service';
 import { VerificationService } from '@pi-ide/verification-service';
 import type { AgentMode } from '@pi-ide/agent-contract';
 import type { WorkspaceHost } from './workspace-host.js';
+import { toDto } from './workspace-host.js';
 import type { SettingsService } from './settings-service.js';
+import { broadcast } from '../broadcast.js';
 import type { AppPaths } from '../app-paths.js';
 import { workspaceDataDir } from '../app-paths.js';
 import { SqliteChangeRepo } from '../ipc/m5-handlers.js';
@@ -178,6 +180,12 @@ export class ProjectContexts {
       blobs,
       repo: new SqliteChangeRepo(this.db),
       documents,
+      // Agent/task writes to an open file bypass the fs-watcher broadcast:
+      // DocumentStore marks its atomic save as an own write. Notify the
+      // renderer directly so an already-open clean Monaco model cannot lag.
+      onDidWriteOpenDocument: (document) => {
+        broadcast('doc.changedExternally', { doc: toDto(document) });
+      },
     });
 
     const contextRef: { current: ProjectContext | null } = { current: null };

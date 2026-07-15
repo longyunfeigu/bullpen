@@ -211,4 +211,26 @@ CREATE INDEX idx_tasks_updated ON tasks(updated_at);
 ALTER TABLE tasks ADD COLUMN external_json TEXT;
 `,
   },
+  {
+    version: 4,
+    name: 'task-conversation-references',
+    // Snapshot referenced conversations at task creation so a queued start is
+    // reproducible even if the source task continues or is later archived.
+    up: `
+CREATE TABLE task_conversation_references (
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  position INTEGER NOT NULL,
+  source_task_id TEXT NOT NULL REFERENCES tasks(id),
+  source_title TEXT NOT NULL,
+  source_project_name TEXT NOT NULL,
+  source_project_path TEXT NOT NULL,
+  turns_json TEXT NOT NULL,
+  latest_diff TEXT,
+  captured_at TEXT NOT NULL,
+  PRIMARY KEY (task_id, position)
+);
+CREATE INDEX idx_task_conversation_refs_source
+  ON task_conversation_references(source_task_id);
+`,
+  },
 ];

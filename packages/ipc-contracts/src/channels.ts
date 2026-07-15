@@ -19,7 +19,7 @@ import {
 } from './agent-dto.js';
 import { ActivityItemSchema } from './activity.js';
 import { ProviderApiSchema, ProviderInfoSchema } from './providers.js';
-import { SkillDtoSchema } from './skills.js';
+import { SkillDtoSchema, SkillSourceDtoSchema } from './skills.js';
 
 const SettingsStateSchema = z.object({
   effective: SettingsSchema,
@@ -349,12 +349,22 @@ export const CHANNELS = {
   ),
   'terminal.create': ch(
     'terminal.create',
-    1,
+    2,
     z
       .object({
-        cwd: z.string().optional(),
-        /** Open in this task's isolated worktree (path resolved host-side). */
+        /** Legacy task shortcut; still host-resolved and never an absolute renderer path. */
         taskId: z.string().optional(),
+        /** The terminal owns this context independently from the focused editor workspace. */
+        context: z
+          .discriminatedUnion('kind', [
+            z.object({ kind: z.literal('focused') }).strict(),
+            z.object({ kind: z.literal('recent'), projectPath: z.string().min(1) }).strict(),
+            z.object({ kind: z.literal('task'), taskId: z.string().min(1) }).strict(),
+            z.object({ kind: z.literal('scratch') }).strict(),
+          ])
+          .optional(),
+        /** Fixed host-owned launch presets; arbitrary commands still go through terminal.write. */
+        launch: z.enum(['shell', 'claude', 'codex']).default('shell'),
       })
       .strict(),
     z.object({
@@ -362,6 +372,13 @@ export const CHANNELS = {
       title: z.string(),
       shell: z.string(),
       pid: z.number(),
+      cwd: z.string(),
+      projectName: z.string(),
+      projectPath: z.string().nullable(),
+      contextKind: z.enum(['focused', 'recent', 'task', 'scratch']),
+      contextLabel: z.string(),
+      contextTaskId: z.string().nullable(),
+      launch: z.enum(['shell', 'claude', 'codex']),
     }),
   ),
   'terminal.write': ch(
@@ -384,11 +401,23 @@ export const CHANNELS = {
   ),
   'terminal.list': ch(
     'terminal.list',
-    1,
+    2,
     z.object({}).strict(),
     z.object({
       items: z.array(
-        z.object({ id: z.string(), title: z.string(), shell: z.string(), pid: z.number() }),
+        z.object({
+          id: z.string(),
+          title: z.string(),
+          shell: z.string(),
+          pid: z.number(),
+          cwd: z.string(),
+          projectName: z.string(),
+          projectPath: z.string().nullable(),
+          contextKind: z.enum(['focused', 'recent', 'task', 'scratch']),
+          contextLabel: z.string(),
+          contextTaskId: z.string().nullable(),
+          launch: z.enum(['shell', 'claude', 'codex']),
+        }),
       ),
     }),
   ),
@@ -405,6 +434,7 @@ export const CHANNELS = {
           cli: z.string(),
           snapshotRef: z.string().nullable(),
           status: z.enum(['active', 'ended']),
+          captureGrade: z.enum(['structured', 'observed']),
           files: z.array(
             z.object({
               path: z.string(),
@@ -416,6 +446,13 @@ export const CHANNELS = {
         }),
       ),
     }),
+  ),
+  /** Resume a known external CLI in a product-selected terminal. */
+  'external.resumeSession': ch(
+    'external.resumeSession',
+    1,
+    z.object({ taskId: z.string(), terminalId: z.string() }).strict(),
+    z.object({ terminalId: z.string(), cli: z.string() }),
   ),
   'git.status': ch(
     'git.status',
@@ -515,6 +552,8 @@ export const CHANNELS = {
         isolation: z.enum(['none', 'worktree']).default('none'),
         /** Optional command run once inside a fresh worktree (deps, codegen…). */
         worktreeSetup: z.string().max(1000).optional(),
+        /** Codex-style @conversation references, resolved and snapshotted host-side. */
+        conversationRefTaskIds: z.array(z.string().min(1).max(200)).max(3).default([]),
       })
       .strict(),
     z.object({ task: TaskDtoSchema }),
@@ -756,6 +795,20 @@ export const CHANNELS = {
         .nullable(),
     }),
   ),
+  'task.changeEvidence': ch(
+    'task.changeEvidence',
+    1,
+    z.object({ taskId: z.string(), changeId: z.string() }).strict(),
+    z.object({
+      evidence: z
+        .object({
+          beforeText: z.string().nullable(),
+          afterText: z.string().nullable(),
+          binary: z.boolean(),
+        })
+        .nullable(),
+    }),
+  ),
   'workspace.relativize': ch(
     'workspace.relativize',
     1,
@@ -835,12 +888,18 @@ export const CHANNELS = {
     z.object({}).strict(),
     z.object({ items: z.array(ProviderInfoSchema) }),
   ),
-  // ---- Skills (ADR-0015): managed store, never scans project dirs (AG-014) ----
+  // ---- Skills (ADR-0015/0019): managed + trusted external sources ----
   'skills.list': ch(
     'skills.list',
+    2,
+    z.object({}).strict(),
+    z.object({ skills: z.array(SkillDtoSchema), sources: z.array(SkillSourceDtoSchema) }),
+  ),
+  'skills.rescan': ch(
+    'skills.rescan',
     1,
     z.object({}).strict(),
-    z.object({ skills: z.array(SkillDtoSchema) }),
+    z.object({ skills: z.array(SkillDtoSchema), sources: z.array(SkillSourceDtoSchema) }),
   ),
   // Opens a native folder picker in main and imports the chosen SKILL.md
   // folder; returns null when cancelled. `dir` skips the picker (drag-drop
@@ -850,6 +909,32 @@ export const CHANNELS = {
     1,
     z.object({ dir: z.string().min(1).max(2000).optional() }).strict(),
     z.object({ skill: SkillDtoSchema.nullable() }),
+  ),
+  // Connect a root containing one or more SKILL.md folders without copying it.
+  'skills.addSource': ch(
+    'skills.addSource',
+    1,
+    z.object({ dir: z.string().min(1).max(2000).optional() }).strict(),
+    z.object({ source: SkillSourceDtoSchema.nullable() }),
+  ),
+  'skills.removeSource': ch(
+    'skills.removeSource',
+    1,
+    z.object({ id: z.string().min(1).max(200) }).strict(),
+    z.object({ removed: z.boolean() }),
+  ),
+  'skills.setSourcePolicy': ch(
+    'skills.setSourcePolicy',
+    1,
+    z
+      .object({
+        id: z.string().min(1).max(200),
+        trusted: z.boolean().optional(),
+        autoEnableNew: z.boolean().optional(),
+      })
+      .strict()
+      .refine((value) => value.trusted !== undefined || value.autoEnableNew !== undefined),
+    z.object({ source: SkillSourceDtoSchema }),
   ),
   'skills.remove': ch(
     'skills.remove',

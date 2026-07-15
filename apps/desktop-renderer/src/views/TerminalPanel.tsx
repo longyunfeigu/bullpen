@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { Terminal } from '@xterm/xterm';
+import type { RecentWorkspaceDto } from '@pi-ide/ipc-contracts';
+import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
@@ -8,13 +9,36 @@ import { onEvent, rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useExternalStore } from '../store/externalStore.js';
+import { useTaskStore } from '../store/taskStore.js';
+import { Ic } from './home-icons.js';
 
-interface TermInstance {
+export type TerminalLaunch = 'shell' | 'claude' | 'codex';
+export type TerminalWorkingContext =
+  | { kind: 'focused' }
+  | { kind: 'recent'; projectPath: string }
+  | { kind: 'task'; taskId: string }
+  | { kind: 'scratch' };
+
+export interface TermInstance {
   id: string;
   title: string;
   term: Terminal;
   fit: FitAddon;
   exited: boolean;
+  cwd: string;
+  projectName: string;
+  projectPath: string | null;
+  contextKind: 'focused' | 'recent' | 'task' | 'scratch';
+  contextLabel: string;
+  contextTaskId: string | null;
+  launch: TerminalLaunch;
+}
+
+interface CreateTerminalRequest {
+  taskId?: string;
+  title?: string;
+  context?: TerminalWorkingContext;
+  launch?: TerminalLaunch;
 }
 
 interface TerminalStore {
@@ -23,12 +47,184 @@ interface TerminalStore {
   pendingKill: string | null;
   initialized: boolean;
   init(): void;
-  create(options?: { taskId?: string; title?: string }): Promise<void>;
+  create(options?: CreateTerminalRequest): Promise<string | null>;
   setActive(id: string): void;
   requestKill(id: string): Promise<void>;
   confirmKill(id: string, confirmed: boolean): Promise<void>;
   rename(id: string, title: string): void;
   clearActive(): void;
+}
+
+interface TerminalAppearance {
+  fontFamily: string;
+  theme: ITheme;
+}
+
+function terminalAppearance(): TerminalAppearance {
+  const skin = document.documentElement.dataset.skin ?? 'studio';
+  const dark = document.documentElement.dataset.theme === 'dark';
+  if (skin === 'studio') {
+    return {
+      fontFamily: "Menlo, Monaco, 'SF Mono', monospace",
+      theme: dark
+        ? { background: '#181818', foreground: '#cccccc' }
+        : { background: '#ffffff', foreground: '#333333', cursor: '#333333' },
+    };
+  }
+  if (skin === 'terminal') {
+    return {
+      fontFamily: "'Berkeley Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace",
+      theme: dark
+        ? {
+            background: '#0d120f',
+            foreground: '#b9f6c8',
+            cursor: '#52ff78',
+            cursorAccent: '#071009',
+            selectionBackground: '#245b32',
+            black: '#071009',
+            red: '#ff6677',
+            green: '#52ff78',
+            yellow: '#e7c75f',
+            blue: '#5c9cff',
+            magenta: '#c793ff',
+            cyan: '#5ce1d4',
+            white: '#dfffe7',
+            brightBlack: '#52705a',
+            brightRed: '#ff8b98',
+            brightGreen: '#8dffa6',
+            brightYellow: '#ffe68f',
+            brightBlue: '#8cbbff',
+            brightMagenta: '#ddb9ff',
+            brightCyan: '#91fff5',
+            brightWhite: '#ffffff',
+          }
+        : {
+            background: '#f0f6f1',
+            foreground: '#102417',
+            cursor: '#087c32',
+            cursorAccent: '#f0f6f1',
+            selectionBackground: '#b9dcc2',
+            black: '#102417',
+            red: '#a9343d',
+            green: '#087c32',
+            yellow: '#8a5b0a',
+            blue: '#225cab',
+            magenta: '#7642a0',
+            cyan: '#126b67',
+            white: '#e7efe8',
+            brightBlack: '#5f7f67',
+            brightRed: '#c74f59',
+            brightGreen: '#199947',
+            brightYellow: '#a97819',
+            brightBlue: '#3e76c6',
+            brightMagenta: '#925db8',
+            brightCyan: '#29837e',
+            brightWhite: '#ffffff',
+          },
+    };
+  }
+  if (skin === 'index') {
+    return {
+      fontFamily: "'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace",
+      theme: dark
+        ? {
+            background: '#070707',
+            foreground: '#f5f5f2',
+            cursor: '#ff304f',
+            cursorAccent: '#070707',
+            selectionBackground: '#5a1521',
+            black: '#070707',
+            red: '#ff405c',
+            green: '#5ec986',
+            yellow: '#e8b34c',
+            blue: '#76a9ed',
+            magenta: '#d47cff',
+            cyan: '#5ed0d0',
+            white: '#d8d8d4',
+            brightBlack: '#6f6f6c',
+            brightRed: '#ff7890',
+            brightGreen: '#83e0a4',
+            brightYellow: '#f4ce7a',
+            brightBlue: '#9bc2f5',
+            brightMagenta: '#e5a3ff',
+            brightCyan: '#86e5e5',
+            brightWhite: '#ffffff',
+          }
+        : {
+            background: '#ffffff',
+            foreground: '#0b0b0b',
+            cursor: '#d20f2f',
+            cursorAccent: '#ffffff',
+            selectionBackground: '#f3cbd2',
+            black: '#0b0b0b',
+            red: '#d20f2f',
+            green: '#176d3a',
+            yellow: '#8b5b00',
+            blue: '#1c4f8f',
+            magenta: '#7a2d91',
+            cyan: '#176c70',
+            white: '#e5e5e2',
+            brightBlack: '#777773',
+            brightRed: '#ef3855',
+            brightGreen: '#2e8b50',
+            brightYellow: '#a67513',
+            brightBlue: '#3d70ad',
+            brightMagenta: '#9650a9',
+            brightCyan: '#34868a',
+            brightWhite: '#ffffff',
+          },
+    };
+  }
+  return {
+    fontFamily: "'Courier Prime', 'American Typewriter', 'SFMono-Regular', Menlo, monospace",
+    theme: dark
+      ? {
+          background: '#291f19',
+          foreground: '#f0dfbd',
+          cursor: '#ef7b57',
+          cursorAccent: '#291f19',
+          selectionBackground: '#664434',
+          black: '#291f19',
+          red: '#f17b67',
+          green: '#8fb37d',
+          yellow: '#e0ab65',
+          blue: '#86aeb7',
+          magenta: '#d697b5',
+          cyan: '#8ac0b9',
+          white: '#dfcfb1',
+          brightBlack: '#927962',
+          brightRed: '#ff9d89',
+          brightGreen: '#b0d19e',
+          brightYellow: '#f1c98c',
+          brightBlue: '#aacbd1',
+          brightMagenta: '#e8b8cd',
+          brightCyan: '#addbd5',
+          brightWhite: '#fff4dc',
+        }
+      : {
+          background: '#fbf2df',
+          foreground: '#392a21',
+          cursor: '#b94e32',
+          cursorAccent: '#fbf2df',
+          selectionBackground: '#e8cbb2',
+          black: '#392a21',
+          red: '#a43129',
+          green: '#4f754d',
+          yellow: '#9a602d',
+          blue: '#3f6674',
+          magenta: '#8b506d',
+          cyan: '#42756e',
+          white: '#eadbc1',
+          brightBlack: '#9b7965',
+          brightRed: '#bd5138',
+          brightGreen: '#668b62',
+          brightYellow: '#b4773e',
+          brightBlue: '#5a7d89',
+          brightMagenta: '#a66a83',
+          brightCyan: '#5e8e87',
+          brightWhite: '#fffaf0',
+        },
+  };
 }
 
 /**
@@ -38,6 +234,7 @@ interface TerminalStore {
  * the live element itself (ADR-0017 rev.2 substrate fix).
  */
 export function mountTerminal(host: HTMLElement, item: Pick<TermInstance, 'term' | 'fit'>): void {
+  const bottomPanelBody = host.closest<HTMLElement>('.bp-body');
   const el = item.term.element;
   if (!el) {
     host.replaceChildren();
@@ -52,24 +249,86 @@ export function mountTerminal(host: HTMLElement, item: Pick<TermInstance, 'term'
     // fit/refresh races during teardown are harmless
   }
   item.term.focus();
+  // Reparenting and the right-rail layout update can settle in different
+  // frames. Fit once more after layout so a terminal that came from the wider
+  // side slot cannot keep drawing underneath the dock session list.
+  requestAnimationFrame(() => {
+    if (!host.isConnected || item.term.element?.parentElement !== host) return;
+    try {
+      item.fit.fit();
+      item.term.refresh(0, item.term.rows - 1);
+    } catch {
+      // fit/refresh races during teardown are harmless
+    }
+  });
+  // Chromium may scroll an overflow ancestor to reveal xterm's hidden input,
+  // which used to lift the 34px context bar and New Terminal row out of view.
+  // Keep the Bottom Panel chrome pinned while preserving keyboard focus.
+  if (bottomPanelBody) {
+    bottomPanelBody.scrollTop = 0;
+    bottomPanelBody.scrollLeft = 0;
+    requestAnimationFrame(() => {
+      bottomPanelBody.scrollTop = 0;
+      bottomPanelBody.scrollLeft = 0;
+    });
+  }
+}
+
+/** Keep a mounted xterm fitted to its actual host, including flex/grid changes
+ * caused by opening the side focus slot or compacting the terminal list. */
+export function observeTerminalFit(
+  host: HTMLElement,
+  item: Pick<TermInstance, 'term' | 'fit'>,
+): () => void {
+  let frame = 0;
+  const scheduleFit = (): void => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      if (!host.isConnected || item.term.element?.parentElement !== host) return;
+      try {
+        item.fit.fit();
+      } catch {
+        // fit races during teardown are harmless
+      }
+    });
+  };
+  const observer = new ResizeObserver(scheduleFit);
+  observer.observe(host);
+  scheduleFit();
+  return () => {
+    cancelAnimationFrame(frame);
+    observer.disconnect();
+  };
 }
 
 function makeTerm(fontSize: number, scrollback: number): { term: Terminal; fit: FitAddon } {
-  const dark = document.documentElement.dataset.theme !== 'light';
+  const appearance = terminalAppearance();
   const term = new Terminal({
     fontSize,
-    fontFamily: "Menlo, Monaco, 'SF Mono', monospace",
+    fontFamily: appearance.fontFamily,
     scrollback,
     cursorBlink: true,
     allowProposedApi: true,
-    theme: dark
-      ? { background: '#181818', foreground: '#cccccc' }
-      : { background: '#ffffff', foreground: '#333333', cursor: '#333333' },
+    theme: appearance.theme,
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon());
   return { term, fit };
+}
+
+export function compactTerminalPath(path: string): string {
+  const unixHome = path.match(/^\/Users\/[^/]+|^\/home\/[^/]+/)?.[0];
+  if (unixHome) return `~${path.slice(unixHome.length)}`;
+  const windowsHome = path.match(/^[A-Za-z]:\\Users\\[^\\]+/)?.[0];
+  if (windowsHome) return `~${path.slice(windowsHome.length)}`;
+  return path;
+}
+
+function agentDisplayName(agent: string): string {
+  if (agent === 'claude') return 'Claude Code';
+  if (agent === 'codex') return 'Codex';
+  return agent;
 }
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
@@ -81,6 +340,18 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   init() {
     if (get().initialized) return;
     set({ initialized: true });
+    const appearanceObserver = new MutationObserver(() => {
+      const appearance = terminalAppearance();
+      for (const item of get().items) {
+        item.term.options.fontFamily = appearance.fontFamily;
+        item.term.options.theme = appearance.theme;
+        item.term.refresh(0, item.term.rows - 1);
+      }
+    });
+    appearanceObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme', 'data-skin'],
+    });
     onEvent('terminal.data', ({ id, data }) => {
       get()
         .items.find((t) => t.id === id)
@@ -104,21 +375,21 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         `\r\n\x1b[90m✻ session ended — ${files} file${files === 1 ? '' : 's'} changed, tracked for review\x1b[0m\r\n`,
       );
     });
-    onEvent('workspace.changed', () => {
-      for (const item of get().items) item.term.dispose();
-      set({ items: [], active: null });
-    });
+    // Focused-workspace changes leave global terminals intact. Their PTYs and
+    // renderer xterm instances are owned by the context recorded on each row.
   },
 
   async create(options) {
     const settings = useAppStore.getState().settings;
-    const res = await rpcResult(
-      'terminal.create',
-      options?.taskId ? { taskId: options.taskId } : {},
-    );
+    const launch = options?.launch ?? 'shell';
+    const res = await rpcResult('terminal.create', {
+      ...(options?.taskId ? { taskId: options.taskId } : {}),
+      ...(options?.context ? { context: options.context } : {}),
+      launch,
+    });
     if (!res.ok) {
       useAppStore.getState().pushToast('error', res.error.userMessage);
-      return;
+      return null;
     }
     const { term, fit } = makeTerm(
       settings?.terminal.fontSize ?? 12,
@@ -136,9 +407,17 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       term,
       fit,
       exited: false,
+      cwd: res.data.cwd,
+      projectName: res.data.projectName,
+      projectPath: res.data.projectPath,
+      contextKind: res.data.contextKind,
+      contextLabel: res.data.contextLabel,
+      contextTaskId: res.data.contextTaskId,
+      launch: res.data.launch,
     };
     set({ items: [...get().items, item], active: item.id });
     useAppStore.getState().showBottomTab('terminal');
+    return item.id;
   },
 
   setActive(id) {
@@ -191,11 +470,27 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
  * Review entry) until the terminal closes or a new session replaces it.
  */
 export function SessionBar({ terminalId }: { terminalId: string }): React.JSX.Element | null {
+  const item = useTerminalStore((s) => s.items.find((terminal) => terminal.id === terminalId));
   const taskId = useExternalStore((s) => s.taskByTerminal[terminalId]);
   const cli = useExternalStore((s) => s.agentByTerminal[terminalId] ?? null);
   const session = useExternalStore((s) => (taskId ? s.sessions[taskId] : undefined));
   const promoted = useExternalStore((s) => s.promoted);
-  if (!taskId) return null;
+  const task = useTaskStore((s) => (taskId ? s.tasks.find((entry) => entry.id === taskId) : null));
+  if (!item) return null;
+  const context = `${item.projectName} · ${compactTerminalPath(item.cwd)}`;
+  if (!taskId) {
+    return (
+      <div className="term-session-bar shell" data-testid="terminal-context-bar">
+        <Ic name="terminal" size={13} />
+        <span className="tsb-shell-name">{item.title}</span>
+        <span className="tsb-context" title={item.cwd}>
+          {context}
+        </span>
+        <span className="tsb-sp" />
+        <span className="tsb-pty-state">PTY {item.exited ? 'ended' : 'live'}</span>
+      </div>
+    );
+  }
   const live = session ? session.status === 'active' : cli !== null;
   const files = session?.files.length ?? 0;
   const name = cli ?? session?.cli ?? 'agent';
@@ -204,18 +499,16 @@ export function SessionBar({ terminalId }: { terminalId: string }): React.JSX.El
   return (
     <div className={`term-session-bar ${live ? '' : 'ended'}`} data-testid="terminal-session-bar">
       <span className="tsb-dot" />
-      <span className="tsb-cli">✳ {name}</span>
+      <span className="tsb-cli">✳ {agentDisplayName(name)}</span>
       <span
         className="term-agent-ext"
         title="External agent session — unmanaged (outside the Tool Gateway); tracked & reviewable"
       >
         EXT · unmanaged
       </span>
-      {session?.snapshotRef ? (
-        <span className="tsb-snap" title="Entry snapshot — rollback restores these bytes exactly">
-          snap {session.snapshotRef.slice(0, 7)}
-        </span>
-      ) : null}
+      <span className="tsb-context" title={item.cwd}>
+        {context}
+      </span>
       {live ? (
         <span key={files} className="tsb-files" data-testid="session-bar-files">
           <b>{files}</b> file{files === 1 ? '' : 's'}
@@ -226,6 +519,17 @@ export function SessionBar({ terminalId }: { terminalId: string }): React.JSX.El
         </span>
       )}
       <span className="tsb-sp" />
+      {!live ? (
+        <button
+          className="tsb-btn"
+          data-testid="session-bar-resume"
+          disabled={!task?.external}
+          title="Resume this CLI in the same recorded working context"
+          onClick={() => task && void useExternalStore.getState().resumeTask(task)}
+        >
+          Resume
+        </button>
+      ) : null}
       {!live ? (
         <button
           className="tsb-btn review"
@@ -248,17 +552,243 @@ export function SessionBar({ terminalId }: { terminalId: string }): React.JSX.El
         <button
           className="tsb-btn primary"
           data-testid="session-bar-promote"
-          disabled={slotTaken}
           title={
             slotTaken
-              ? 'The side panel already hosts another session'
+              ? 'Atomically replace the terminal in the side focus slot'
               : 'Move this session terminal to the right side panel (return anytime)'
           }
           onClick={() => useExternalStore.getState().promote(terminalId)}
         >
-          ⇥ Move to side panel
+          {slotTaken ? '⇄ Replace' : '⇥ Move side'}
         </button>
       ) : null}
+    </div>
+  );
+}
+
+interface TerminalContextChoice {
+  key: string;
+  request: TerminalWorkingContext;
+  title: string;
+  cwd: string;
+  kindLabel: string;
+  owner: string;
+  accounting: string;
+  projectPath: string | null;
+}
+
+function NewTerminalDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose(): void;
+}): React.JSX.Element | null {
+  const workspace = useWorkspaceStore((s) => s.workspace);
+  const tasks = useTaskStore((s) => s.tasks);
+  const [recent, setRecent] = useState<RecentWorkspaceDto[]>([]);
+  const [launch, setLaunch] = useState<TerminalLaunch>('shell');
+  const [selectedKey, setSelectedKey] = useState('focused');
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    void rpcResult('workspace.recent', {}).then((result) => {
+      if (result.ok) setRecent(result.data.items);
+    });
+    void useTaskStore.getState().refreshTasks();
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', escape);
+    return () => window.removeEventListener('keydown', escape);
+  }, [open, onClose]);
+
+  const contexts = useMemo<TerminalContextChoice[]>(() => {
+    const choices: TerminalContextChoice[] = [];
+    if (workspace) {
+      choices.push({
+        key: 'focused',
+        request: { kind: 'focused' },
+        title: workspace.displayName,
+        cwd: workspace.path,
+        kindLabel: 'FOCUSED',
+        owner: `project: ${workspace.displayName}`,
+        accounting: 'snapshot + watcher · external unmanaged',
+        projectPath: workspace.path,
+      });
+    }
+    for (const project of recent
+      .filter((entry) => entry.exists && entry.path !== workspace?.path)
+      .slice(0, 3)) {
+      choices.push({
+        key: `recent:${project.path}`,
+        request: { kind: 'recent', projectPath: project.path },
+        title: project.displayName,
+        cwd: project.path,
+        kindLabel: 'RECENT PROJECT',
+        owner: `project: ${project.displayName}`,
+        accounting: 'snapshot + watcher · external unmanaged',
+        projectPath: project.path,
+      });
+    }
+    for (const task of tasks
+      .filter((entry) => entry.worktree && !entry.worktree.missing)
+      .slice(0, 3)) {
+      choices.push({
+        key: `task:${task.id}`,
+        request: { kind: 'task', taskId: task.id },
+        title: `Task worktree · ${task.title}`,
+        cwd: task.worktree!.path,
+        kindLabel: 'ISOLATED',
+        owner: `task worktree: ${task.title}`,
+        accounting: 'isolated worktree · task-owned',
+        projectPath: task.projectPath,
+      });
+    }
+    choices.push({
+      key: 'scratch',
+      request: { kind: 'scratch' },
+      title: 'Scratch',
+      cwd: 'Charter data/scratch/terminal-*',
+      kindLabel: 'TEMPORARY',
+      owner: 'scratch context',
+      accounting: 'no project accounting',
+      projectPath: null,
+    });
+    return choices;
+  }, [recent, tasks, workspace]);
+
+  useEffect(() => {
+    if (contexts.some((context) => context.key === selectedKey)) return;
+    setSelectedKey(contexts[0]?.key ?? 'scratch');
+  }, [contexts, selectedKey]);
+
+  if (!open) return null;
+  const selected = contexts.find((context) => context.key === selectedKey) ?? contexts[0];
+  if (!selected) return null;
+  const sameTree = useTerminalStore
+    .getState()
+    .items.some(
+      (item) =>
+        (selected.request.kind === 'task' && item.cwd === selected.cwd) ||
+        (selected.projectPath !== null && item.projectPath === selected.projectPath),
+    );
+  const launchLabel = launch === 'shell' ? 'Shell' : launch === 'claude' ? 'Claude Code' : 'Codex';
+  const createSelected = async (): Promise<void> => {
+    setCreating(true);
+    try {
+      const id = await useTerminalStore.getState().create({
+        context: selected.request,
+        launch,
+        title: launch === 'shell' ? undefined : launchLabel,
+      });
+      if (id) onClose();
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div
+      className="terminal-create-backdrop"
+      data-testid="terminal-create-dialog"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <section
+        className="terminal-create-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="terminal-create-title"
+      >
+        <header className="terminal-create-head">
+          <div>
+            <h2 id="terminal-create-title">New Terminal</h2>
+            <p>创建一个普通 Terminal session；类型只决定可选的启动命令。</p>
+          </div>
+          <button className="terminal-icon-button" aria-label="Close" onClick={onClose}>
+            <Ic name="x" size={16} />
+          </button>
+        </header>
+        <div className="terminal-create-body">
+          <section className="terminal-form-section">
+            <div className="terminal-form-label">
+              01 · 类型 <span>仍然是真实 shell + PTY</span>
+            </div>
+            <div className="terminal-type-grid">
+              {(
+                [
+                  ['shell', 'Shell', '打开默认 shell'],
+                  ['claude', 'Claude Code', '创建后运行 claude'],
+                  ['codex', 'Codex', '创建后运行 codex'],
+                ] as const
+              ).map(([value, title, detail]) => (
+                <button
+                  key={value}
+                  className={`terminal-type-option ${launch === value ? 'selected' : ''}`}
+                  data-testid={`terminal-type-${value}`}
+                  onClick={() => setLaunch(value)}
+                >
+                  <strong>{title}</strong>
+                  <small>{detail}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+          <section className="terminal-form-section">
+            <div className="terminal-form-label">
+              02 · Working context <span>不改变 Editor focus</span>
+            </div>
+            <div className="terminal-context-list">
+              {contexts.map((context) => (
+                <button
+                  key={context.key}
+                  className={`terminal-context-option ${selected.key === context.key ? 'selected' : ''}`}
+                  data-testid={`terminal-context-${context.request.kind}`}
+                  onClick={() => setSelectedKey(context.key)}
+                >
+                  <span className="terminal-radio" />
+                  <span className="terminal-context-copy">
+                    <strong>{context.title}</strong>
+                    <small>{compactTerminalPath(context.cwd)}</small>
+                  </span>
+                  <span className="terminal-context-kind">{context.kindLabel}</span>
+                </button>
+              ))}
+            </div>
+            <div className={`terminal-resolved ${sameTree && launch !== 'shell' ? 'warning' : ''}`}>
+              <span className="terminal-resolved-key">resolved cwd</span>
+              <span>{compactTerminalPath(selected.cwd)}</span>
+              <span className="terminal-resolved-key">owner</span>
+              <span>{selected.owner}</span>
+              <span className="terminal-resolved-key">editor focus</span>
+              <span>unchanged: {workspace?.displayName ?? 'no focused workspace'}</span>
+              <span className="terminal-resolved-key">accounting</span>
+              <span>
+                {sameTree && launch !== 'shell'
+                  ? 'Same working tree · changes may overlap'
+                  : selected.accounting}
+              </span>
+            </div>
+          </section>
+        </div>
+        <footer className="terminal-create-foot">
+          <span>
+            Host 通过 project/task/scratch identity 解析 cwd；Renderer 不提交任意绝对路径。
+          </span>
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn primary"
+            data-testid="terminal-create-submit"
+            disabled={creating}
+            onClick={() => void createSelected()}
+          >
+            {creating ? 'Creating…' : `Create ${launchLabel}`}
+          </button>
+        </footer>
+      </section>
     </div>
   );
 }
@@ -266,11 +796,14 @@ export function SessionBar({ terminalId }: { terminalId: string }): React.JSX.El
 export function TerminalPanel(): React.JSX.Element {
   const store = useTerminalStore();
   const workspace = useWorkspaceStore((s) => s.workspace);
+  const tasks = useTaskStore((s) => s.tasks);
   const hostRef = useRef<HTMLDivElement>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [newTerminalOpen, setNewTerminalOpen] = useState(false);
   // ADR-0017: external agent sessions decorate their terminal's tab.
   const agentByTerminal = useExternalStore((s) => s.agentByTerminal);
   const taskByTerminal = useExternalStore((s) => s.taskByTerminal);
+  const sessions = useExternalStore((s) => s.sessions);
   // ADR-0017 rev.2「意图升格」: a terminal the user moved to the side panel is
   // not in the dock — its xterm belongs to the panel until 归位.
   const promoted = useExternalStore((s) => s.promoted);
@@ -298,127 +831,194 @@ export function TerminalPanel(): React.JSX.Element {
     const host = hostRef.current;
     if (!host || !activeDock || surface !== 'workspace') return;
     mountTerminal(host, activeDock);
-    const observer = new ResizeObserver(() => {
-      try {
-        activeDock.fit.fit();
-      } catch {
-        // ignore fit races during teardown
-      }
-    });
-    observer.observe(host);
-    return () => observer.disconnect();
+    return observeTerminalFit(host, activeDock);
   }, [activeDock, surface]);
 
-  if (!workspace) {
-    return <div className="empty-state">Open a workspace to use terminals.</div>;
-  }
-
   return (
-    <div style={{ display: 'flex', height: '100%' }} data-testid="terminal-panel">
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+    <div className="terminal-panel-layout" data-testid="terminal-panel">
+      <div className="terminal-main-pane">
         {activeDock ? <SessionBar terminalId={activeDock.id} /> : null}
-        <div
-          ref={hostRef}
-          style={{ flex: 1, minHeight: 0, padding: '2px 4px' }}
-          data-testid="terminal-host"
-        />
+        <div ref={hostRef} className="terminal-host" data-testid="terminal-host" />
         {dockItems.length === 0 ? (
-          <div className="empty-state">
-            <button
-              className="btn primary"
-              data-testid="terminal-create"
-              onClick={() => void store.create()}
-            >
-              New Terminal
-            </button>
+          <div className="terminal-dock-empty">
+            <Ic name="terminal" size={18} />
+            <span>
+              {promoted
+                ? 'The live terminal is in the side focus slot.'
+                : workspace
+                  ? 'Create a terminal in this project or another working context.'
+                  : 'Open a project or choose a recent/scratch context.'}
+            </span>
           </div>
         ) : null}
       </div>
-      <div
-        style={{
-          width: 180,
-          borderLeft: '1px solid var(--border)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'auto',
-        }}
-      >
-        <button
-          className="quickpick-item"
-          data-testid="terminal-new"
-          onClick={() => void store.create()}
-        >
-          ＋ New Terminal
-        </button>
-        {dockItems.map((t) => (
-          <div key={t.id}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              {renaming === t.id ? (
-                <input
-                  autoFocus
-                  defaultValue={t.title}
-                  style={{ flex: 1, margin: 4 }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      store.rename(t.id, (e.target as HTMLInputElement).value || t.title);
-                      setRenaming(null);
-                    }
-                    if (e.key === 'Escape') setRenaming(null);
-                  }}
-                  onBlur={() => setRenaming(null)}
-                />
-              ) : (
-                <button
-                  className="quickpick-item"
-                  style={{
-                    flex: 1,
-                    background: store.active === t.id ? 'var(--bg-selected)' : undefined,
-                  }}
-                  data-testid={`terminal-tab-${t.id}`}
-                  onClick={() => store.setActive(t.id)}
-                  onDoubleClick={() => setRenaming(t.id)}
-                >
-                  <span>
-                    {t.exited ? '◌ ' : '● '}
-                    {agentByTerminal[t.id] ? (
-                      <span className="term-agent" data-testid={`terminal-agent-${t.id}`}>
-                        ✳ {agentByTerminal[t.id]}{' '}
-                        <span
-                          className="term-agent-ext"
-                          title="External agent session — unmanaged (outside the Tool Gateway); tracked & reviewable"
-                        >
-                          EXT
-                        </span>
-                      </span>
-                    ) : (
-                      t.title
-                    )}
-                  </span>
-                </button>
-              )}
-              <button
-                className="modal-close"
-                aria-label={`Close ${t.title}`}
-                onClick={() => void store.requestKill(t.id)}
-              >
-                ✕
-              </button>
-            </div>
-            {taskByTerminal[t.id] ? (
-              <button
-                className="quickpick-item term-room-open"
-                data-testid={`terminal-open-room-${t.id}`}
-                title="Open this session's Task Room — live changes, peek and review around this terminal"
-                onClick={() => {
-                  useAppStore.getState().openTaskRoom(taskByTerminal[t.id]!);
+      <aside className="terminal-list" aria-label="Terminal sessions">
+        <div className="terminal-new-row">
+          <button
+            className="terminal-new-button"
+            data-testid="terminal-new"
+            disabled={!workspace}
+            title={
+              workspace ? `Create a shell in ${workspace.displayName}` : 'Open a project first'
+            }
+            onClick={() => void store.create({ context: { kind: 'focused' }, launch: 'shell' })}
+          >
+            <Ic name="plus" size={14} /> New Terminal
+          </button>
+          <button
+            className="terminal-new-menu"
+            data-testid="terminal-new-menu"
+            title="Choose terminal type and working context"
+            aria-label="Choose terminal type and working context"
+            onClick={() => setNewTerminalOpen(true)}
+          >
+            <Ic name="chevron" size={14} />
+          </button>
+        </div>
+        <div className="terminal-list-scroll">
+          {store.items.map((terminal) => {
+            const taskId = taskByTerminal[terminal.id];
+            const task = taskId ? tasks.find((entry) => entry.id === taskId) : null;
+            const session = taskId ? sessions[taskId] : undefined;
+            const agent = agentByTerminal[terminal.id] ?? session?.cli ?? null;
+            const inSide = promoted?.terminalId === terminal.id;
+            const live = Boolean(agentByTerminal[terminal.id]) || session?.status === 'active';
+            const ended = Boolean(session && session.status === 'ended');
+            const stateLabel = inSide ? 'IN SIDE' : live ? 'LIVE' : ended ? 'ENDED' : 'IDLE';
+            const dockActive = store.active === terminal.id && !inSide;
+            // With a side focus slot, the strong selected color must describe
+            // the terminal the user is actually looking at on the right.
+            const selected = inSide || (!promoted && dockActive);
+            const taskLabel = task?.title ?? terminal.contextLabel;
+            const activate = (): void => {
+              // When the focus slot is already in use, the session list is a
+              // real switcher: clicking another live Agent atomically swaps
+              // the two existing PTYs. No tiny secondary action is required.
+              if (promoted && agent && live) {
+                useExternalStore.getState().promote(terminal.id);
+                return;
+              }
+              store.setActive(terminal.id);
+            };
+            const rowTitle = agent
+              ? `${agentDisplayName(agent)} — ${inSide ? 'focus the side terminal' : promoted ? 'switch into the side slot' : 'open in the terminal dock'}`
+              : `${terminal.title} — open in the terminal dock`;
+            return (
+              <div
+                key={terminal.id}
+                className={`terminal-list-row ${selected ? 'selected' : ''} ${inSide ? 'promoted' : ''} ${promoted && dockActive ? 'dock-active' : ''}`}
+                role="button"
+                tabIndex={0}
+                aria-pressed={inSide}
+                data-testid={`terminal-tab-${terminal.id}`}
+                title={rowTitle}
+                onClick={activate}
+                onDoubleClick={() => !agent && !inSide && setRenaming(terminal.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    activate();
+                  }
                 }}
               >
-                ⤢ Open session room
-              </button>
-            ) : null}
-          </div>
-        ))}
-      </div>
+                <span
+                  className={`terminal-row-dot ${agent ? '' : 'shell'} ${terminal.exited || ended ? 'ended' : ''}`}
+                />
+                <span className="terminal-row-main">
+                  {renaming === terminal.id ? (
+                    <input
+                      autoFocus
+                      className="terminal-rename-input"
+                      defaultValue={terminal.title}
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (event.key === 'Enter') {
+                          store.rename(
+                            terminal.id,
+                            (event.target as HTMLInputElement).value || terminal.title,
+                          );
+                          setRenaming(null);
+                        }
+                        if (event.key === 'Escape') setRenaming(null);
+                      }}
+                      onBlur={() => setRenaming(null)}
+                    />
+                  ) : (
+                    <span className="terminal-row-title">
+                      {agent ? (
+                        <span
+                          className="term-agent"
+                          data-testid={
+                            agentByTerminal[terminal.id]
+                              ? `terminal-agent-${terminal.id}`
+                              : undefined
+                          }
+                        >
+                          ✳ {agentDisplayName(agent)} <span className="term-agent-ext">EXT</span>
+                        </span>
+                      ) : (
+                        terminal.title
+                      )}
+                    </span>
+                  )}
+                  <span className="terminal-row-context">
+                    {terminal.projectName} · {taskLabel}
+                  </span>
+                  <span className="terminal-row-cwd" title={terminal.cwd}>
+                    {compactTerminalPath(terminal.cwd)}
+                  </span>
+                </span>
+                <span className="terminal-row-side">
+                  <span className={`terminal-row-place ${ended ? 'ended' : ''}`}>{stateLabel}</span>
+                  <button
+                    className="terminal-icon-button terminal-row-close"
+                    aria-label={`Close ${terminal.title}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void store.requestKill(terminal.id);
+                    }}
+                  >
+                    <Ic name="x" size={13} />
+                  </button>
+                </span>
+                {taskId ? (
+                  <span className="terminal-row-actions">
+                    <button
+                      className="terminal-row-action"
+                      data-testid={`terminal-open-room-${terminal.id}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        useAppStore.getState().openTaskRoom(taskId);
+                      }}
+                    >
+                      ⤢ Room
+                    </button>
+                    {live ? (
+                      <button
+                        className="terminal-row-action move"
+                        data-testid={`terminal-row-promote-${terminal.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          useExternalStore.getState().promote(terminal.id);
+                        }}
+                      >
+                        {inSide
+                          ? '↗ Focus side'
+                          : promoted
+                            ? '⇄ Replace in side'
+                            : '⇥ Move to side'}
+                      </button>
+                    ) : null}
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+
+      <NewTerminalDialog open={newTerminalOpen} onClose={() => setNewTerminalOpen(false)} />
 
       {store.pendingKill ? (
         <div className="modal-backdrop">
@@ -446,5 +1046,23 @@ export function TerminalPanel(): React.JSX.Element {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export function TerminalContextsStatusItem(): React.JSX.Element | null {
+  const items = useTerminalStore((s) => s.items);
+  const agents = useExternalStore((s) => s.agentByTerminal);
+  if (items.length === 0) return null;
+  const contexts = new Set(items.map((item) => item.cwd)).size;
+  const liveAgents = Object.keys(agents).length;
+  return (
+    <span
+      className="sb-item terminal-context-status"
+      data-testid="status-terminal-contexts"
+      title={`${items.length} terminal sessions in ${contexts} independent working contexts`}
+    >
+      Terminal contexts: <strong>{contexts}</strong>
+      {liveAgents > 0 ? <span className="terminal-live-status">● {liveAgents} live</span> : null}
+    </span>
   );
 }

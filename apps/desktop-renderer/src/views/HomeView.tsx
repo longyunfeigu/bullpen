@@ -23,6 +23,16 @@ import { useSkillSlash } from './SkillSlashPicker.js';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
 
+const MAX_CONVERSATION_REFS = 3;
+
+interface SelectedConversationRef {
+  taskId: string;
+  title: string;
+  projectName: string;
+}
+
+type ReferencePickerItem = { kind: 'conversation'; task: TaskDto } | { kind: 'file'; path: string };
+
 function parseCustomCommand(raw: string): VerificationCommand | null {
   const parts = raw.trim().split(/\s+/);
   if (parts.length === 0 || !parts[0]) return null;
@@ -64,6 +74,7 @@ export function HomeView(): React.JSX.Element {
   const [submitting, setSubmitting] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [refs, setRefs] = useState<string[]>([]);
+  const [conversationRefs, setConversationRefs] = useState<SelectedConversationRef[]>([]);
   // Advanced charter (PIVOT-012)
   const [advanced, setAdvanced] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -79,10 +90,10 @@ export function HomeView(): React.JSX.Element {
   // ADR-0009 am.2: optional setup command for the fresh worktree (deps etc.).
   const [wtSetup, setWtSetup] = useState('');
   const [wtSetupTouched, setWtSetupTouched] = useState(false);
-  // @ file picker (PIVOT-015)
+  // Codex-style @ picker: project files + existing task conversations.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
-  const [pickerItems, setPickerItems] = useState<string[]>([]);
+  const [pickerFiles, setPickerFiles] = useState<string[]>([]);
   const [pickerIndex, setPickerIndex] = useState(0);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -268,11 +279,13 @@ export function HomeView(): React.JSX.Element {
       ...(advanced && worktree && workspace.isGitRepo && wtSetup.trim()
         ? { worktreeSetup: wtSetup.trim() }
         : {}),
+      conversationRefTaskIds: conversationRefs.map((ref) => ref.taskId),
     });
     setSubmitting(false);
     if (ok) {
       setIntent('');
       setRefs([]);
+      setConversationRefs([]);
       setTitleDraft('');
       setBoundaries('');
       setCriteria('');
@@ -330,7 +343,7 @@ export function HomeView(): React.JSX.Element {
     }
     setPickerOpen(true);
     setPickerQuery('');
-    setPickerItems([]);
+    setPickerFiles([]);
     setPickerIndex(0);
     setTimeout(() => pickerInputRef.current?.focus(), 0);
   };
@@ -340,7 +353,7 @@ export function HomeView(): React.JSX.Element {
     const handle = setTimeout(() => {
       void rpcResult('search.files', { query: pickerQuery }).then((res) => {
         if (res.ok) {
-          setPickerItems(res.data.items.slice(0, 12).map((i) => i.path));
+          setPickerFiles(res.data.items.slice(0, 8).map((i) => i.path));
           setPickerIndex(0);
         }
       });
@@ -352,6 +365,54 @@ export function HomeView(): React.JSX.Element {
     addRefs([path]);
     setPickerOpen(false);
     inputRef.current?.focus();
+  };
+
+  const pickConversation = (task: TaskDto): void => {
+    if (conversationRefs.some((ref) => ref.taskId === task.id)) {
+      setPickerOpen(false);
+      inputRef.current?.focus();
+      return;
+    }
+    if (conversationRefs.length >= MAX_CONVERSATION_REFS) {
+      app.pushToast('warning', 'You can reference up to 3 conversations.');
+      return;
+    }
+    setConversationRefs((current) => [
+      ...current,
+      { taskId: task.id, title: task.title, projectName: task.projectName },
+    ]);
+    setPickerOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const pickerConversations = useMemo(() => {
+    const query = pickerQuery.trim().toLocaleLowerCase();
+    return taskStore.tasks
+      .filter((task) => !task.external && task.state !== 'READY')
+      .filter(
+        (task) =>
+          !query ||
+          task.title.toLocaleLowerCase().includes(query) ||
+          task.projectName.toLocaleLowerCase().includes(query),
+      )
+      .slice(0, 6);
+  }, [pickerQuery, taskStore.tasks]);
+
+  const pickerItems = useMemo<ReferencePickerItem[]>(
+    () => [
+      ...pickerConversations.map((task) => ({ kind: 'conversation' as const, task })),
+      ...pickerFiles.map((path) => ({ kind: 'file' as const, path })),
+    ],
+    [pickerConversations, pickerFiles],
+  );
+
+  useEffect(() => {
+    setPickerIndex((current) => Math.min(current, Math.max(0, pickerItems.length - 1)));
+  }, [pickerItems.length]);
+
+  const pickReference = (item: ReferencePickerItem): void => {
+    if (item.kind === 'conversation') pickConversation(item.task);
+    else pickFile(item.path);
   };
 
   // ---------- mission control (global, ADR-0009) ----------
@@ -507,6 +568,27 @@ export function HomeView(): React.JSX.Element {
                 </button>
               </span>
             ))}
+            {conversationRefs.map((ref) => (
+              <span
+                key={ref.taskId}
+                className="hm-refchip conversation"
+                data-testid={`home-conversation-ref-${ref.taskId}`}
+                title={`${ref.title} · ${ref.projectName}`}
+              >
+                <Ic name="bot" size={12} />
+                <span>{ref.title}</span>
+                <button
+                  aria-label={`Remove conversation ${ref.title}`}
+                  onClick={() =>
+                    setConversationRefs((current) =>
+                      current.filter((item) => item.taskId !== ref.taskId),
+                    )
+                  }
+                >
+                  <Ic name="x" size={11} />
+                </button>
+              </span>
+            ))}
 
             {projectMenuOpen ? (
               <div className="hm-menu" data-testid="home-project-menu">
@@ -555,11 +637,16 @@ export function HomeView(): React.JSX.Element {
             ) : null}
 
             {pickerOpen ? (
-              <div className="hm-menu" data-testid="home-file-picker">
+              <div
+                className="hm-menu hm-reference-menu"
+                data-testid="home-file-picker"
+                role="listbox"
+                aria-label="Reference files or conversations"
+              >
                 <input
                   ref={pickerInputRef}
                   data-testid="home-file-input"
-                  placeholder="Reference a project file…"
+                  placeholder="Search files and conversations…"
                   value={pickerQuery}
                   onChange={(e) => setPickerQuery(e.target.value)}
                   onKeyDown={(e) => {
@@ -568,30 +655,71 @@ export function HomeView(): React.JSX.Element {
                       inputRef.current?.focus();
                     } else if (e.key === 'ArrowDown') {
                       e.preventDefault();
-                      setPickerIndex(Math.min(pickerIndex + 1, pickerItems.length - 1));
+                      setPickerIndex(
+                        Math.min(pickerIndex + 1, Math.max(0, pickerItems.length - 1)),
+                      );
                     } else if (e.key === 'ArrowUp') {
                       e.preventDefault();
                       setPickerIndex(Math.max(pickerIndex - 1, 0));
                     } else if (e.key === 'Enter' && pickerItems[pickerIndex]) {
                       e.preventDefault();
-                      pickFile(pickerItems[pickerIndex]!);
+                      pickReference(pickerItems[pickerIndex]!);
                     }
                   }}
                 />
-                {pickerItems.map((path, i) => (
-                  <button
-                    key={path}
-                    className={`hm-row ${i === pickerIndex ? 'active' : ''}`}
-                    data-testid={`home-file-item-${path}`}
-                    onClick={() => pickFile(path)}
-                  >
-                    <Ic name="file" size={13} />
-                    <span className="hm-tt">{path}</span>
-                  </button>
-                ))}
+                {pickerConversations.length > 0 ? (
+                  <>
+                    <div className="hm-sec hm-ref-section">
+                      <span>CONVERSATIONS</span>
+                      <span>{conversationRefs.length}/3 referenced</span>
+                    </div>
+                    {pickerConversations.map((task, i) => {
+                      const selected = conversationRefs.some((ref) => ref.taskId === task.id);
+                      return (
+                        <button
+                          key={task.id}
+                          className={`hm-row hm-conversation-row ${i === pickerIndex ? 'active' : ''}`}
+                          data-testid={`home-conversation-item-${task.id}`}
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => pickConversation(task)}
+                        >
+                          <Ic name="bot" size={13} />
+                          <span className="hm-tt">
+                            {task.title}
+                            <span className="hm-mono">
+                              {task.projectName} · {presentedMeta(task).short}
+                            </span>
+                          </span>
+                          {selected ? <Ic name="check" size={13} className="hm-check" /> : null}
+                        </button>
+                      );
+                    })}
+                  </>
+                ) : null}
+                {pickerFiles.length > 0 ? <div className="hm-sec hm-ref-section">FILES</div> : null}
+                {pickerFiles.map((path, fileIndex) => {
+                  const i = pickerConversations.length + fileIndex;
+                  return (
+                    <button
+                      key={path}
+                      className={`hm-row ${i === pickerIndex ? 'active' : ''}`}
+                      data-testid={`home-file-item-${path}`}
+                      role="option"
+                      aria-selected={refs.includes(path)}
+                      onClick={() => pickFile(path)}
+                    >
+                      <Ic name="file" size={13} />
+                      <span className="hm-tt">{path}</span>
+                      {refs.includes(path) ? (
+                        <Ic name="check" size={13} className="hm-check" />
+                      ) : null}
+                    </button>
+                  );
+                })}
                 {pickerItems.length === 0 ? (
-                  <div className="hm-sec" style={{ padding: '8px 10px' }}>
-                    Type to search files in {workspace?.displayName ?? 'the project'}.
+                  <div className="hm-reference-empty">
+                    No matching files or completed conversations.
                   </div>
                 ) : null}
               </div>
@@ -758,7 +886,7 @@ export function HomeView(): React.JSX.Element {
           <div className="hm-btmrow">
             <button
               className="hm-iconbtn"
-              title="Attach project files (or drop them here)"
+              title="Reference files or conversations (or drop files here)"
               data-testid="home-attach"
               onClick={openPicker}
             >
@@ -800,13 +928,15 @@ export function HomeView(): React.JSX.Element {
               onModelKey={setModelKey}
               thinking={thinking}
               onThinking={setThinking}
+              onConfigureModels={() => app.openSettings('models')}
               testid="home"
             />
             <button
-              className={`hm-send ${intent.trim() && !submitting ? 'ready' : ''}`}
+              className={`hm-send ${intent.trim() && !submitting && modelKey ? 'ready' : ''}`}
               data-testid="home-submit"
-              disabled={!intent.trim() || submitting}
-              aria-label="Start task"
+              disabled={!intent.trim() || submitting || !modelKey}
+              aria-label={modelKey ? 'Start task' : 'Configure a model before starting a task'}
+              title={modelKey ? 'Start task' : 'Configure a model before starting a task'}
               onClick={() => void submit()}
             >
               <Ic name="arrowUp" size={15} strokeWidth={2} />

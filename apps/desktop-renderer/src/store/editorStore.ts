@@ -71,6 +71,8 @@ const updateTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const autosaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const savedVersions = new Map<string, number>();
 const modelListeners = new Map<string, { dispose(): void }>();
+/** Models currently being refreshed from the main-process document store. */
+const syncingModels = new Set<string>();
 
 function scheduleTabsPersist(get: () => EditorStore): void {
   clearTimeout(tabsPersistTimer);
@@ -115,6 +117,29 @@ export function replaceModelContent(model: monaco.editor.ITextModel, content: st
   model.pushEditOperations([], [{ range: fullRange, text: content }], () => null);
 }
 
+/**
+ * Apply authoritative host content without feeding the programmatic edit back
+ * through the user-edit mirror. Monaco change events are synchronous, so the
+ * guard covers the complete replacement while preserving the undo stack.
+ */
+function syncModelFromDocument(
+  path: string,
+  model: monaco.editor.ITextModel,
+  content: string,
+): void {
+  clearTimeout(updateTimers.get(path));
+  updateTimers.delete(path);
+  clearTimeout(autosaveTimers.get(path));
+  autosaveTimers.delete(path);
+  syncingModels.add(path);
+  try {
+    replaceModelContent(model, content);
+    savedVersions.set(path, model.getAlternativeVersionId());
+  } finally {
+    syncingModels.delete(path);
+  }
+}
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   groups: [{ tabs: [], active: null }],
   activeGroup: 0,
@@ -129,8 +154,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     onEvent('doc.changedExternally', ({ doc }) => {
       const meta = metaFromDto(doc);
       const model = getModel(doc.relativePath);
-      const locallyDirty =
-        model !== null && model.getAlternativeVersionId() !== savedVersions.get(doc.relativePath);
+      // The content listener marks a real user edit dirty synchronously. Using
+      // Monaco's alternative version here also counts host-driven replacements
+      // and can turn a clean external reload into a false conflict.
+      const locallyDirty = get().docs[doc.relativePath]?.dirty === true;
       if (model && doc.externalState === 'clean' && !doc.dirty && locallyDirty) {
         // Main believed the buffer was clean and auto-reloaded, but our model has
         // unsaved edits the debounced mirror had not delivered yet. Never overwrite:
@@ -154,8 +181,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (model && doc.externalState === 'clean' && !doc.dirty) {
         // auto-reloaded clean buffer: sync the model text
         if (model.getValue() !== doc.content) {
-          replaceModelContent(model, doc.content);
-          savedVersions.set(doc.relativePath, model.getAlternativeVersionId());
+          syncModelFromDocument(doc.relativePath, model, doc.content);
           set({ docs: { ...get().docs, [doc.relativePath]: { ...meta, dirty: false } } });
         }
       }
@@ -207,6 +233,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         if (!modelListeners.has(path)) {
           savedVersions.set(path, model.getAlternativeVersionId());
           const listener = model.onDidChangeContent(() => {
+            if (syncingModels.has(path)) return;
             const meta = get().docs[path];
             if (!meta) return;
             const dirty = model!.getAlternativeVersionId() !== savedVersions.get(path);
@@ -394,8 +421,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const doc = result.data.doc;
     const model = getModel(path);
     if (model && choice === 'reload') {
-      replaceModelContent(model, doc.content);
-      savedVersions.set(path, model.getAlternativeVersionId());
+      syncModelFromDocument(path, model, doc.content);
     }
     set({ docs: { ...get().docs, [path]: metaFromDto(doc) }, compareWith: null });
     syncQuitBlockers(get());
@@ -450,6 +476,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   reset() {
     for (const listener of modelListeners.values()) listener.dispose();
     modelListeners.clear();
+    for (const timer of updateTimers.values()) clearTimeout(timer);
+    for (const timer of autosaveTimers.values()) clearTimeout(timer);
+    updateTimers.clear();
+    autosaveTimers.clear();
+    syncingModels.clear();
     for (const model of monaco.editor.getModels()) {
       if (model.uri.scheme === 'pi-ws') model.dispose();
     }

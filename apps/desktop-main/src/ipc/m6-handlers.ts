@@ -28,6 +28,7 @@ export function registerM6Handlers(
           ...(payload.projectPath !== undefined ? { projectPath: payload.projectPath } : {}),
           isolation: payload.isolation,
           ...(payload.worktreeSetup !== undefined ? { worktreeSetup: payload.worktreeSetup } : {}),
+          conversationRefTaskIds: payload.conversationRefTaskIds,
         }),
       }),
       'task.start': async ({ taskId, prompt }) => {

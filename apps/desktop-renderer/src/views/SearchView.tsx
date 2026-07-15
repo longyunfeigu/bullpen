@@ -297,64 +297,96 @@ export function SearchView(): React.JSX.Element {
             Results truncated — refine the query.
           </div>
         ) : null}
-        {store.groups.map((group) => (
-          <div key={group.path}>
-            <button
-              className="quickpick-item"
-              style={{
-                fontWeight: 600,
-                position: 'sticky',
-                top: 0,
-                background: 'var(--bg-sidebar)',
-              }}
-              onClick={() => store.toggleGroup(group.path)}
-            >
-              <span aria-hidden>{group.collapsed ? '▸' : '▾'}</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{group.path}</span>
-              <span className="qp-detail">{group.matches.length}</span>
-            </button>
-            {!group.collapsed
-              ? group.matches.map((match, i) => (
-                  <div
-                    key={i}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 18 }}
-                  >
-                    {showReplace ? (
-                      <input
-                        type="checkbox"
-                        aria-label="Include in replace"
-                        checked={!match.excluded}
-                        onChange={() => store.toggleMatch(group.path, i)}
-                      />
-                    ) : null}
-                    <button
-                      className="quickpick-item"
-                      style={{ padding: '3px 8px', flex: 1 }}
-                      data-testid={`search-match-${group.path}-${match.line}`}
-                      onClick={() => {
-                        void useEditorStore
-                          .getState()
-                          .openFile(group.path)
-                          .then(() => {
-                            revealPosition(group.path, match.line, match.column);
-                          });
-                      }}
+        {store.groups.map((group) => {
+          // Search results are navigated by source line. Multiple occurrences
+          // on one line remain separate in replace mode, but presenting the
+          // same preview row twice during ordinary search is visual noise and
+          // also creates duplicate test/accessible targets.
+          const rows = showReplace
+            ? group.matches.map((match, index) => ({ match, index, occurrences: 1 }))
+            : [
+                ...group.matches
+                  .reduce((byLine, match, index) => {
+                    const row = byLine.get(match.line);
+                    if (row) row.occurrences += 1;
+                    else byLine.set(match.line, { match, index, occurrences: 1 });
+                    return byLine;
+                  }, new Map<number, { match: Match; index: number; occurrences: number }>())
+                  .values(),
+              ];
+          return (
+            <div key={group.path}>
+              <button
+                className="quickpick-item"
+                style={{
+                  fontWeight: 600,
+                  position: 'sticky',
+                  top: 0,
+                  background: 'var(--bg-sidebar)',
+                }}
+                onClick={() => store.toggleGroup(group.path)}
+              >
+                <span aria-hidden>{group.collapsed ? '▸' : '▾'}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{group.path}</span>
+                <span
+                  className="qp-detail"
+                  title={`${group.matches.length} match${group.matches.length === 1 ? '' : 'es'} on ${rows.length} line${rows.length === 1 ? '' : 's'}`}
+                >
+                  {group.matches.length}
+                </span>
+              </button>
+              {!group.collapsed
+                ? rows.map(({ match, index, occurrences }) => (
+                    <div
+                      key={index}
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 18 }}
                     >
-                      <span className="text-muted" style={{ minWidth: 30 }}>
-                        {match.line}
-                      </span>
-                      <span
-                        className="mono"
-                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'pre' }}
+                      {showReplace ? (
+                        <input
+                          type="checkbox"
+                          aria-label="Include in replace"
+                          checked={!match.excluded}
+                          onChange={() => store.toggleMatch(group.path, index)}
+                        />
+                      ) : null}
+                      <button
+                        className="quickpick-item"
+                        style={{ padding: '3px 8px', flex: 1 }}
+                        data-testid={`search-match-${group.path}-${match.line}${showReplace ? `-${index}` : ''}`}
+                        onClick={() => {
+                          void useEditorStore
+                            .getState()
+                            .openFile(group.path)
+                            .then(() => {
+                              revealPosition(group.path, match.line, match.column);
+                            });
+                        }}
                       >
-                        {match.previewText.trim().slice(0, 120)}
-                      </span>
-                    </button>
-                  </div>
-                ))
-              : null}
-          </div>
-        ))}
+                        <span className="text-muted" style={{ minWidth: 30 }}>
+                          {match.line}
+                        </span>
+                        <span
+                          className="mono"
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'pre',
+                          }}
+                        >
+                          {match.previewText.trim().slice(0, 120)}
+                        </span>
+                        {occurrences > 1 ? (
+                          <span className="qp-detail" title={`${occurrences} matches on this line`}>
+                            ×{occurrences}
+                          </span>
+                        ) : null}
+                      </button>
+                    </div>
+                  ))
+                : null}
+            </div>
+          );
+        })}
       </div>
 
       {showReplace && totalMatches > 0 ? (

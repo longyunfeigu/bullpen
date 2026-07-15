@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAccountablePath } from './external-session-service.js';
+import { externalResumeCommand, isAccountablePath } from './external-session-service.js';
 
 describe('isAccountablePath (ADR-0017)', () => {
   it('accepts ordinary project files', () => {
@@ -18,5 +18,17 @@ describe('isAccountablePath (ADR-0017)', () => {
     expect(isAccountablePath('.DS_Store')).toBe(false);
     expect(isAccountablePath('src/.DS_Store')).toBe(false);
     expect(isAccountablePath('src/.pi-ide-chg.123.456.tmp')).toBe(false);
+  });
+});
+
+describe('externalResumeCommand', () => {
+  it('uses each CLI’s official last-session continuation command', () => {
+    expect(externalResumeCommand('claude')).toBe('claude --continue');
+    expect(externalResumeCommand('codex')).toBe('codex resume --last');
+  });
+
+  it('does not turn an arbitrary detected program name into shell input', () => {
+    expect(externalResumeCommand('fakeagent')).toBeNull();
+    expect(externalResumeCommand('claude; rm -rf .')).toBeNull();
   });
 });

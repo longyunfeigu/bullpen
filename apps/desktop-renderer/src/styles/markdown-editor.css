@@ -67,3 +67,30 @@
   resize: vertical;
   outline: none;
 }
+
+/* Prism powers the rich editor's code blocks. Keep it on the same semantic
+ * palette as Monaco instead of inheriting the dependency's fixed theme. */
+.md-rich .token.comment,
+.md-rich .token.prolog,
+.md-rich .token.doctype,
+.md-rich .token.cdata {
+  color: var(--syntax-comment, var(--fg-faint));
+  font-style: italic;
+}
+.md-rich .token.keyword,
+.md-rich .token.atrule,
+.md-rich .token.boolean {
+  color: var(--syntax-keyword, var(--accent));
+}
+.md-rich .token.string,
+.md-rich .token.attr-value {
+  color: var(--syntax-string, var(--success));
+}
+.md-rich .token.number,
+.md-rich .token.constant {
+  color: var(--syntax-number, var(--warning));
+}
+.md-rich .token.function,
+.md-rich .token.class-name {
+  color: var(--syntax-function, var(--info));
+}

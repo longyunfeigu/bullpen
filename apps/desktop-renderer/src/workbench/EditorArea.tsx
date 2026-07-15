@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { monaco, modelUri } from '../monaco-setup.js';
+import { monaco, modelUri, monacoFontFamily, monacoThemeName } from '../monaco-setup.js';
 import { useEditorStore, isMdRich, type EditorGroup } from '../store/editorStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useAppStore } from '../store/appStore.js';
@@ -7,6 +7,7 @@ import { useGitStatusStore, MARK_COLOR } from '../store/gitStatusStore.js';
 import { parseGutterRanges, toDecorations } from './gutter-diff.js';
 import { WelcomeView } from '../views/WelcomeView.js';
 import { ImageView } from '../views/ImageView.js';
+import { editorFontFamily } from '../appearance.js';
 
 // Rich markdown pulls lexical/mdast (ADR-0007) — loaded only when first used.
 const MarkdownEditor = React.lazy(() =>
@@ -95,7 +96,7 @@ function MonacoPane({
     const editor = monaco.editor.create(containerRef.current, {
       automaticLayout: true,
       fontSize: settings?.editor.fontSize ?? 13,
-      fontFamily: settings?.editor.fontFamily,
+      fontFamily: editorFontFamily(settings?.editor.fontFamily),
       lineHeight: Math.round(
         (settings?.editor.fontSize ?? 13) * (settings?.editor.lineHeight ?? 1.55),
       ),
@@ -107,7 +108,7 @@ function MonacoPane({
       scrollBeyondLastLine: false,
       folding: true,
       multiCursorModifier: 'alt',
-      theme: document.documentElement.dataset.theme === 'light' ? 'pi-light' : 'pi-dark',
+      theme: monacoThemeName(),
     });
     editorRef.current = editor;
     // Product rename flow (preview + version checks) replaces Monaco's inline rename.
@@ -155,7 +156,7 @@ function MonacoPane({
     if (!editorRef.current || !settings) return;
     editorRef.current.updateOptions({
       fontSize: settings.editor.fontSize,
-      fontFamily: settings.editor.fontFamily,
+      fontFamily: editorFontFamily(settings.editor.fontFamily),
       lineHeight: Math.round(settings.editor.fontSize * settings.editor.lineHeight),
       tabSize: settings.editor.tabSize,
       insertSpaces: settings.editor.insertSpaces,
@@ -338,7 +339,8 @@ function CompareOverlay(): React.JSX.Element | null {
         readOnly: false,
         originalEditable: false,
         renderSideBySide: true,
-        theme: document.documentElement.dataset.theme === 'light' ? 'pi-light' : 'pi-dark',
+        fontFamily: monacoFontFamily(),
+        theme: monacoThemeName(),
       });
       diffEditor.setModel({ original: diskModel, modified: bufferModel! });
     });

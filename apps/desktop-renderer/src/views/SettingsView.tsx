@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { PROVIDER_PRESETS, providerPreset, type ProviderInfoDto } from '@pi-ide/ipc-contracts';
 import { rpcResult } from '../bridge.js';
-import { useAppStore } from '../store/appStore.js';
+import { useAppStore, type SettingsSection } from '../store/appStore.js';
 import { useTaskStore } from '../store/taskStore.js';
 import { useSkillsStore } from '../store/skillsStore.js';
 import { Ic } from './home-icons.js';
+import { SKIN_LABELS, type AppearanceSkin } from '../appearance.js';
 import '../styles/settings.css';
 
 const API_LABEL: Record<string, string> = {
@@ -267,21 +268,22 @@ function ProvidersBlock(): React.JSX.Element {
   );
 }
 
-/**
- * Skills manager (ADR-0015): the managed store's visual surface — import,
- * Off/Auto toggle, audit view (inspect SKILL.md + bundled scripts before
- * trusting), two-step remove. Mockup: docs/design/skills-manager-mockup.html.
- */
+/** Multi-source skill catalog (ADR-0015 + ADR-0019). */
 function SkillsBlock(): React.JSX.Element {
   const skills = useSkillsStore((s) => s.skills);
+  const sources = useSkillsStore((s) => s.sources);
   const refresh = useSkillsStore((s) => s.refresh);
+  const rescan = useSkillsStore((s) => s.rescan);
   const importSkill = useSkillsStore((s) => s.importSkill);
+  const addSource = useSkillsStore((s) => s.addSource);
+  const removeSource = useSkillsStore((s) => s.removeSource);
+  const setSourcePolicy = useSkillsStore((s) => s.setSourcePolicy);
   const removeSkill = useSkillsStore((s) => s.remove);
   const setEnabled = useSkillsStore((s) => s.setEnabled);
   const read = useSkillsStore((s) => s.read);
   const [auditId, setAuditId] = useState<string | null>(null);
   const [auditText, setAuditText] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -304,6 +306,15 @@ function SkillsBlock(): React.JSX.Element {
     if (auditId === id) setAuditId(null);
   };
 
+  const disconnect = async (id: string, label: string): Promise<void> => {
+    if (
+      !window.confirm(`Disconnect the "${label}" skill source? Original files are not deleted.`)
+    ) {
+      return;
+    }
+    await removeSource(id);
+  };
+
   return (
     <div className="st-card" data-testid="skills-block">
       <div className="st-card-head">
@@ -311,22 +322,43 @@ function SkillsBlock(): React.JSX.Element {
         <div>
           <div className="st-card-title">Skills</div>
           <div className="st-card-sub">
-            Imported SKILL.md folders live in a managed store — Charter never loads skills from your
-            projects. Enabled skills are offered to the model (it loads them through the audited
-            load_skill tool) and can be invoked with “/” in the composer.
+            Charter discovers Agent, Codex and Claude Code skills and follows linked sources live.
+            Discovery never means trust: only enabled skills reach the audited load_skill tool.
           </div>
         </div>
         <span className="st-sp" />
         <button
-          className="btn primary"
-          data-testid="skills-import"
-          disabled={busy}
+          className="btn"
+          data-testid="skills-rescan"
+          disabled={busy !== null}
           onClick={() => {
-            setBusy(true);
-            void importSkill().finally(() => setBusy(false));
+            setBusy('scan');
+            void rescan().finally(() => setBusy(null));
           }}
         >
-          {busy ? 'Importing…' : 'Import skill folder…'}
+          {busy === 'scan' ? 'Scanning…' : 'Rescan'}
+        </button>
+        <button
+          className="btn"
+          data-testid="skills-connect-source"
+          disabled={busy !== null}
+          onClick={() => {
+            setBusy('connect');
+            void addSource().finally(() => setBusy(null));
+          }}
+        >
+          {busy === 'connect' ? 'Connecting…' : 'Connect folder…'}
+        </button>
+        <button
+          className="btn primary"
+          data-testid="skills-import"
+          disabled={busy !== null}
+          onClick={() => {
+            setBusy('import');
+            void importSkill().finally(() => setBusy(null));
+          }}
+        >
+          {busy === 'import' ? 'Importing…' : 'Import copy…'}
         </button>
       </div>
 
@@ -335,12 +367,76 @@ function SkillsBlock(): React.JSX.Element {
         <span>
           Skills can bundle scripts. Review each one before enabling — every command a skill runs
           still passes the Permission Engine, so a skill can’t run anything you didn’t allow.
+          Project folders are never scanned unless you explicitly connect one.
         </span>
+      </div>
+
+      <div className="st-sources" data-testid="skill-sources">
+        <div className="st-skill-cap">Sources</div>
+        {sources.map((source) => (
+          <div
+            key={source.id}
+            className={`st-source-row ${source.available ? '' : 'missing'}`}
+            data-testid={`skill-source-${source.id}`}
+          >
+            <Ic name="folder" size={13} />
+            <span className="st-source-main">
+              <span className="st-source-name">{source.label}</span>
+              <span className="st-source-path mono" title={source.path}>
+                {source.path}
+              </span>
+            </span>
+            <span className={`st-source-state ${source.available ? 'ok' : ''}`}>
+              {source.available ? `${source.skillCount} found` : 'not installed'}
+            </span>
+            {source.kind === 'managed' ? (
+              <span className="st-skill-badge">managed copies</span>
+            ) : (
+              <>
+                <label className={`st-source-check ${source.trusted ? 'on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={source.trusted}
+                    data-testid={`skill-source-trust-${source.id}`}
+                    onChange={(event) =>
+                      void setSourcePolicy(source.id, { trusted: event.target.checked })
+                    }
+                  />
+                  Trust
+                </label>
+                <label
+                  className={`st-source-check ${source.autoEnableNew ? 'on' : ''} ${source.trusted ? '' : 'disabled'}`}
+                  title="Automatically enable skills added to this source later"
+                >
+                  <input
+                    type="checkbox"
+                    checked={source.autoEnableNew}
+                    disabled={!source.trusted}
+                    data-testid={`skill-source-auto-${source.id}`}
+                    onChange={(event) =>
+                      void setSourcePolicy(source.id, { autoEnableNew: event.target.checked })
+                    }
+                  />
+                  Auto-enable new
+                </label>
+              </>
+            )}
+            {source.removable ? (
+              <button
+                className="btn quiet-danger"
+                data-testid={`skill-source-remove-${source.id}`}
+                onClick={() => void disconnect(source.id, source.label)}
+              >
+                Disconnect
+              </button>
+            ) : null}
+          </div>
+        ))}
       </div>
 
       {skills.length === 0 ? (
         <div className="st-empty" data-testid="skills-empty">
-          No skills yet. Import a folder containing a SKILL.md to add one.
+          No skills found. Connect a source or import a folder containing SKILL.md.
         </div>
       ) : (
         skills.map((skill) => (
@@ -351,6 +447,25 @@ function SkillsBlock(): React.JSX.Element {
             >
               <span className="st-skill-name">
                 <span className="mono">{skill.name}</span>
+                <span className={`st-skill-badge source ${skill.live ? 'live' : ''}`}>
+                  {skill.sourceLabel}
+                </span>
+                {skill.live ? <span className="st-skill-badge live">live</span> : null}
+                {skill.status === 'conflict' ? (
+                  <span className="st-skill-badge conflict" title={skill.issues.join('\n')}>
+                    name conflict
+                  </span>
+                ) : null}
+                {skill.status === 'invalid' ? (
+                  <span className="st-skill-badge invalid" title={skill.issues.join('\n')}>
+                    invalid
+                  </span>
+                ) : null}
+                {skill.compatibility === 'needs-review' ? (
+                  <span className="st-skill-badge review" title={skill.issues.join('\n')}>
+                    needs review
+                  </span>
+                ) : null}
                 {skill.explicitOnly ? (
                   <span
                     className="st-skill-badge explicit"
@@ -365,7 +480,7 @@ function SkillsBlock(): React.JSX.Element {
                   </span>
                 ) : null}
               </span>
-              <span className="st-skill-desc" title={skill.description}>
+              <span className="st-skill-desc" title={`${skill.description}\n${skill.sourcePath}`}>
                 {skill.description || '(no description)'}
               </span>
               <span
@@ -388,6 +503,7 @@ function SkillsBlock(): React.JSX.Element {
                   data-testid={`skill-auto-${skill.id}`}
                   role="radio"
                   aria-checked={skill.enabled}
+                  disabled={skill.status === 'invalid'}
                   title="Enabled: the model may auto-invoke it; you can also run /skill:name"
                   onClick={() => void setEnabled(skill.id, true)}
                 >
@@ -402,13 +518,15 @@ function SkillsBlock(): React.JSX.Element {
               >
                 {auditId === skill.id ? 'Close' : 'Audit'}
               </button>
-              <button
-                className="btn quiet-danger"
-                data-testid={`skill-remove-${skill.id}`}
-                onClick={() => void remove(skill.id)}
-              >
-                Remove
-              </button>
+              {skill.source === 'managed' ? (
+                <button
+                  className="btn quiet-danger"
+                  data-testid={`skill-remove-${skill.id}`}
+                  onClick={() => void remove(skill.id)}
+                >
+                  Remove
+                </button>
+              ) : null}
             </div>
             {auditId === skill.id ? (
               <div className="st-skill-audit" data-testid={`skill-audit-panel-${skill.id}`}>
@@ -423,7 +541,17 @@ function SkillsBlock(): React.JSX.Element {
                 </div>
                 <div>
                   <div className="st-skill-cap">SKILL.md</div>
+                  <div className="st-skill-origin mono">
+                    {skill.sourcePath} · revision {skill.revision.slice(0, 12)}
+                  </div>
                   <pre className="st-skill-md">{auditText}</pre>
+                  {skill.issues.length > 0 ? (
+                    <div className="st-skill-issues">
+                      {skill.issues.map((issue) => (
+                        <div key={issue}>{issue}</div>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="st-skill-gate">
                     <Ic name="check" size={13} strokeWidth={2} />
                     {skill.scriptCount > 0
@@ -445,18 +573,7 @@ function isScriptPath(relPath: string): boolean {
   return /\.(sh|bash|zsh|py|js|mjs|cjs|ts|rb|pl|ps1|cmd|bat)$/i.test(relPath);
 }
 
-type Section =
-  | 'general'
-  | 'editor'
-  | 'terminal'
-  | 'agent'
-  | 'models'
-  | 'permissions'
-  | 'privacy'
-  | 'updates'
-  | 'about';
-
-const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
+const SECTIONS: Array<{ id: SettingsSection; label: string; icon: string }> = [
   { id: 'general', label: 'General', icon: 'sliders' },
   { id: 'editor', label: 'Editor', icon: 'pencil' },
   { id: 'terminal', label: 'Terminal', icon: 'terminal' },
@@ -503,12 +620,72 @@ function Toggle(props: {
   );
 }
 
+const APPEARANCE_SKINS: AppearanceSkin[] = ['studio', 'terminal', 'archive', 'index'];
+
+function SkinPicker(props: {
+  value: AppearanceSkin;
+  onChange: (skin: AppearanceSkin) => void;
+}): React.JSX.Element {
+  return (
+    <div className="st-skin-block">
+      <div className="st-skin-heading">
+        <span>Skin</span>
+        <small>Color · type · icons · code</small>
+      </div>
+      <div className="st-skin-grid" role="radiogroup" aria-label="Application skin">
+        {APPEARANCE_SKINS.map((skin) => {
+          const meta = SKIN_LABELS[skin];
+          const selected = skin === props.value;
+          return (
+            <button
+              key={skin}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              className={`st-skin-option ${selected ? 'selected' : ''}`}
+              data-testid={`settings-skin-${skin}`}
+              onClick={() => props.onChange(skin)}
+            >
+              <span
+                className="st-skin-preview"
+                data-skin={skin}
+                data-theme={skin === 'terminal' ? 'dark' : 'light'}
+                aria-hidden
+              >
+                <span className="st-skin-preview-side">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span className="st-skin-preview-code">
+                  <i className="kw" />
+                  <i className="tx" />
+                  <i className="str" />
+                  <i className="tx short" />
+                </span>
+              </span>
+              <span className="st-skin-name">
+                {meta.name}
+                <Ic name={selected ? 'checkCircle' : 'circle'} size={14} />
+              </span>
+              <span className="st-skin-description">{meta.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsView(): React.JSX.Element {
   const settings = useAppStore((s) => s.settings);
   const issues = useAppStore((s) => s.settingsIssues);
   const appInfo = useAppStore((s) => s.appInfo);
   const updateSettings = useAppStore((s) => s.updateSettings);
-  const [section, setSection] = useState<Section>('general');
+  const requestedSection = useAppStore((s) => s.settingsSection);
+  const [section, setSection] = useState<SettingsSection>(requestedSection);
+
+  useEffect(() => setSection(requestedSection), [requestedSection]);
 
   if (!settings) return <div className="empty-state">Loading settings…</div>;
 
@@ -521,6 +698,8 @@ export function SettingsView(): React.JSX.Element {
           <button
             key={s.id}
             className={`st-nav-item ${s.id === section ? 'active' : ''}`}
+            data-testid={`settings-section-${s.id}`}
+            aria-current={s.id === section ? 'page' : undefined}
             onClick={() => setSection(s.id)}
           >
             <Ic name={s.icon} size={14} />
@@ -537,7 +716,11 @@ export function SettingsView(): React.JSX.Element {
 
         {section === 'general' ? (
           <div className="st-card">
-            <Row label="Theme">
+            <SkinPicker
+              value={settings.general.skin}
+              onChange={(skin) => set({ general: { skin } })}
+            />
+            <Row label="Brightness" hint="Each skin includes a coordinated light and dark variant">
               <select
                 className="st-input"
                 value={settings.general.theme}

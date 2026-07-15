@@ -16,6 +16,28 @@ interface ActiveSearch {
   controller: AbortController;
 }
 
+export interface TerminalContextResolution {
+  cwd: string;
+  projectName: string;
+  projectPath: string | null;
+  contextKind: 'focused' | 'recent' | 'task' | 'scratch';
+  contextLabel: string;
+  contextTaskId: string | null;
+}
+
+export interface TerminalContextResolvers {
+  recent(projectPath: string): TerminalContextResolution | null;
+  task(taskId: string): TerminalContextResolution | null;
+  scratch(): TerminalContextResolution;
+}
+
+/** Product-owned launch map: renderer selects a preset, never shell text. */
+export function terminalLaunchCommand(launch: 'shell' | 'claude' | 'codex'): string | null {
+  if (launch === 'claude') return 'claude';
+  if (launch === 'codex') return 'codex';
+  return null;
+}
+
 export class M4Services {
   private search: SearchService | null = null;
   private fileListCache: { at: number; files: string[] } | null = null;
@@ -45,7 +67,8 @@ export class M4Services {
       for (const search of this.activeSearches.values()) search.controller.abort();
       this.activeSearches.clear();
       this.fileListCache = null;
-      this.terminals.disposeAll();
+      // vNext: terminals are global sessions with their own host-resolved
+      // context. Switching the editor lens must not stop their PTYs.
       void this.python?.dispose();
       this.python = null;
       this.pythonRestarts = 0;
@@ -193,7 +216,7 @@ export class M4Services {
   }
 
   dispose(): void {
-    this.terminals.disposeAll();
+    this.terminals.dispose();
     void this.python?.dispose();
   }
 }
@@ -202,9 +225,8 @@ export function registerM4Handlers(
   services: M4Services,
   host: WorkspaceHost,
   logger: Logger,
-  /** Resolves a task's absolute working dir (worktree tasks); lazy — the task
-   * service is constructed after handler registration. */
-  resolveTaskCwd?: (taskId: string) => string | null,
+  /** Lazy because TaskService is constructed after handler registration. */
+  contextResolvers?: TerminalContextResolvers,
 ): void {
   registerHandlers(
     {
@@ -237,16 +259,61 @@ export function registerM4Handlers(
         return { outcomes };
       },
 
-      'terminal.create': async ({ cwd, taskId }) => {
-        const ws = host.mustActive();
-        // A taskId opens the terminal in that task's isolated worktree (the
-        // path is resolved host-side from the task row — never renderer input).
-        const taskCwd = taskId ? (resolveTaskCwd?.(taskId) ?? null) : null;
+      'terminal.create': async ({ taskId, context, launch }) => {
+        const requested =
+          context ?? (taskId ? { kind: 'task' as const, taskId } : { kind: 'focused' as const });
+        let resolved: TerminalContextResolution;
+        if (requested.kind === 'focused') {
+          const ws = host.mustActive();
+          resolved = {
+            cwd: ws.canonicalPath,
+            projectName: ws.displayName,
+            projectPath: ws.canonicalPath,
+            contextKind: 'focused',
+            contextLabel: ws.displayName,
+            contextTaskId: null,
+          };
+        } else if (requested.kind === 'recent') {
+          const recent = contextResolvers?.recent(requested.projectPath) ?? null;
+          if (!recent) {
+            throw new ProductFailure(
+              productError('TERMINAL_CONTEXT_UNKNOWN', {
+                userMessage: 'That recent project is no longer available. Refresh and try again.',
+              }),
+            );
+          }
+          resolved = recent;
+        } else if (requested.kind === 'task') {
+          const taskContext = contextResolvers?.task(requested.taskId) ?? null;
+          if (!taskContext) {
+            throw new ProductFailure(
+              productError('TERMINAL_CONTEXT_UNKNOWN', {
+                userMessage: 'That task context is no longer available.',
+              }),
+            );
+          }
+          resolved = taskContext;
+        } else {
+          if (!contextResolvers) {
+            throw new ProductFailure(
+              productError('TERMINAL_CONTEXT_UNKNOWN', {
+                userMessage: 'Scratch terminals are unavailable right now.',
+              }),
+            );
+          }
+          resolved = contextResolvers.scratch();
+        }
         const info = services.terminals.create({
-          cwd: taskCwd ?? (cwd ? `${ws.canonicalPath}/${cwd}` : ws.canonicalPath),
+          ...resolved,
           shellPath: undefined,
+          launch,
         });
-        return { id: info.id, title: info.title, shell: info.shell, pid: info.pid };
+        const command = terminalLaunchCommand(launch);
+        if (command) {
+          // Let the renderer attach the xterm before the first TUI repaint.
+          setTimeout(() => services.terminals.write(info.id, `${command}\r`), 350).unref();
+        }
+        return info;
       },
       'terminal.write': async ({ id, data }) => {
         services.terminals.write(id, data);
@@ -264,12 +331,7 @@ export function registerM4Handlers(
         return { closed: true, needsConfirm: false };
       },
       'terminal.list': async () => ({
-        items: services.terminals.list().map((t) => ({
-          id: t.id,
-          title: t.title,
-          shell: t.shell,
-          pid: t.pid,
-        })),
+        items: services.terminals.list(),
       }),
 
       'lsp.status': async () => ({ python: services.getPythonStatus() }),

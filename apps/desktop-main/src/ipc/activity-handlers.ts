@@ -17,6 +17,9 @@ export function registerActivityHandlers(
       'task.changeRecord': async ({ taskId, changeId }) => ({
         record: tasks.changeRecord(taskId, changeId),
       }),
+      'task.changeEvidence': async ({ taskId, changeId }) => ({
+        evidence: await tasks.changeEvidence(taskId, changeId),
+      }),
       'workspace.relativize': async ({ paths }) => {
         const ws = workspace.mustActive();
         const root = ws.canonicalPath;

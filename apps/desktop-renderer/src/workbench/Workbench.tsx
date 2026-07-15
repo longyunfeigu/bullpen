@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore.js';
-import { useTaskStore } from '../store/taskStore.js';
+import { useExternalStore } from '../store/externalStore.js';
+import { activeTask, useTaskStore } from '../store/taskStore.js';
 import { openTaskInEditor } from '../views/openInEditor.js';
 import { handleGlobalKeydown, registerCommands, executeCommand } from '../commands.js';
 import { onEvent, platform, rpcResult } from '../bridge.js';
@@ -148,6 +149,31 @@ function useRegisterCoreCommands(): void {
         category: 'Preferences',
         run: () => void store.getState().updateSettings('global', { general: { theme: 'system' } }),
       },
+      {
+        id: 'skin.studio',
+        title: 'Skin: Studio',
+        category: 'Preferences',
+        run: () => void store.getState().updateSettings('global', { general: { skin: 'studio' } }),
+      },
+      {
+        id: 'skin.terminal',
+        title: 'Skin: Terminal',
+        category: 'Preferences',
+        run: () =>
+          void store.getState().updateSettings('global', { general: { skin: 'terminal' } }),
+      },
+      {
+        id: 'skin.archive',
+        title: 'Skin: Archive',
+        category: 'Preferences',
+        run: () => void store.getState().updateSettings('global', { general: { skin: 'archive' } }),
+      },
+      {
+        id: 'skin.index',
+        title: 'Skin: Index',
+        category: 'Preferences',
+        run: () => void store.getState().updateSettings('global', { general: { skin: 'index' } }),
+      },
     ]);
   }, [store]);
 }
@@ -182,9 +208,77 @@ export const homeSurfaceRegistry: { main: React.ComponentType | null } = { main:
 export const editorBannerRegistry: React.ComponentType[] = [];
 export { initRegistry } from './init.js';
 
+function VerificationPanel(): React.JSX.Element {
+  const store = useTaskStore();
+  const task = activeTask(store);
+  const latestByLabel = React.useMemo(() => {
+    const latest = new Map<string, string>();
+    for (const event of store.timeline) {
+      if (event.type !== 'verification.completed') continue;
+      const run = (event.payload as { run?: { label?: unknown; state?: unknown } }).run;
+      if (run && typeof run.label === 'string') latest.set(run.label, String(run.state ?? ''));
+    }
+    return latest;
+  }, [store.timeline]);
+
+  if (!task) {
+    return <div className="empty-state">Select an agent task to view or run its checks.</div>;
+  }
+  if (task.verification.length === 0) {
+    return (
+      <div className="empty-state" data-testid="tests-verification-empty">
+        No verification commands are configured for “{task.title}”.
+      </div>
+    );
+  }
+
+  const canRun = task.state === 'REVIEW_READY';
+  return (
+    <div style={{ padding: 10, overflow: 'auto' }} data-testid="tests-verification-panel">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {task.title}
+        </b>
+        <span style={{ flex: 1 }} />
+        <button
+          className="btn primary"
+          data-testid="tests-run-verification"
+          disabled={!canRun}
+          title={canRun ? 'Run every configured check' : 'Checks can run when review is ready'}
+          onClick={() => void store.runVerification()}
+        >
+          {latestByLabel.size > 0 ? 'Re-run all checks' : 'Run all checks'}
+        </button>
+      </div>
+      {task.verification.map((command) => {
+        const state = latestByLabel.get(command.label);
+        return (
+          <div
+            key={command.label}
+            style={{
+              display: 'flex',
+              gap: 8,
+              padding: '5px 0',
+              borderTop: '1px solid var(--border-soft)',
+            }}
+          >
+            <span className="mono" style={{ flex: 1 }}>
+              {command.label}
+            </span>
+            <span className={state === 'passed' ? '' : 'text-muted'}>
+              {state ? (state === 'passed' ? '✓ passed' : state) : 'configured · not run'}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function BottomPanelContent({ tab }: { tab: BottomTab }): React.JSX.Element {
   const Component = bottomTabRegistry[tab];
   if (Component) return <Component />;
+  if (tab === 'tests') return <VerificationPanel />;
   const hints: Record<BottomTab, string> = {
     problems: 'Diagnostics appear when a workspace with code intelligence is open.',
     output: 'Command and service output appears here.',
@@ -210,6 +304,7 @@ export function Workbench(): React.JSX.Element {
   const surface = useAppStore((s) => s.surface);
   const pushToast = useAppStore((s) => s.pushToast);
   const appInfo = useAppStore((s) => s.appInfo);
+  const externalPanelPromoted = useExternalStore((s) => s.promoted !== null);
 
   const sidebarStart = useRef(0);
   const agentStart = useRef(0);
@@ -393,12 +488,11 @@ export function Workbench(): React.JSX.Element {
           ) : null}
         </div>
 
-        {/* ADR-0017「检测升格」: the promoted external session's column sits
-            between the editor and the agent panel; the component renders null
-            while no session is promoted. */}
+        {/* ADR-0017「检测升格」: a promoted external session owns the single
+            right rail; the generic managed-task panel returns on unpromote. */}
         {ExternalMain ? <ExternalMain /> : null}
 
-        {layout.agentPanelVisible ? (
+        {layout.agentPanelVisible && !externalPanelPromoted ? (
           <>
             <Splitter
               direction="vertical"

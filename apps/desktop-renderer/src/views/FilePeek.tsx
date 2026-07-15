@@ -4,7 +4,7 @@ import { rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { useTaskStore } from '../store/taskStore.js';
 import { useActivityStore } from '../store/activityStore.js';
-import { monaco } from '../monaco-setup.js';
+import { monaco, monacoFontFamily } from '../monaco-setup.js';
 import { Ic } from './home-icons.js';
 
 /**
@@ -295,6 +295,7 @@ function PeekFile({
         occurrencesHighlight: 'off',
         contextmenu: false,
         fontSize: 12,
+        fontFamily: monacoFontFamily(),
         lineNumbersMinChars: 3,
         folding: false,
         wordWrap: 'off',
@@ -310,7 +311,7 @@ function PeekFile({
     const observer = new MutationObserver(() => editorRef.current?.layout());
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['data-theme'],
+      attributeFilter: ['data-theme', 'data-skin'],
     });
     return () => observer.disconnect();
   }, []);

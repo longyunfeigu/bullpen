@@ -21,6 +21,14 @@ test.describe('M2 shell, settings and persistence', () => {
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe('light');
 
+    await page.getByTestId('palette-chip').click();
+    await page.getByRole('dialog', { name: 'Command palette' }).waitFor();
+    await page.getByRole('textbox', { name: 'Command' }).fill('Skin: Index');
+    await page.getByRole('textbox', { name: 'Command' }).press('Enter');
+    await expect
+      .poll(async () => page.evaluate(() => document.documentElement.dataset.skin))
+      .toBe('index');
+
     // Toggle bottom panel via palette; hide agent panel via keyboard.
     await page.getByTestId('palette-chip').click();
     await page.getByRole('dialog', { name: 'Command palette' }).waitFor();
@@ -67,6 +75,9 @@ test.describe('M2 shell, settings and persistence', () => {
     await expect
       .poll(async () => second.page.evaluate(() => document.documentElement.dataset.theme))
       .toBe('light');
+    await expect
+      .poll(async () => second.page.evaluate(() => document.documentElement.dataset.skin))
+      .toBe('index');
     const fontSize = await second.page.evaluate(async () => {
       const bridge = (
         window as never as {
@@ -81,6 +92,49 @@ test.describe('M2 shell, settings and persistence', () => {
     });
     expect(fontSize).toBe(15);
     await second.app.close();
+  });
+
+  test('settings switches all four coordinated skins live', async () => {
+    const { app, page } = await launchApp();
+    try {
+      await page.getByTestId('activity-settings').click();
+      await expect(page.getByTestId('overlay-settings')).toBeVisible();
+      await page
+        .locator('.st-row')
+        .filter({ hasText: 'Brightness' })
+        .locator('select')
+        .selectOption('dark');
+      await expect
+        .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
+        .toBe('dark');
+
+      const expectedAccent = {
+        studio: '#e8e6e0',
+        terminal: '#52ff78',
+        archive: '#ef7b57',
+        index: '#ff304f',
+      } as const;
+
+      for (const skin of ['studio', 'terminal', 'archive', 'index'] as const) {
+        await page.getByTestId(`settings-skin-${skin}`).click();
+        await expect
+          .poll(async () =>
+            page.evaluate(() => ({
+              skin: document.documentElement.dataset.skin,
+              accent: getComputedStyle(document.documentElement)
+                .getPropertyValue('--accent')
+                .trim(),
+            })),
+          )
+          .toEqual({ skin, accent: expectedAccent[skin] });
+        await expect(page.getByTestId(`settings-skin-${skin}`)).toHaveAttribute(
+          'aria-checked',
+          'true',
+        );
+      }
+    } finally {
+      await app.close();
+    }
   });
 
   test('diagnostics view reports healthy database', async () => {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { monaco } from '../monaco-setup.js';
+import { monaco, monacoFontFamily, monacoThemeName } from '../monaco-setup.js';
 import type { ChangeSetFileDto, ReviewHunkDto } from '@pi-ide/ipc-contracts';
 import { rpcResult } from '../bridge.js';
 import { useTaskStore, activeTask } from '../store/taskStore.js';
@@ -45,6 +45,8 @@ function DiffPane({
 }): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
+  const modelsRef = useRef<monaco.editor.ITextModel[]>([]);
+  const requestSeqRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [selection, setSelection] = useState<{ start: number; end: number; code: string } | null>(
     null,
@@ -54,23 +56,29 @@ function DiffPane({
   // (a hunk reject rewrites the file — the diff must follow).
   useEffect(() => {
     let cancelled = false;
-    let models: monaco.editor.ITextModel[] = [];
+    const requestSeq = ++requestSeqRef.current;
     setLoading(true);
     setSelection(null);
     void rpcResult('task.reviewFile', { taskId, path: file.path }).then((res) => {
       if (cancelled || !hostRef.current) return;
       setLoading(false);
       if (!res.ok) return;
-      const dark = document.documentElement.dataset.theme !== 'light';
-      const uriBase = `review://${encodeURIComponent(taskId)}/${file.path}`;
+      // Keep each side on a query-free URI. The TypeScript worker keys source
+      // files by the complete URI and could otherwise request a path whose
+      // query was already stripped during model synchronization.
+      const uriPath = [taskId, String(requestSeq), ...file.path.split('/')]
+        .map(encodeURIComponent)
+        .join('/');
       const mk = (content: string, side: string): monaco.editor.ITextModel => {
-        const uri = monaco.Uri.parse(`${uriBase}?${side}`);
-        monaco.editor.getModel(uri)?.dispose();
+        const uri = monaco.Uri.parse(`review://task/${side}/${uriPath}`);
         return monaco.editor.createModel(content, undefined, uri);
       };
       const original = mk(res.data.baseline ?? '', 'baseline');
       const modified = mk(res.data.current ?? '', 'current');
-      models = [original, modified];
+      // Old generations are intentionally retained until the diff editor is
+      // destroyed. Disposing an async-diagnostics model while Monaco still has
+      // a widget reference is what caused the review close error.
+      modelsRef.current.push(original, modified);
       if (!editorRef.current) {
         editorRef.current = monaco.editor.createDiffEditor(hostRef.current, {
           automaticLayout: true,
@@ -81,7 +89,8 @@ function DiffPane({
           diffAlgorithm: 'advanced',
           scrollBeyondLastLine: false,
           minimap: { enabled: false },
-          theme: dark ? 'pi-dark' : 'pi-light',
+          fontFamily: monacoFontFamily(),
+          theme: monacoThemeName(),
         });
         editorRef.current.getModifiedEditor().onDidChangeCursorSelection((e) => {
           const model = editorRef.current?.getModifiedEditor().getModel();
@@ -105,12 +114,21 @@ function DiffPane({
     });
     return () => {
       cancelled = true;
-      for (const model of models) model.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, file.path, file.currentHash]);
 
-  useEffect(() => () => editorRef.current?.dispose(), []);
+  useEffect(
+    () => () => {
+      const editor = editorRef.current;
+      editor?.setModel(null);
+      editor?.dispose();
+      editorRef.current = null;
+      for (const model of modelsRef.current) model.dispose();
+      modelsRef.current = [];
+    },
+    [],
+  );
 
   // Hunk chip clicks scroll the modified side.
   useEffect(() => {

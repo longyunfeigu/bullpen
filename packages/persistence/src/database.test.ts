@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProductFailure } from '@pi-ide/foundation';
 import { openDatabase, type Migration } from './database.js';
+import { MIGRATIONS } from './migrations.js';
 
 const M1: Migration = {
   version: 1,
@@ -114,5 +115,20 @@ describe('persistence database', () => {
     const mode = db.prepare('PRAGMA journal_mode').get() as { journal_mode: string };
     expect(mode.journal_mode).toBe('wal');
     db.close();
+  });
+
+  it('upgrades an existing v3 database with conversation-reference snapshots', () => {
+    const before = open(MIGRATIONS.slice(0, 3));
+    before.db.close();
+
+    const upgraded = open(MIGRATIONS);
+    expect(upgraded.appliedVersions).toEqual([4]);
+    const table = upgraded.db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_conversation_references'",
+      )
+      .get() as { name: string } | undefined;
+    expect(table?.name).toBe('task_conversation_references');
+    upgraded.db.close();
   });
 });

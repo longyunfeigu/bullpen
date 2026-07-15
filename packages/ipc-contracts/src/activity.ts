@@ -41,6 +41,25 @@ export const ActivityStatusSchema = z.enum([
 ]);
 export type ActivityStatus = z.infer<typeof ActivityStatusSchema>;
 
+export const ReplaySourceSchema = z.enum(['pi', 'claude', 'codex', 'external']);
+export type ReplaySource = z.infer<typeof ReplaySourceSchema>;
+
+export const ReplayCaptureGradeSchema = z.enum(['full', 'structured', 'observed']);
+export type ReplayCaptureGrade = z.infer<typeof ReplayCaptureGradeSchema>;
+
+export const ReplayEvidenceKindSchema = z.enum([
+  'message',
+  'plan',
+  'tool',
+  'result',
+  'file',
+  'permission',
+  'verification',
+  'terminal',
+  'application',
+]);
+export type ReplayEvidenceKind = z.infer<typeof ReplayEvidenceKindSchema>;
+
 export const ActivityItemSchema = z.object({
   /** Stable identity: the event id, or the callId for tool lifecycles (so a
    * running item is replaced by its terminal item, never duplicated). */
@@ -56,6 +75,14 @@ export const ActivityItemSchema = z.object({
   toolName: z.string().optional(),
   callId: z.string().optional(),
   author: z.enum(['agent', 'user', 'system']),
+  /** Provenance is explicit so every replay projection can degrade honestly. */
+  source: ReplaySourceSchema.optional(),
+  captureGrade: ReplayCaptureGradeSchema.optional(),
+  evidenceKinds: z.array(ReplayEvidenceKindSchema).optional(),
+  /** Optional identity for cross-application projection; never inferred from pixels. */
+  app: z.string().optional(),
+  resource: z.string().optional(),
+  parentKey: z.string().optional(),
   /** Filled by main-side enrichment (tool_calls / file_changes). */
   durationMs: z.number().int().nullable().optional(),
   diffstat: z
@@ -203,9 +230,112 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
     at: event.at,
     paths: [] as string[],
     author: 'agent' as const,
+    source: 'pi' as const,
+    captureGrade: 'full' as const,
   };
 
   switch (event.type) {
+    case 'external.sessionStarted':
+    case 'external.sessionResuming': {
+      const source = str(p.cli);
+      return {
+        ...base,
+        source: source === 'claude' || source === 'codex' ? source : 'external',
+        captureGrade: 'observed',
+        evidenceKinds: ['terminal'] as const,
+        kind: 'state',
+        label:
+          event.type === 'external.sessionResuming'
+            ? `${source || 'External'} session resumed`
+            : `${source || 'External'} session detected`,
+        detail: 'Entry snapshot captured; terminal and file observations are being recorded.',
+        status: 'info',
+        author: 'system',
+      };
+    }
+    case 'external.sessionEnded': {
+      const source = str(p.cli);
+      return {
+        ...base,
+        source: source === 'claude' || source === 'codex' ? source : 'external',
+        captureGrade: str(p.captureGrade) === 'structured' ? 'structured' : 'observed',
+        evidenceKinds: ['terminal', 'file'] as const,
+        kind: 'state',
+        label: `External session ended · ${typeof p.changedFiles === 'number' ? p.changedFiles : 0} file${p.changedFiles === 1 ? '' : 's'} changed`,
+        status: 'ok',
+        author: 'system',
+      };
+    }
+    case 'external.terminal': {
+      const source = str(p.cli);
+      return {
+        ...base,
+        source: source === 'claude' || source === 'codex' ? source : 'external',
+        captureGrade: str(p.captureGrade) === 'structured' ? 'structured' : 'observed',
+        evidenceKinds: ['terminal'] as const,
+        kind: 'command',
+        label: `${source || 'External'} terminal output`,
+        ...(str(p.text) ? { detail: str(p.text) } : {}),
+        status: 'info',
+        toolName: 'terminal',
+      };
+    }
+    case 'external.fileChanged': {
+      const source = str(p.cli);
+      const path = cleanPath(str(p.path));
+      const changeId = str(p.changeId);
+      const additions = typeof p.additions === 'number' ? p.additions : 0;
+      const deletions = typeof p.deletions === 'number' ? p.deletions : 0;
+      return {
+        ...base,
+        source: source === 'claude' || source === 'codex' ? source : 'external',
+        captureGrade: str(p.captureGrade) === 'structured' ? 'structured' : 'observed',
+        evidenceKinds: ['file'] as const,
+        kind: 'write',
+        label: `${source || 'External'} ${str(p.kind, 'modified')} ${path}`,
+        status: 'ok',
+        paths: path ? [path] : [],
+        ...(changeId ? { changeIds: [changeId] } : {}),
+        diffstat: { additions, deletions },
+      };
+    }
+    case 'external.observation': {
+      const source = str(p.cli);
+      const kindValue = str(p.kind, 'system');
+      const kind = ActivityKindSchema.safeParse(kindValue).success
+        ? (kindValue as ActivityKind)
+        : 'system';
+      const statusValue = str(p.status, 'info');
+      const status = ActivityStatusSchema.safeParse(statusValue).success
+        ? (statusValue as ActivityStatus)
+        : 'info';
+      const evidenceKinds = Array.isArray(p.evidenceKinds)
+        ? p.evidenceKinds
+            .map((value) => ReplayEvidenceKindSchema.safeParse(value))
+            .filter((value) => value.success)
+            .map((value) => value.data)
+        : [];
+      const paths = Array.isArray(p.paths)
+        ? p.paths.map((value) => cleanPath(str(value))).filter(Boolean)
+        : [];
+      return {
+        ...base,
+        key: str(p.key) || base.key,
+        source: source === 'claude' || source === 'codex' ? source : 'external',
+        captureGrade: str(p.captureGrade) === 'structured' ? 'structured' : 'observed',
+        evidenceKinds,
+        kind,
+        label: trunc(str(p.label, 'External observation'), 180),
+        ...(str(p.detail) ? { detail: trunc(str(p.detail), 4000) } : {}),
+        status,
+        paths,
+        ...(str(p.callId) ? { callId: str(p.callId) } : {}),
+        ...(str(p.toolName) ? { toolName: str(p.toolName) } : {}),
+        ...(str(p.app) ? { app: str(p.app) } : {}),
+        ...(str(p.resource) ? { resource: str(p.resource) } : {}),
+        ...(str(p.parentKey) ? { parentKey: str(p.parentKey) } : {}),
+      };
+    }
     case 'user.message': {
       const isAnswer = str(p.kind) === 'answer';
       return {

@@ -11,6 +11,7 @@ import { ReviewView } from '../views/ReviewView.js';
 import { ReplayView } from '../views/ReplayView.js';
 import { useTaskStore } from '../store/taskStore.js';
 import { useAppStore } from '../store/appStore.js';
+import { useSkillsStore } from '../store/skillsStore.js';
 
 export function registerM6(): void {
   viewRegistry.tasks = TasksView;
@@ -20,6 +21,7 @@ export function registerM6(): void {
   overlayRegistry.push(ReviewView, ReplayView);
   initRegistry.push(() => {
     useTaskStore.getState().init();
+    useSkillsStore.getState().init();
   });
   registerCommands([
     {

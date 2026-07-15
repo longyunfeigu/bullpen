@@ -40,7 +40,11 @@ export function useSkillSlash(options: {
         .toLowerCase()
         .replace(/^skill:/, '')
     : '';
-  const items = skills.filter((s) => s.enabled && s.name.toLowerCase().includes(query));
+  const items = skills.filter(
+    (s) =>
+      s.enabled &&
+      (s.name.toLowerCase().includes(query) || s.displayName.toLowerCase().includes(query)),
+  );
   const safeIdx = Math.min(idx, Math.max(0, items.length - 1));
 
   const pick = (name: string): void => {
@@ -81,7 +85,7 @@ export function useSkillSlash(options: {
 
   const handleChange = (next: string): void => {
     // Leaving "slash command" shape (space, cleared, prose) closes the picker.
-    if (open && !/^\/[A-Za-z0-9_:-]*$/.test(next)) setOpen(false);
+    if (open && !/^\/[A-Za-z0-9_:@-]*$/.test(next)) setOpen(false);
   };
 
   const menu = open ? (
@@ -98,8 +102,11 @@ export function useSkillSlash(options: {
           <Ic name="zap" size={13} />
           <span className="hm-tt">
             <span className="skill-pick-name">/skill:{s.name}</span>
-            <span className="skill-pick-desc">{s.description}</span>
+            <span className="skill-pick-desc">
+              {s.description} · {s.sourceLabel}
+            </span>
           </span>
+          {s.live ? <span className="skill-pick-badge">live</span> : null}
           {s.explicitOnly ? <span className="skill-pick-badge">explicit-only</span> : null}
         </button>
       ))}

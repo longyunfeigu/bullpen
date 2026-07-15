@@ -94,6 +94,30 @@ describe('patch engine (CHG-002/003)', () => {
     expect(changes[0]!.beforeHash).toBe(sha(before));
   });
 
+  it('notifies the host after a task write saves an already-open document', async () => {
+    const notifications: Array<{ content: string; dirty: boolean }> = [];
+    const notifyingService = new ChangeService({
+      root,
+      blobs: new BlobStore(blobDir),
+      repo,
+      documents: docs,
+      onDidWriteOpenDocument: (document) => {
+        notifications.push({ content: document.content, dirty: document.dirty });
+      },
+    });
+    await docs.open('a.txt');
+    const before = readFileSync(join(root, 'a.txt'), 'utf8');
+
+    await notifyingService.applyPatch('t1', 'call1', {
+      path: 'a.txt',
+      patch: '--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n line1\n-line2\n+LINE2\n line3\n',
+      baseHash: sha(before),
+      reason: 'notify open editor',
+    });
+
+    expect(notifications).toEqual([{ content: 'line1\nLINE2\nline3\n', dirty: false }]);
+  });
+
   it('rejects stale base hashes with VERSION_CONFLICT and leaves the file untouched', async () => {
     const original = readFileSync(join(root, 'a.txt'), 'utf8');
     await expect(
@@ -264,13 +288,31 @@ describe('external session baselines (ADR-0017)', () => {
     writeFileSync(join(root, 'a.txt'), 'externally rewritten\n');
     // …but the accounting hands us the entry-snapshot bytes.
     await service.ensureBaselineFromBytes('t1', 'a.txt', Buffer.from('line1\nline2\nline3\n'));
-    service.recordExternalChange('t1', 'a.txt', 'modified', null);
+    await service.recordExternalChange('t1', 'a.txt', 'modified');
 
     const cs = await service.changeSet('t1');
     expect(cs.files).toHaveLength(1);
     expect(cs.files[0]!.status).toBe('modified');
     expect(cs.files[0]!.diff).toContain('-line1');
     expect(cs.files[0]!.diff).toContain('+externally rewritten');
+  });
+
+  it('chains every observed write to the previous version and stores both blobs', async () => {
+    await service.ensureBaselineFromBytes('t1', 'a.txt', Buffer.from('v0\n'));
+    writeFileSync(join(root, 'a.txt'), 'v1\n');
+    const first = await service.recordExternalChange('t1', 'a.txt', 'modified');
+    writeFileSync(join(root, 'a.txt'), 'v2\n');
+    const second = await service.recordExternalChange('t1', 'a.txt', 'modified');
+
+    expect(first.beforeHash).toBe(sha('v0\n'));
+    expect(first.afterHash).toBe(sha('v1\n'));
+    expect(second.beforeHash).toBe(first.afterHash);
+    expect(second.afterHash).toBe(sha('v2\n'));
+    expect(second.patch).toContain('-v1');
+    expect(second.patch).toContain('+v2');
+    const blobs = new BlobStore(blobDir);
+    expect((await blobs.get(first.afterHash!))?.toString()).toBe('v1\n');
+    expect((await blobs.get(second.afterHash!))?.toString()).toBe('v2\n');
   });
 
   it('bytes=null records an honest created-during-session baseline', async () => {

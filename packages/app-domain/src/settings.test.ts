@@ -6,6 +6,7 @@ describe('settings resolution (SET-002 / WS-014)', () => {
     const { effective, issues } = resolveSettings(undefined, undefined);
     expect(issues).toHaveLength(0);
     expect(effective.general.theme).toBe('system');
+    expect(effective.general.skin).toBe('studio');
     expect(effective.editor.fontSize).toBeGreaterThan(0);
     expect(effective.editor.autoSave).toBe('off');
     expect(effective.privacy.telemetryEnabled).toBe(false);
@@ -36,5 +37,17 @@ describe('settings resolution (SET-002 / WS-014)', () => {
   it('never lets telemetry default to on even with garbage input', () => {
     const { effective } = resolveSettings({ privacy: 12345 } as never, undefined);
     expect(effective.privacy.telemetryEnabled).toBe(false);
+  });
+
+  it('accepts the four coordinated application skins and rejects unknown ones', () => {
+    for (const skin of ['studio', 'terminal', 'archive', 'index'] as const) {
+      const { effective, issues } = resolveSettings({ general: { skin } }, undefined);
+      expect(effective.general.skin).toBe(skin);
+      expect(issues).toHaveLength(0);
+    }
+
+    const { effective, issues } = resolveSettings({ general: { skin: 'generic-blue' } }, undefined);
+    expect(effective.general.skin).toBe('studio');
+    expect(issues.some((issue) => issue.includes('general.skin'))).toBe(true);
   });
 });

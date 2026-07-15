@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { applyPatch as applyUnifiedPatch, createTwoFilesPatch, structuredPatch } from 'diff';
 import { detectBinary, newId, productError, ProductFailure } from '@pi-ide/foundation';
 import { resolveInsideRoot } from '@pi-ide/workspace-service';
-import type { DocumentStore } from '@pi-ide/document-service';
+import type { DocumentSnapshot, DocumentStore } from '@pi-ide/document-service';
 import { BlobStore } from './blob-store.js';
 import { parseHunks, reverseHunkPatchText } from './review.js';
 
@@ -101,6 +101,8 @@ export interface ChangeServiceOptions {
   blobs: BlobStore;
   repo: ChangeRepo;
   documents: DocumentStore;
+  /** Notifies the host when a task write updated an already-open document. */
+  onDidWriteOpenDocument?: (document: DocumentSnapshot) => void;
 }
 
 function sha(content: Buffer | string): string {
@@ -127,12 +129,14 @@ export class ChangeService {
   private readonly blobs: BlobStore;
   private readonly repo: ChangeRepo;
   private readonly documents: DocumentStore;
+  private readonly onDidWriteOpenDocument?: (document: DocumentSnapshot) => void;
 
   constructor(options: ChangeServiceOptions) {
     this.root = options.root;
     this.blobs = options.blobs;
     this.repo = options.repo;
     this.documents = options.documents;
+    this.onDidWriteOpenDocument = options.onDidWriteOpenDocument;
   }
 
   /** CHG-001: capture the pre-task state of a file exactly once per task. */
@@ -212,26 +216,60 @@ export class ChangeService {
     return baseline;
   }
 
-  /** ADR-0017: record an externally-observed change (no content flows through us). */
-  recordExternalChange(
+  /**
+   * ADR-0017 replay evidence: snapshot an externally-observed write after it
+   * lands. Each observation is chained to the previous observed hash, not
+   * merely the task baseline, so a scrubber can reconstruct intermediate
+   * versions instead of showing only the final net diff.
+   */
+  async recordExternalChange(
     taskId: string,
     relativePath: string,
     kind: Exclude<ChangeKind, 'renamed'>,
-    afterHash: string | null,
-  ): void {
-    this.repo.recordChange({
+  ): Promise<FileChangeRecord> {
+    const history = this.repo
+      .changesFor(taskId)
+      .filter((change) => change.relativePath === relativePath);
+    const previous = history.at(-1);
+    const beforeHash = previous
+      ? previous.afterHash
+      : (this.repo.getBaseline(taskId, relativePath)?.blobHash ?? null);
+    const beforeBytes = beforeHash ? await this.blobs.get(beforeHash) : null;
+
+    let afterBytes: Buffer | null = null;
+    if (kind !== 'deleted') {
+      const abs = await resolveInsideRoot(this.root, relativePath);
+      afterBytes = await fs.readFile(abs).catch(() => null);
+    }
+    const afterHash = afterBytes ? (await this.blobs.put(afterBytes)).hash : null;
+
+    let patch: string | null = null;
+    if (!(beforeBytes && detectBinary(beforeBytes)) && !(afterBytes && detectBinary(afterBytes))) {
+      patch = createTwoFilesPatch(
+        relativePath,
+        relativePath,
+        beforeBytes?.toString('utf8') ?? '',
+        afterBytes?.toString('utf8') ?? '',
+        '',
+        '',
+      );
+    }
+
+    const record: FileChangeRecord = {
       id: newId('chg'),
       taskId,
       toolCallId: null,
       relativePath,
       kind,
-      beforeHash: this.repo.getBaseline(taskId, relativePath)?.blobHash ?? null,
+      beforeHash,
       afterHash,
-      patch: null,
+      patch,
       renameTo: null,
       author: 'agent',
       createdAt: new Date().toISOString(),
-    });
+    };
+    this.repo.recordChange(record);
+    return record;
   }
 
   /** Write content through the document store when open, else atomically to disk. */
@@ -239,7 +277,8 @@ export class ChangeService {
     if (this.documents.isOpen(relativePath)) {
       this.documents.updateBuffer(relativePath, content);
       try {
-        await this.documents.save(relativePath);
+        const document = await this.documents.save(relativePath);
+        this.onDidWriteOpenDocument?.(document);
       } catch (e) {
         if (e instanceof ProductFailure && e.error.code === 'DOC_SAVE_CONFLICT') {
           throw chgError(
@@ -317,6 +356,7 @@ export class ChangeService {
 
     await this.writeThrough(input.path, next);
     const afterHash = sha(next);
+    await this.blobs.put(Buffer.from(next, 'utf8'));
     const stored = createTwoFilesPatch(input.path, input.path, current.content, next, '', '');
     const stats = countDiff(stored);
     this.repo.recordChange({
@@ -348,6 +388,7 @@ export class ChangeService {
       await this.documents.handleExternalChange(input.path);
     }
     const afterHash = sha(input.content);
+    await this.blobs.put(input.content);
     this.repo.recordChange({
       id: newId('chg'),
       taskId,
@@ -387,6 +428,7 @@ export class ChangeService {
     await fs.mkdir(dirname(abs), { recursive: true });
     await this.writeBytes(input.path, Buffer.from(input.content, 'utf8'), null);
     const afterHash = sha(input.content);
+    await this.blobs.put(Buffer.from(input.content, 'utf8'));
     this.repo.recordChange({
       id: newId('chg'),
       taskId,

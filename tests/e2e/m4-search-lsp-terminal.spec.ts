@@ -52,6 +52,46 @@ test.describe('M4 search, intelligence, terminal', () => {
     }
   });
 
+  test('ordinary search presents multiple matches on one source line as one result row', async () => {
+    const fixture = createTsSmallFixture();
+    const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
+    try {
+      await page.keyboard.press(`${mod}+Shift+f`);
+      await page.getByTestId('search-input').fill('add');
+      await page.getByTestId('search-run').click();
+      const row = page.getByTestId('search-match-run-tests.mjs-2');
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText('×2');
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('opening a terminal from Home reveals the Editor dock', async () => {
+    const fixture = createTsSmallFixture();
+    const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
+    try {
+      await page.getByTestId('surface-home').click();
+      await expect(page.getByTestId('home-shell')).toBeVisible();
+
+      await page.keyboard.press(`${mod}+Shift+p`);
+      const command = page.getByRole('textbox', { name: 'Command' });
+      await command.fill('New Terminal');
+      await page.getByRole('option', { name: /New Terminal/ }).click();
+
+      await expect(page.getByTestId('home-shell')).toHaveCount(0);
+      await expect(page.getByTestId('terminal-panel')).toBeVisible();
+      await expect(page.locator('.xterm')).toBeVisible({ timeout: 15000 });
+
+      await page.getByTestId('surface-home').click();
+      await page.keyboard.press(`${mod}+j`);
+      await expect(page.getByTestId('home-shell')).toHaveCount(0);
+      await expect(page.getByTestId('bottom-panel')).toBeVisible();
+    } finally {
+      await app.close();
+    }
+  });
+
   test('E2E-005: TS diagnostics, cross-file definition and rename with preview', async () => {
     const fixture = createTsSmallFixture();
     // Introduce a type error for diagnostics.

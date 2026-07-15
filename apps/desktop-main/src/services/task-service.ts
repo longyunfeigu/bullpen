@@ -1,5 +1,6 @@
 import {
   createSequenceAllocator,
+  detectBinary,
   newId,
   productError,
   ProductFailure,
@@ -12,6 +13,7 @@ import type {
   AgentMode,
   CreateSessionInput,
   ModelRef,
+  PriorConversationContext,
   RuntimeSessionRef,
   TaskPlan,
   ToolCallRequest,
@@ -89,6 +91,8 @@ export interface CreateTaskInput {
   isolation?: 'none' | 'worktree';
   /** Optional command run once inside a fresh worktree (deps, codegen…). */
   worktreeSetup?: string;
+  /** Existing task conversations to snapshot as untrusted background context. */
+  conversationRefTaskIds?: string[];
 }
 
 interface TaskRow {
@@ -1450,6 +1454,29 @@ export class TaskService {
     };
   }
 
+  /** Content evidence for one replay frame. Hashes remain authoritative; text
+   * is returned only when both sides are non-binary. */
+  async changeEvidence(
+    taskId: string,
+    changeId: string,
+  ): Promise<{
+    beforeText: string | null;
+    afterText: string | null;
+    binary: boolean;
+  } | null> {
+    const record = this.changeRecord(taskId, changeId);
+    if (!record) return null;
+    const blobs = this.contextForTask(taskId).blobs;
+    const before = record.beforeHash ? await blobs.get(record.beforeHash) : null;
+    const after = record.afterHash ? await blobs.get(record.afterHash) : null;
+    const binary = Boolean((before && detectBinary(before)) || (after && detectBinary(after)));
+    return {
+      beforeText: before && !binary ? before.toString('utf8') : null,
+      afterText: after && !binary ? after.toString('utf8') : null,
+      binary,
+    };
+  }
+
   timeline(taskId: string, afterSequence: number): TimelineEventDto[] {
     const rows = this.db
       .prepare(
@@ -1556,7 +1583,140 @@ export class TaskService {
 
   // ---------- lifecycle ----------
 
+  /** Capture only completed, user-visible turns plus the source task's current
+   * net diff. Internal reasoning, tools and system events never cross this
+   * boundary. The snapshot makes queued starts deterministic. */
+  private async capturePriorConversations(
+    taskIds: string[] | undefined,
+  ): Promise<PriorConversationContext[]> {
+    const uniqueIds = [...new Set(taskIds ?? [])];
+    if (uniqueIds.length > 3) {
+      throw new ProductFailure(
+        productError('TASK_CONTEXT_REFERENCE_LIMIT', {
+          userMessage: 'You can reference up to 3 conversations in one task.',
+        }),
+      );
+    }
+
+    return Promise.all(
+      uniqueIds.map(async (sourceTaskId): Promise<PriorConversationContext> => {
+        const source = this.getTask(sourceTaskId);
+        if (source.external) {
+          throw new ProductFailure(
+            productError('TASK_CONTEXT_REFERENCE_UNSUPPORTED', {
+              userMessage: `“${source.title}” is an external terminal session and has no captured agent conversation.`,
+            }),
+          );
+        }
+
+        const rows = this.db
+          .prepare(
+            "SELECT type, payload_json, created_at FROM task_events WHERE task_id = ? AND type IN ('user.message', 'agent.message') ORDER BY sequence",
+          )
+          .all(sourceTaskId) as Array<{
+          type: 'user.message' | 'agent.message';
+          payload_json: string;
+          created_at: string;
+        }>;
+        const turns = rows.flatMap((row) => {
+          const payload = JSON.parse(row.payload_json) as { text?: unknown };
+          const text = typeof payload.text === 'string' ? payload.text : '';
+          if (!text.trim()) return [];
+          return [
+            {
+              role: row.type === 'user.message' ? ('user' as const) : ('assistant' as const),
+              text,
+              at: row.created_at,
+            },
+          ];
+        });
+        if (turns.length === 0) {
+          throw new ProductFailure(
+            productError('TASK_CONTEXT_REFERENCE_EMPTY', {
+              userMessage: `“${source.title}” does not have a completed conversation to reference yet.`,
+            }),
+          );
+        }
+
+        let latestDiff: string | null = null;
+        try {
+          const changeSet = await this.contextForTask(sourceTaskId).changes.changeSet(sourceTaskId);
+          const patches = changeSet.files.flatMap((file) =>
+            file.diff && file.diff.trim().length > 0 ? [file.diff] : [],
+          );
+          if (patches.length > 0) latestDiff = patches.join('\n');
+        } catch (error) {
+          // Conversation text is still valid if an old worktree/diff is no
+          // longer readable. Keep the reference and record the omission.
+          this.logger.warn('referenced task diff unavailable', {
+            sourceTaskId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
+        return {
+          sourceTaskId,
+          title: source.title,
+          projectName: source.projectName,
+          projectPath: source.projectPath,
+          turns,
+          latestDiff,
+          capturedAt: new Date().toISOString(),
+        };
+      }),
+    );
+  }
+
+  private savePriorConversations(taskId: string, contexts: PriorConversationContext[]): void {
+    const insert = this.db.prepare(
+      `INSERT INTO task_conversation_references
+       (task_id, position, source_task_id, source_title, source_project_name, source_project_path, turns_json, latest_diff, captured_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    contexts.forEach((context, position) => {
+      insert.run(
+        taskId,
+        position,
+        context.sourceTaskId,
+        context.title,
+        context.projectName,
+        context.projectPath,
+        JSON.stringify(context.turns),
+        context.latestDiff,
+        context.capturedAt,
+      );
+    });
+  }
+
+  private priorConversations(taskId: string): PriorConversationContext[] {
+    const rows = this.db
+      .prepare(
+        `SELECT source_task_id, source_title, source_project_name, source_project_path,
+                turns_json, latest_diff, captured_at
+         FROM task_conversation_references WHERE task_id = ? ORDER BY position`,
+      )
+      .all(taskId) as Array<{
+      source_task_id: string;
+      source_title: string;
+      source_project_name: string;
+      source_project_path: string;
+      turns_json: string;
+      latest_diff: string | null;
+      captured_at: string;
+    }>;
+    return rows.map((row) => ({
+      sourceTaskId: row.source_task_id,
+      title: row.source_title,
+      projectName: row.source_project_name,
+      projectPath: row.source_project_path,
+      turns: JSON.parse(row.turns_json) as PriorConversationContext['turns'],
+      latestDiff: row.latest_diff,
+      capturedAt: row.captured_at,
+    }));
+  }
+
   async createTask(input: CreateTaskInput): Promise<TaskDto> {
+    const priorConversations = await this.capturePriorConversations(input.conversationRefTaskIds);
     // ADR-0009: dispatch target — explicit projectPath, else the focused workspace.
     const project = input.projectPath
       ? await this.workspaceRowForPath(input.projectPath)
@@ -1603,25 +1763,28 @@ export class TaskService {
         gitBaseline = null;
       }
     }
-    this.db
-      .prepare(
-        `INSERT INTO tasks (id, workspace_id, title, goal_md, acceptance_json, mode, state, model_json, verification_json, git_baseline_json, worktree_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        project.id,
-        input.title,
-        input.goalMd,
-        JSON.stringify(input.acceptance),
-        input.mode,
-        JSON.stringify(input.model),
-        JSON.stringify(input.verification),
-        gitBaseline ? JSON.stringify(gitBaseline) : null,
-        worktree ? JSON.stringify(worktree) : null,
-        now,
-        now,
-      );
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO tasks (id, workspace_id, title, goal_md, acceptance_json, mode, state, model_json, verification_json, git_baseline_json, worktree_json, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          project.id,
+          input.title,
+          input.goalMd,
+          JSON.stringify(input.acceptance),
+          input.mode,
+          JSON.stringify(input.model),
+          JSON.stringify(input.verification),
+          gitBaseline ? JSON.stringify(gitBaseline) : null,
+          worktree ? JSON.stringify(worktree) : null,
+          now,
+          now,
+        );
+      this.savePriorConversations(id, priorConversations);
+    });
     this.recordEvent(id, 'task.created', {
       title: input.title,
       mode: input.mode,
@@ -1630,6 +1793,13 @@ export class TaskService {
       gitBaseline,
       project: { name: project.displayName, path: project.canonicalPath },
       worktree,
+      conversationRefs: priorConversations.map((context) => ({
+        taskId: context.sourceTaskId,
+        title: context.title,
+        projectName: context.projectName,
+        turnCount: context.turns.length,
+        hasDiff: context.latestDiff !== null,
+      })),
     });
     if (setupResult) {
       this.recordEvent(id, 'worktree.setup', { ...setupResult });
@@ -1649,16 +1819,20 @@ export class TaskService {
   async createExternalTask(input: {
     cli: string;
     terminalId: string;
+    cwd: string;
     projectPath: string;
+    /** Preserve an originating task worktree so accounting stays on that mount. */
+    worktree?: TaskWorktree | null;
     snapshotRef: string | null;
   }): Promise<TaskDto> {
     const project = await this.workspaceRowForPath(input.projectPath);
+    const accountingRoot = input.worktree?.path ?? project.canonicalPath;
     const now = new Date().toISOString();
     const id = newId('task');
     let gitBaseline: { head: string | null; branch: string | null } | null = null;
     if (project.isGitRepo) {
       try {
-        gitBaseline = await new GitService(project.canonicalPath).headInfo();
+        gitBaseline = await new GitService(accountingRoot).headInfo();
       } catch {
         gitBaseline = null;
       }
@@ -1666,13 +1840,15 @@ export class TaskService {
     const external = {
       cli: input.cli,
       terminalId: input.terminalId,
+      cwd: input.cwd,
       snapshotRef: input.snapshotRef,
       status: 'active' as const,
+      captureGrade: 'observed' as const,
     };
     this.db
       .prepare(
         `INSERT INTO tasks (id, workspace_id, title, goal_md, acceptance_json, mode, state, model_json, verification_json, git_baseline_json, worktree_json, external_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'ask', 'READY', ?, ?, ?, NULL, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, 'ask', 'READY', ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -1683,6 +1859,7 @@ export class TaskService {
         JSON.stringify({ providerId: 'external', modelId: input.cli }),
         JSON.stringify([]),
         gitBaseline ? JSON.stringify(gitBaseline) : null,
+        input.worktree ? JSON.stringify(input.worktree) : null,
         JSON.stringify(external),
         now,
         now,
@@ -1694,7 +1871,7 @@ export class TaskService {
       acceptance: [],
       gitBaseline,
       project: { name: project.displayName, path: project.canonicalPath },
-      worktree: null,
+      worktree: input.worktree ?? null,
       external,
     });
     this.recordEvent(id, 'external.sessionStarted', {
@@ -1707,13 +1884,18 @@ export class TaskService {
       id,
       cli: input.cli,
       project: project.canonicalPath,
+      worktree: input.worktree?.path ?? null,
       snapshot: input.snapshotRef,
     });
     return this.getTask(id);
   }
 
   /** External session ended: freeze the count, land in REVIEW_READY (never auto-accept). */
-  finishExternalSession(taskId: string, changedFiles: number): TaskDto {
+  finishExternalSession(
+    taskId: string,
+    changedFiles: number,
+    captureGrade?: 'structured' | 'observed',
+  ): TaskDto {
     const row = this.getRow(taskId);
     const external = row.external_json
       ? (JSON.parse(row.external_json) as NonNullable<TaskDto['external']>)
@@ -1724,16 +1906,76 @@ export class TaskService {
           'UPDATE tasks SET external_json = ?, changed_files = ?, updated_at = ? WHERE id = ?',
         )
         .run(
-          JSON.stringify({ ...external, status: 'ended' }),
+          JSON.stringify({
+            ...external,
+            status: 'ended',
+            captureGrade: captureGrade ?? external.captureGrade ?? 'observed',
+          }),
           changedFiles,
           new Date().toISOString(),
           taskId,
         );
-      this.recordEvent(taskId, 'external.sessionEnded', { changedFiles });
+      this.recordEvent(taskId, 'external.sessionEnded', {
+        cli: external.cli,
+        changedFiles,
+        captureGrade: captureGrade ?? external.captureGrade ?? 'observed',
+      });
     }
     const task = this.getTask(taskId);
-    if (task.state === 'IN_PROGRESS') return this.setState(taskId, 'REVIEW_READY');
+    // On restart, markOrphanedRunsInterrupted runs before the external-session
+    // sweep. External CLIs never resume through AgentHost, so their stranded
+    // task must still close into review instead of exposing the generic,
+    // guaranteed-to-fail task.start recovery action.
+    if (['IN_PROGRESS', 'INTERRUPTED', 'FAILED'].includes(task.state)) {
+      return this.setState(taskId, 'REVIEW_READY');
+    }
     return task;
+  }
+
+  /** Promote an external task once a provider JSON stream is positively observed. */
+  updateExternalCaptureGrade(taskId: string, captureGrade: 'structured' | 'observed'): void {
+    const row = this.getRow(taskId);
+    const external = row.external_json
+      ? (JSON.parse(row.external_json) as NonNullable<TaskDto['external']>)
+      : null;
+    if (!external || external.captureGrade === captureGrade) return;
+    this.db
+      .prepare('UPDATE tasks SET external_json = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify({ ...external, captureGrade }), new Date().toISOString(), taskId);
+  }
+
+  /** Re-open an ended external CLI session in a terminal, keeping one Task baseline. */
+  resumeExternalSession(taskId: string, terminalId: string): TaskDto {
+    const row = this.getRow(taskId);
+    const external = row.external_json
+      ? (JSON.parse(row.external_json) as NonNullable<TaskDto['external']>)
+      : null;
+    if (!external) {
+      throw new ProductFailure(
+        productError('EXTERNAL_SESSION_REQUIRED', {
+          userMessage: 'This task is not an external terminal session.',
+        }),
+      );
+    }
+    const task = this.getTask(taskId);
+    if (!['REVIEW_READY', 'INTERRUPTED', 'FAILED'].includes(task.state)) {
+      throw new ProductFailure(
+        productError('EXTERNAL_SESSION_NOT_RESUMABLE', {
+          userMessage: `The ${external.cli} session cannot resume from ${task.state}.`,
+        }),
+      );
+    }
+    const resumed = { ...external, terminalId, status: 'active' as const };
+    this.db
+      .prepare('UPDATE tasks SET external_json = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(resumed), new Date().toISOString(), taskId);
+    this.recordEvent(taskId, 'external.sessionResuming', {
+      cli: external.cli,
+      terminalId,
+      strategy: external.cli === 'claude' ? 'continue' : 'last',
+      captureGrade: external.captureGrade ?? 'observed',
+    });
+    return this.setState(taskId, 'IN_PROGRESS');
   }
 
   /** ADR-0017: sweep external tasks stranded mid-session by an app quit. */
@@ -1743,7 +1985,15 @@ export class TaskService {
       .all() as unknown as TaskRow[];
     for (const row of rows) {
       const external = JSON.parse(row.external_json!) as NonNullable<TaskDto['external']>;
-      if (external.status !== 'active') continue;
+      // Older builds could persist a split-brain row: process tracking had
+      // already written external.status=ended, then generic orphan recovery
+      // projected the Task itself as INTERRUPTED. Normalize both active
+      // orphans and those historical ended/incomplete rows on every startup.
+      const needsRecovery =
+        external.status === 'active' ||
+        (external.status === 'ended' &&
+          ['IN_PROGRESS', 'INTERRUPTED', 'FAILED'].includes(row.state));
+      if (!needsRecovery) continue;
       try {
         this.finishExternalSession(row.id, row.changed_files ?? 0);
         this.logger.info('external session recovered to review', { taskId: row.id });
@@ -1844,6 +2094,7 @@ export class TaskService {
         ref = undefined;
       }
     }
+    let createdSession = false;
     if (!ref) {
       const sessionInput: CreateSessionInput = {
         taskId,
@@ -1854,6 +2105,7 @@ export class TaskService {
         systemPreamble: this.buildPreamble(task, context.root),
       };
       ref = await this.host.createSession(sessionInput);
+      createdSession = true;
       this.sessionRefs.set(taskId, ref);
       this.db
         .prepare(
@@ -1887,15 +2139,35 @@ export class TaskService {
       );
 
     const userText = prompt ?? this.initialPrompt(task);
-    this.recordEvent(taskId, 'user.message', { text: userText });
+    const priorConversations = this.priorConversations(taskId);
+    this.recordEvent(taskId, 'user.message', {
+      text: userText,
+      conversationRefs: priorConversations.map((context) => ({
+        taskId: context.sourceTaskId,
+        title: context.title,
+        projectName: context.projectName,
+        turnCount: context.turns.length,
+        hasDiff: context.latestDiff !== null,
+      })),
+    });
     this.setState(taskId, task.state === 'READY' ? 'EXPLORING' : 'IN_PROGRESS');
 
+    const refreshedSkills = createdSession ? '' : this.skills.preambleBlock();
     this.host.startRun(taskId, {
       sessionRef: ref,
       runId,
       // ADR-0015: a leading `/skill:name` expands to the skill's instructions
       // (the timeline keeps the user's original text above).
-      prompt: this.skills.expandCommand(userText),
+      // Reused runtime sessions keep their original system preamble. Refresh
+      // the derived skill catalog on each later run so linked-source changes
+      // are visible without recreating the conversation session.
+      prompt: [
+        ...(refreshedSkills
+          ? [`<skill_catalog_refresh>\n${refreshedSkills}\n</skill_catalog_refresh>`]
+          : []),
+        this.skills.expandCommand(userText),
+      ].join('\n\n'),
+      priorConversations,
     });
   }
 
@@ -1960,8 +2232,15 @@ export class TaskService {
     const task = this.getTask(taskId);
     if (runId && isRunningState(task.state as TaskState)) {
       this.recordEvent(taskId, 'user.message', { text, kind: during });
-      // ADR-0015: `/skill:name` works in replies too — expanded product-side.
-      const expanded = this.skills.expandCommand(text);
+      // ADR-0019: active-session replies also receive the current linked
+      // catalog; explicit commands are expanded from the same live revision.
+      const currentSkills = this.skills.preambleBlock();
+      const expanded = [
+        ...(currentSkills
+          ? [`<skill_catalog_refresh>\n${currentSkills}\n</skill_catalog_refresh>`]
+          : []),
+        this.skills.expandCommand(text),
+      ].join('\n\n');
       if (during === 'steer') this.host.steer(runId, expanded);
       else this.host.followUp(runId, expanded);
       return during === 'steer' ? 'steered' : 'queued';

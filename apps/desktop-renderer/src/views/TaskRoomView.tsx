@@ -25,6 +25,7 @@ import { useSkillSlash } from './SkillSlashPicker.js';
 import { useDraftStore } from '../store/draftStore.js';
 import { openTaskInEditor } from './openInEditor.js';
 import { ExternalTerminalColumn, useExternalFiles } from './ExternalRoom.js';
+import { useExternalStore } from '../store/externalStore.js';
 
 /**
  * Task Room v2 (ADR-0008/0009, PIVOT-021/028): the per-task page rendered in
@@ -40,12 +41,21 @@ export function TaskRoomView(): React.JSX.Element {
   const workspaceStore = useWorkspaceStore();
   const taskId = useAppStore((s) => s.taskRoomTaskId);
   const task = store.tasks.find((t) => t.id === taskId) ?? null;
+  const resumingExternalTaskId = useExternalStore((s) => s.resumingTaskId);
   const activity = useActivityStore((s) => (taskId ? s.perTask[taskId] : undefined));
 
   useEffect(() => {
     store.init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Some external-session entry points (terminal bar / promoted panel) route
+  // directly to a room. Keep the task store aligned with the room URL/state so
+  // decision actions can never target an empty or previously active task.
+  useEffect(() => {
+    if (!taskId || useTaskStore.getState().activeTaskId === taskId) return;
+    void useTaskStore.getState().openTask(taskId);
+  }, [taskId]);
 
   // Verification evidence: latest run per label from the recorded events.
   const verifications = useMemo(() => {
@@ -78,6 +88,11 @@ export function TaskRoomView(): React.JSX.Element {
 
   const running = RUNNING_TASK_STATES.has(task.state);
   const answered = isAnswered(task);
+  const externalCanResume =
+    task.external?.status === 'ended' &&
+    (task.external.cli === 'claude' || task.external.cli === 'codex') &&
+    ['REVIEW_READY', 'INTERRUPTED', 'FAILED'].includes(task.state);
+  const externalResuming = resumingExternalTaskId === task.id;
   // ADR-0017: an external session's rail is fed by watcher accounting, not by
   // agent tool events (there are none). Same rows, same peek behavior.
   const externalFiles = useExternalFiles(task);
@@ -133,17 +148,19 @@ export function TaskRoomView(): React.JSX.Element {
             Stop
           </button>
         ) : null}
-        {task.external ? null : (
-          <button
-            className="ghostbtn"
-            data-testid="replay-open"
-            title="Replay what the agent did, step by step"
-            onClick={() => store.openReplay()}
-          >
-            <Ic name="play" size={12} />
-            Replay
-          </button>
-        )}
+        <button
+          className="ghostbtn"
+          data-testid="replay-open"
+          title={
+            task.external
+              ? 'Replay the observed terminal, file versions and structured provider events'
+              : 'Replay what the agent did, step by step'
+          }
+          onClick={() => store.openReplay()}
+        >
+          <Ic name="play" size={12} />
+          Replay
+        </button>
         <button
           className="ghostbtn"
           data-testid="task-room-open-editor"
@@ -290,8 +307,23 @@ export function TaskRoomView(): React.JSX.Element {
             {task.state === 'REVIEW_READY' && answered ? (
               <>
                 <div className="tr-note" data-testid="task-room-answered">
-                  The agent answered — nothing changed on disk, so there is nothing to review.
+                  {task.external
+                    ? `The ${task.external.cli} session ended with no tracked file changes.`
+                    : 'The agent answered — nothing changed on disk, so there is nothing to review.'}
                 </div>
+                {externalCanResume ? (
+                  <button
+                    className="btn primary tr-wide"
+                    data-testid="task-resume"
+                    disabled={externalResuming}
+                    title={`Continue the previous ${task.external!.cli} conversation in its terminal`}
+                    onClick={() => void store.resumeTask(task.id)}
+                  >
+                    {externalResuming
+                      ? 'Resuming…'
+                      : `Resume ${task.external!.cli === 'claude' ? 'Claude' : 'Codex'} session`}
+                  </button>
+                ) : null}
                 <button
                   className="btn tr-wide"
                   data-testid="task-done"
@@ -303,8 +335,21 @@ export function TaskRoomView(): React.JSX.Element {
               </>
             ) : task.state === 'REVIEW_READY' ? (
               <>
+                {externalCanResume ? (
+                  <button
+                    className="btn primary tr-wide"
+                    data-testid="task-resume"
+                    disabled={externalResuming}
+                    title={`Continue the previous ${task.external!.cli} conversation in its terminal`}
+                    onClick={() => void store.resumeTask(task.id)}
+                  >
+                    {externalResuming
+                      ? 'Resuming…'
+                      : `Resume ${task.external!.cli === 'claude' ? 'Claude' : 'Codex'} session`}
+                  </button>
+                ) : null}
                 <button
-                  className="btn primary tr-wide"
+                  className={`btn ${externalCanResume ? '' : 'primary'} tr-wide`}
                   data-testid="review-open"
                   onClick={() => void store.openReview()}
                 >
@@ -350,10 +395,19 @@ export function TaskRoomView(): React.JSX.Element {
                 <button
                   className="btn primary tr-wide"
                   data-testid="task-resume"
-                  title="Start a new run for this task"
-                  onClick={() => void store.resumeTask()}
+                  disabled={externalResuming}
+                  title={
+                    externalCanResume
+                      ? `Continue the previous ${task.external!.cli} conversation in its terminal`
+                      : 'Start a new run for this task'
+                  }
+                  onClick={() => void store.resumeTask(task.id)}
                 >
-                  Resume
+                  {externalResuming
+                    ? 'Resuming…'
+                    : externalCanResume
+                      ? `Resume ${task.external!.cli === 'claude' ? 'Claude' : 'Codex'} session`
+                      : 'Resume'}
                 </button>
                 <button
                   className="btn tr-wide"
@@ -413,7 +467,11 @@ function actionLine(kind: string, label: string): string {
 function ReviewBar({
   task,
 }: {
-  task: { id: string; worktree: { branch: string } | null };
+  task: {
+    id: string;
+    worktree: { branch: string } | null;
+    verification: Array<{ label: string }>;
+  };
 }): React.JSX.Element | null {
   const store = useTaskStore();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -452,6 +510,28 @@ function ReviewBar({
   const agentSummary = typeof report?.agentSummary === 'string' ? report.agentSummary : null;
   const superseded = verification?.runs.filter((r) => r.superseded).length ?? 0;
   const stale = verification?.runs.some((r) => r.stale) === true;
+  const latestRuns = useMemo(() => {
+    const byLabel = new Map<string, { label: string; state: string }>();
+    for (const event of store.timeline) {
+      if (event.type !== 'verification.completed') continue;
+      const run = (event.payload as { run?: { label?: unknown; state?: unknown } }).run;
+      if (run && typeof run.label === 'string') {
+        byLabel.set(run.label, { label: run.label, state: String(run.state ?? '') });
+      }
+    }
+    return [...byLabel.values()];
+  }, [store.timeline]);
+  const effectiveVerification =
+    verification && verification.runs.length > 0
+      ? verification
+      : latestRuns.length > 0
+        ? {
+            runs: latestRuns,
+            passed: latestRuns.filter((run) => run.state === 'passed').length,
+            failed: latestRuns.filter((run) => run.state !== 'passed').length,
+          }
+        : verification;
+  const effectivelyUnverified = unverified && latestRuns.length === 0;
 
   return (
     <div className="tr-reviewbar" data-testid="review-bar">
@@ -467,10 +547,10 @@ function ReviewBar({
             </span>
           </span>
         ) : null}
-        {verification && verification.runs.length > 0 ? (
+        {effectiveVerification && effectiveVerification.runs.length > 0 ? (
           <span className="tr-rb-meta" data-testid="report-verification">
-            checks: {verification.passed} passed
-            {verification.failed > 0 ? `, ${verification.failed} failed` : ''}
+            checks: {effectiveVerification.passed} passed
+            {effectiveVerification.failed > 0 ? `, ${effectiveVerification.failed} failed` : ''}
             {superseded > 0 ? ` · ${superseded} superseded${stale ? ' (stale)' : ''}` : ''}
           </span>
         ) : null}
@@ -527,9 +607,22 @@ function ReviewBar({
           ) : null}
         </div>
       </div>
-      {unverified ? (
+      {effectivelyUnverified ? (
         <div className="tr-rb-warn" data-testid="report-unverified">
-          Unverified — no verification commands were run.
+          <span>
+            {task.verification.length > 0
+              ? `${task.verification.length} configured check${task.verification.length === 1 ? '' : 's'} ${task.verification.length === 1 ? 'has' : 'have'} not run.`
+              : 'Unverified — no verification commands were run.'}
+          </span>
+          {task.verification.length > 0 ? (
+            <button
+              className="btn"
+              data-testid="review-bar-run-verification"
+              onClick={() => void store.runVerification()}
+            >
+              Run checks
+            </button>
+          ) : null}
         </div>
       ) : null}
       {risks.length > 0 ? <div className="tr-rb-warn">Risks: {risks.join('; ')}</div> : null}
@@ -934,6 +1027,7 @@ function RoomComposer({
                   setThinking(level);
                   setModelDirty(true);
                 }}
+                onConfigureModels={() => app.openSettings('models')}
                 testid="reply"
               />
             )}
@@ -1059,6 +1153,7 @@ function RoomComposer({
               onModelKey={setModelKey}
               thinking={thinking}
               onThinking={setThinking}
+              onConfigureModels={() => app.openSettings('models')}
               testid="room"
             />
             {sendButton}

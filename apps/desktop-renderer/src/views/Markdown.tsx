@@ -55,12 +55,22 @@ const FENCE_LANGUAGE: Record<string, string> = {
 function CodeBlock({ code, lang }: { code: string; lang: string | null }): React.JSX.Element {
   const [html, setHtml] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [appearanceVersion, setAppearanceVersion] = useState(0);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => setAppearanceVersion((value) => value + 1));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme', 'data-skin'],
+    });
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -82,7 +92,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string | null }): React
     return () => {
       cancelled = true;
     };
-  }, [code, lang]);
+  }, [appearanceVersion, code, lang]);
 
   return (
     <div className="md-codeblock">

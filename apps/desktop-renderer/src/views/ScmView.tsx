@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import type { ChannelResponse } from '@pi-ide/ipc-contracts';
-import { monaco } from '../monaco-setup.js';
+import { monaco, monacoFontFamily, monacoThemeName } from '../monaco-setup.js';
 import { onEvent, rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
@@ -350,7 +350,8 @@ function GitDiffModal({
         readOnly: true,
         renderSideBySide: !inline,
         hideUnchangedRegions: { enabled: true },
-        theme: document.documentElement.dataset.theme === 'light' ? 'pi-light' : 'pi-dark',
+        fontFamily: monacoFontFamily(),
+        theme: monacoThemeName(),
       });
       diffEditor.setModel({ original: originalModel, modified: modifiedModel });
       diffRef.current = diffEditor;

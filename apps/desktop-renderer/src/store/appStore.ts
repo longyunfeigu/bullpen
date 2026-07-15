@@ -10,8 +10,19 @@ import { LayoutStateSchema } from '@pi-ide/ipc-contracts';
 import { newId } from '@pi-ide/foundation';
 import { onEvent, rpc, rpcResult } from '../bridge.js';
 import { peekOpen, peekCloseTab, type PeekState } from '../views/peek.js';
+import { applyAppearance } from '../appearance.js';
 
 export type OverlayKind = 'none' | 'settings' | 'diagnostics' | 'about';
+export type SettingsSection =
+  | 'general'
+  | 'editor'
+  | 'terminal'
+  | 'agent'
+  | 'models'
+  | 'permissions'
+  | 'privacy'
+  | 'updates'
+  | 'about';
 
 export interface Toast {
   id: string;
@@ -29,6 +40,7 @@ interface AppStore {
   /** ⌘K quick launcher (PIVOT-018): projects, tasks, files, actions. */
   launcherOpen: boolean;
   overlay: OverlayKind;
+  settingsSection: SettingsSection;
   toasts: Toast[];
   /** Dual-form shell (ADR-0004): Home task launcher vs full IDE workspace. */
   surface: 'home' | 'workspace';
@@ -71,6 +83,7 @@ interface AppStore {
   setPaletteOpen(open: boolean): void;
   setLauncherOpen(open: boolean): void;
   setOverlay(overlay: OverlayKind): void;
+  openSettings(section?: SettingsSection): void;
   updateSettings(scope: 'global' | 'workspace', patch: Record<string, unknown>): Promise<void>;
   refreshSettings(): Promise<void>;
   pushToast(kind: Toast['kind'], message: string): void;
@@ -104,16 +117,6 @@ if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', flushPendingLayout);
 }
 
-function applyThemeAttribute(settings: Settings | null): void {
-  const pref = settings?.general.theme ?? 'system';
-  const dark =
-    pref === 'dark' ||
-    (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  const scale = settings?.general.uiScale ?? 1;
-  document.documentElement.style.fontSize = `${Math.round(13 * scale)}px`;
-}
-
 export const useAppStore = create<AppStore>((set, get) => ({
   ready: false,
   appInfo: null,
@@ -123,6 +126,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   paletteOpen: false,
   launcherOpen: false,
   overlay: 'none',
+  settingsSection: 'general',
   toasts: [],
   surface: 'home',
   taskRoomTaskId: null,
@@ -204,14 +208,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     ]);
     if (info.ok) set({ appInfo: info.data });
     if (settingsState.ok) {
+      applyAppearance(settingsState.data.effective);
       set({ settings: settingsState.data.effective, settingsIssues: settingsState.data.issues });
-      applyThemeAttribute(settingsState.data.effective);
     }
     if (layoutRes.ok && layoutRes.data.layout) set({ layout: layoutRes.data.layout });
     set({ ready: true });
 
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      applyThemeAttribute(get().settings);
+      applyAppearance(get().settings);
     });
     onEvent('settings.changed', () => {
       void get().refreshSettings();
@@ -231,12 +235,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
     get().setLayout({ agentPanelVisible: !get().layout.agentPanelVisible });
   },
   toggleBottomPanel() {
+    if (get().surface === 'home') {
+      get().setSurface('workspace');
+      get().setLayout({ bottomPanelVisible: true });
+      return;
+    }
     get().setLayout({ bottomPanelVisible: !get().layout.bottomPanelVisible });
   },
   showSideBarView(view) {
     get().setLayout({ sideBarView: view, sideBarVisible: true });
   },
   showBottomTab(tab) {
+    // Bottom-panel commands remain globally available while Home covers the
+    // workbench. Reveal the Editor before opening the requested tab so actions
+    // such as Terminal → New Terminal never succeed invisibly behind Home.
+    get().setSurface('workspace');
     get().setLayout({ bottomTab: tab, bottomPanelVisible: true });
   },
   setPaletteOpen(open) {
@@ -248,12 +261,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setOverlay(overlay) {
     set({ overlay });
   },
+  openSettings(settingsSection = 'general') {
+    set({ overlay: 'settings', settingsSection });
+  },
 
   async updateSettings(scope, patch) {
     const result = await rpcResult('settings.update', { scope, patch });
     if (result.ok) {
+      applyAppearance(result.data.effective);
       set({ settings: result.data.effective, settingsIssues: result.data.issues });
-      applyThemeAttribute(result.data.effective);
     } else {
       get().pushToast('error', `${result.error.userMessage} (${result.error.code})`);
     }
@@ -262,8 +278,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   async refreshSettings() {
     const result = await rpcResult('settings.get', {});
     if (result.ok) {
+      applyAppearance(result.data.effective);
       set({ settings: result.data.effective, settingsIssues: result.data.issues });
-      applyThemeAttribute(result.data.effective);
     }
   },
 

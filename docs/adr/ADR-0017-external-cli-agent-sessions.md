@@ -168,3 +168,156 @@ Decision 4 now reads:
    blank-pane paths above. E2E now types INTO the promoted terminal and
    asserts the PTY echo, plus tab-switch / surface round-trip / return
    regressions (`terminal-remount.spec.ts`).
+
+## Amendment 3 (2026-07-15) — ended sessions resume through the external CLI
+
+Field failure: the Task Room showed the managed-runtime `Resume` action for an
+ended external Task. That action called `task.start`; the host correctly rejects
+external Tasks (`TASK_EXTERNAL`), so the button could never continue Claude or
+Codex. A second routing defect made Terminal → Room change the visible route
+without binding the room's Task as `activeTaskId`, turning some clicks into a
+silent no-op. After an application restart, startup ordering made the mismatch
+more visible: orphan recovery first marked the Task INTERRUPTED, while external
+recovery only closed Tasks still in IN_PROGRESS.
+
+Decision:
+
+1. External metadata records the CLI working directory. Resume reuses the live
+   source terminal when it still exists; otherwise it creates a terminal in the
+   recorded cwd (legacy rows fall back to the project root).
+2. The host, not renderer input, owns the complete executable command map:
+   Claude Code uses `claude --continue`; Codex uses `codex resume --last`.
+   Custom detected CLI names have no Resume action, avoiding shell injection and
+   false promises for tools whose continuation semantics are unknown.
+3. Resume keeps the existing external Task, snapshot baseline and change set.
+   The Task returns to IN_PROGRESS only for that continuation, and the RPC does
+   not report success until foreground-process detection confirms the expected
+   CLI. Failure or a 12-second detection timeout returns the Task to
+   REVIEW_READY with an actionable error.
+4. Restart recovery closes active external Tasks from IN_PROGRESS, INTERRUPTED
+   or FAILED into REVIEW_READY. It also repairs historical split-brain rows
+   whose external status is already ended while the Task remains IN_PROGRESS,
+   INTERRUPTED or FAILED. Terminal/Room actions carry the explicit Task id; the
+   room route also synchronizes active Task state for all other controls.
+
+This continues the CLI's latest conversation for the recorded working
+directory—the strongest native identity available without transcript/session
+database parsing, which remains outside v1's explicit boundary. Same-terminal
+immediate continuation is therefore the original just-ended conversation;
+after a long gap, the CLI's own current-directory ordering remains authoritative.
+
+## Amendment 4 (2026-07-15) — promoted-panel resize is a real splitter
+
+Field failure: the editor/session boundary looked draggable but exposed only a
+5px hit target inside the panel. It was difficult to acquire on a dense
+Monaco-minimap boundary, and the implementation listened for bubbling window
+`mousemove` events; Monaco or xterm could consume movement after the pointer
+crossed into either surface. Users reasonably experienced the divider as a
+decorative line that did not move.
+
+Decision: the separator has a 12px invisible hit target, an explicit hover,
+keyboard-focus and active-drag line, and Pointer Capture for the entire drag.
+While active, the application holds the column-resize cursor and suppresses
+accidental text selection. Width remains clamped to 480–900px. The separator
+also exposes vertical orientation and min/max/current ARIA values; Left/Right
+resize by 16px and Home/End select the bounds. E2E measures the hit box, drags
+100px across Monaco/xterm, asserts the rendered panel width changed, and then
+checks keyboard resize before continuing the live PTY/session-room flow.
+
+## Amendment 5 (2026-07-15) — promoted external sessions own a single right rail
+
+Field failure: the promoted Claude/Codex terminal opened beside the generic
+managed-task Agent Panel. The latter exposed Stop, Replay, +Task and a guidance
+composer, but an external CLI has no managed AgentHost run or composer-to-stdin
+bridge behind those controls. The result was two competing right rails, less
+space for the TUI, and controls that looked relevant to Claude while operating
+on a different task model or doing nothing.
+
+Decision: right-rail placement is exclusive. Moving an external session to the
+side panel records whether the generic Agent Panel was visible and collapses it.
+While the external session remains promoted, rendering also rejects a second
+Agent Panel even if its global toggle command is invoked. Return to dock,
+terminal close, and workspace change leave the exclusive placement through the
+same unpromote path and restore the prior layout; a panel that was already
+hidden is not forced open. Managed tasks keep the existing Agent Panel when no
+external terminal is promoted.
+
+This is layout ownership only. External session accounting, session end,
+Resume, Review, Task Room, terminal lifetime and the unmanaged security boundary
+are unchanged.
+
+## Amendment 6 (2026-07-15) — session replay evidence and A–E projections
+
+The original replay treated a session as a short sequence of managed-agent
+actions. That model could not honestly represent a 30-minute run, an external
+Claude/Codex terminal, or non-coding work spanning tools and applications.
+
+Decision:
+
+1. Replay is a projection of the existing `task_events` ledger and
+   content-addressed blobs, not a second transcript database. Pi managed runs
+   are `full`; recognized Claude/Codex JSON event streams are `structured`;
+   ordinary interactive terminal sessions are `observed`.
+2. The external-session host persists bounded, redacted PTY observations and
+   every observed file version. File events carry a change id plus before/after
+   hashes, so replay can reconstruct intermediate versions instead of showing
+   only the final net diff. PTY replay is capped at 2 MiB per session; file and
+   structured evidence continue after that cap.
+3. All five views read the same normalized events and evidence. A is the
+   default cinematic entry; D is the long-task detail view; E is the approval
+   and audit view; B and C are advanced observable-causality and cross-app
+   projections. The scrubber uses real event timestamps and supports 1–16×
+   playback.
+4. Capability is explicit in the UI. Observed sessions never claim hidden
+   reasoning, decisions are visually uncertain unless backed by an observable
+   event, and application/resource relationships appear only when recorded by
+   the source. Structured provider envelopes are parsed before terminal
+   persistence; only observable summaries are retained, while `thinking`,
+   `redacted_thinking`, reasoning items and partial private JSON are discarded.
+5. Replay is available from both managed-agent and external Task Rooms. The
+   same source/capture-grade labels and evidence links survive in A–E, so a
+   visually richer projection cannot silently strengthen the underlying claim.
+
+No schema migration is required: the ledger and blob store already provide the
+durable substrate, and `captureGrade` is optional external-session metadata.
+The honest limits are deliberate: bytes printed before foreground-process
+detection may be unavailable; historical changes created before content blobs
+were retained can expose hashes/patches but not both complete file versions;
+and a plain third-party TUI cannot expose private reasoning or semantic
+cross-application state. A future first-party app-server/hook launcher may
+upgrade those sessions to structured capture, but replay must never infer it.
+
+## Amendment 7 (2026-07-15) — terminal contexts and the reversible focus slot
+
+Field failure: terminal placement and project ownership were coupled to the
+currently focused editor workspace. Switching projects could dispose a useful
+Claude/Codex PTY or silently redirect its accounting, while the right rail
+looked like a Claude-only destination. Requiring every terminal to choose an
+editor directory also made unrelated concurrent work awkward.
+
+Decision:
+
+1. The Bottom Panel remains the terminal home. Every terminal stays in its
+   session list even while its live xterm is mounted in the right rail, and the
+   row exposes `IN SIDE` plus a one-click return path.
+2. The right rail is one reversible focus slot, not an agent provider. Shell,
+   Claude Code and Codex terminals may enter it. Moving a second terminal there
+   atomically swaps the two existing xterms; terminal ids, processes, scrollback
+   and external-session accounting are preserved.
+3. Terminal creation selects two independent values: launch type (Shell,
+   Claude Code or Codex) and working context (focused project, recent project,
+   Task/worktree or isolated scratch directory). The host resolves every
+   context to a validated cwd and owns the fixed executable map; the renderer
+   never submits an arbitrary cwd or command string.
+4. A terminal's project/task identity is immutable for its lifetime. Editor
+   focus changes do not kill terminals or move their file watcher/accounting
+   root. Scratch terminals have no project accounting; Task terminals inherit
+   the Task worktree when present.
+5. The quick Terminal command reopens the current terminal home and only
+   creates a focused Shell when none exists. The split New Terminal control
+   keeps one-click focused Shell creation while its menu opens the full
+   type/context chooser.
+
+The layout continues Amendment 5's exclusive right-rail ownership: promoting
+an external terminal temporarily suppresses the generic Agent Panel, and the
+prior panel state returns when the focus slot is cleared.

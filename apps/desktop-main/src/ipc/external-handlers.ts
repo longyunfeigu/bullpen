@@ -7,6 +7,8 @@ export function registerExternalHandlers(sessions: ExternalSessionService, logge
   registerHandlers(
     {
       'external.listSessions': async () => ({ sessions: sessions.list() }),
+      'external.resumeSession': async ({ taskId, terminalId }) =>
+        sessions.resume(taskId, terminalId),
     },
     logger,
   );

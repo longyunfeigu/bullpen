@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // Contract tests may import pi here: this package is the sanctioned adapter boundary.
 import { AuthStorage, ModelRegistry } from '@earendil-works/pi-coding-agent';
-import { PiAgentRuntime } from './index.js';
-import type { ToolExecutor } from '@pi-ide/agent-contract';
+import { buildPriorConversationMessages, PiAgentRuntime } from './index.js';
+import type { PriorConversationContext, ToolExecutor } from '@pi-ide/agent-contract';
 
 const executor: ToolExecutor = async (call) => ({
   callId: call.callId,
@@ -25,6 +25,40 @@ afterAll(() => {
 });
 
 describe('Pi adapter contract (AG-013 / ADR-0001)', () => {
+  it('keeps referenced turns separate, chunkable and explicitly untrusted', () => {
+    const context: PriorConversationContext = {
+      sourceTaskId: 'task_source',
+      title: 'Earlier auth investigation',
+      projectName: 'api',
+      projectPath: '/tmp/api',
+      turns: [
+        { role: 'user', text: 'find the issue', at: '2026-01-01T00:00:00.000Z' },
+        {
+          role: 'assistant',
+          text: `The issue is here. ${'x'.repeat(100_000)}`,
+          at: '2026-01-01T00:00:01.000Z',
+        },
+      ],
+      latestDiff: '--- a/auth.ts\n+++ b/auth.ts\n@@ -1 +1 @@\n-old\n+new',
+      capturedAt: '2026-01-01T00:00:02.000Z',
+    };
+
+    const messages = buildPriorConversationMessages([context]);
+    expect(messages.length).toBe(5); // user + 3 assistant chunks + diff
+    expect(new Set(messages.map((message) => message.key)).size).toBe(messages.length);
+    expect(messages.every((message) => message.customType === 'prior_conversation')).toBe(true);
+    expect(messages.every((message) => message.display === false)).toBe(true);
+    const bodies = messages.map(
+      (message) => JSON.parse(message.content[0]!.text) as Record<string, unknown>,
+    );
+    expect(bodies.every((body) => body.untrusted === true)).toBe(true);
+    expect(bodies.some((body) => body.kind === 'prior_conversation_turn')).toBe(true);
+    expect(bodies.some((body) => body.kind === 'prior_conversation_latest_diff')).toBe(true);
+    expect(Math.max(...messages.map((message) => message.content[0]!.text.length))).toBeLessThan(
+      50_000,
+    );
+  });
+
   it('pi model catalog is available offline and includes anthropic models', () => {
     const auth = AuthStorage.inMemory({ anthropic: { type: 'api_key', key: 'sk-test-000' } });
     const registry = ModelRegistry.inMemory(auth);
