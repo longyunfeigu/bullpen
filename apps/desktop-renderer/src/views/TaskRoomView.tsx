@@ -284,6 +284,26 @@ export function TaskRoomView(): React.JSX.Element {
                       ) : null;
                     })()
                   : null}
+                <span
+                  className="tr-freplay"
+                  role="button"
+                  tabIndex={0}
+                  data-testid={`task-room-file-replay-${path}`}
+                  title="Replay this change — seek straight to the moment it happened"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    store.openReplay({ taskId: task.id, anchor: { type: 'path', path } });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      store.openReplay({ taskId: task.id, anchor: { type: 'path', path } });
+                    }
+                  }}
+                >
+                  <Ic name="play" size={10} />
+                </span>
               </button>
             ))
           )}

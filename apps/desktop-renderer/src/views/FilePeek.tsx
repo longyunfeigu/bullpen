@@ -69,7 +69,7 @@ export function FilePeek(props: {
         appState.paletteOpen ||
         appState.launcherOpen ||
         taskState.reviewOpen ||
-        taskState.replayOpen
+        taskState.replayRequest !== null
       ) {
         return;
       }

@@ -1331,12 +1331,18 @@ export class TaskService {
    * enriched with tool durations and per-change diffstats. Read-only; used by
    * the mission-control dashboard (tail) and by session replay (full).
    */
-  activity(taskId: string, tail?: number): { items: ActivityItem[]; total: number } {
+  activity(
+    taskId: string,
+    tail?: number,
+    /** Row cap. The dashboard default stays bounded; Replay V3 passes a
+     * higher cap so a 10k-event session projects completely (am.8). */
+    cap = 5_000,
+  ): { items: ActivityItem[]; total: number } {
     const rows = this.db
       .prepare(
-        'SELECT id, sequence, type, schema_version, payload_json, created_at FROM task_events WHERE task_id = ? ORDER BY sequence LIMIT 5000',
+        'SELECT id, sequence, type, schema_version, payload_json, created_at FROM task_events WHERE task_id = ? ORDER BY sequence LIMIT ?',
       )
-      .all(taskId) as Array<{
+      .all(taskId, cap) as Array<{
       id: string;
       sequence: number;
       type: string;

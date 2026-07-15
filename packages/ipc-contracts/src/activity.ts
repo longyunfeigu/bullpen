@@ -83,6 +83,8 @@ export const ActivityItemSchema = z.object({
   app: z.string().optional(),
   resource: z.string().optional(),
   parentKey: z.string().optional(),
+  /** Recorded risk level (permission cards); never a product heuristic. */
+  riskLevel: z.enum(['R0', 'R1', 'R2', 'R3', 'R4']).optional(),
   /** Filled by main-side enrichment (tool_calls / file_changes). */
   durationMs: z.number().int().nullable().optional(),
   diffstat: z
@@ -465,6 +467,8 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
     case 'permission.requested': {
       const card = rec(p.card);
       const preview = rec(card.preview);
+      const risk = rec(card.risk);
+      const riskLevel = str(risk.level);
       const targets = Array.isArray(preview.targets) ? preview.targets.map((t) => str(t)) : [];
       return {
         ...base,
@@ -472,10 +476,18 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
         label: `Waiting for approval: ${trunc(str(preview.summary), 100)}`,
         status: 'pending',
         paths: targets.filter(Boolean).map(cleanPath),
+        // Real recorded ids only: the tool call this request gates, and the
+        // request id its decision will carry (never inferred from adjacency).
+        ...(str(card.callId) ? { callId: str(card.callId) } : {}),
+        ...(str(card.requestId) ? { parentKey: str(card.requestId) } : {}),
+        ...(/^R[0-4]$/.test(riskLevel)
+          ? { riskLevel: riskLevel as ActivityItem['riskLevel'] }
+          : {}),
       };
     }
     case 'permission.decided': {
       const outcome = str(p.outcome);
+      const riskLevel = str(p.risk);
       return {
         ...base,
         author: str(p.actor) === 'user' ? 'user' : 'system',
@@ -484,6 +496,10 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
           outcome === 'allowed' ? 'Approved' : outcome === 'denied' ? 'Denied' : trunc(outcome, 20)
         }: ${trunc(str(p.summary), 100)}`,
         status: outcome === 'allowed' ? 'ok' : outcome === 'denied' ? 'denied' : 'info',
+        ...(str(p.requestId) ? { parentKey: str(p.requestId) } : {}),
+        ...(/^R[0-4]$/.test(riskLevel)
+          ? { riskLevel: riskLevel as ActivityItem['riskLevel'] }
+          : {}),
       };
     }
     case 'verification.started':
@@ -620,6 +636,8 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
         ...base,
         kind: 'report',
         label: `Final report — ${files} file${files === 1 ? '' : 's'} changed`,
+        // The agent's own closing summary: recorded prose, never a verification.
+        ...(str(p.agentSummary) ? { detail: trunc(str(p.agentSummary), 400) } : {}),
         status: p.unverified === true ? 'warn' : 'ok',
         author: 'system',
       };

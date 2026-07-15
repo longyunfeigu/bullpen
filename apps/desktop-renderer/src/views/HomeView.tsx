@@ -509,6 +509,32 @@ export function HomeView(): React.JSX.Element {
           </span>
           <span className="hm-tmeta">{cardMeta}</span>
         </span>
+        <span
+          className="hm-treplay"
+          role="button"
+          tabIndex={0}
+          data-testid={`home-card-replay-${t.id}`}
+          title={RUNNING_TASK_STATES.has(t.state) ? 'Watch live' : 'View recap'}
+          onClick={(e) => {
+            e.stopPropagation();
+            taskStore.openReplay({
+              taskId: t.id,
+              ...(RUNNING_TASK_STATES.has(t.state) ? { liveFollow: true } : {}),
+            });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              taskStore.openReplay({
+                taskId: t.id,
+                ...(RUNNING_TASK_STATES.has(t.state) ? { liveFollow: true } : {}),
+              });
+            }
+          }}
+        >
+          <Ic name="play" size={11} />
+        </span>
         <span className={`hm-act ${attention ? '' : 'ghost'}`}>{button}</span>
       </button>
     );

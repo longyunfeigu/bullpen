@@ -12,6 +12,10 @@
 
 | Suite | Platform | Result | Duration | Artifact |
 | --- | --- | --- | --- | --- |
+| Replay V3 — full unit/integration | macOS | PASS — 398/398 (projection engine 19: per-fact levels, no session upgrade, Story Time grouping/idle folding, chapters ≤8, coverage intervals, id-backed relations, 10k perf; ReplayService 10: pagination cursor, cache, evidence belongs-to-task boundary, ask fail-closed, receipt manifest hash reproducible; renderer registry/filters 6) | ~7s | Vitest |
+| Replay V3 — Electron E2E | macOS | PASS — 4/4 `replay-v3.spec.ts`: result-first recap without autoplay, no A–E navigation, no numeric confidence, evidence in ≤3 interactions, shared fact across depths and story/real, transport + keyboard, 1024/390 no-overflow + reachable Verify receipt, ask with citations + boundary, receipt HTML+JSON export, honest verification states, approval relations + timeline Verify entry, Changes-panel path anchor, Home-card recap entry, 10k-event ledger search/scrub | ~1.1m | `tests/e2e/replay-v3.spec.ts` |
+| Replay V3 — adapted regressions | macOS | PASS — p2 replay test (V3 assertions) + external-cli lifecycle test (Observed boundary, Explore search, per-fact levels). Known unrelated failures on this machine: ⌘K load-flake (documented pre-V3); 3 external-cli tests that launch the real Claude Code binary instead of the test shim (environment, pre-existing) | — | `tests/e2e/p2-parallel-replay.spec.ts`, `tests/e2e/external-cli.spec.ts` |
+| Replay V3 — contracts, boundaries, TypeScript and production build | macOS | PASS — boundary 234, TypeScript clean, build clean. `prettier --check` fails only on pre-existing unformatted `docs/design/*` prototype files (committed before this work) | — | npm scripts |
 | Replay V2 — full unit/integration | macOS | PASS — 367/367 | 3.47s | Vitest |
 | Replay V2 — live provider structured streams | macOS | PASS — Claude Code 2.1.210 stream-json + Codex CLI 0.144.4 JSONL; exact response received, no tools/files | 6.8s + 11.6s | direct CLI smoke |
 | Replay V2 — managed-agent Electron E2E | macOS | PASS | See Playwright output | `tests/e2e/p2-parallel-replay.spec.ts` |

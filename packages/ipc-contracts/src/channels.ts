@@ -18,6 +18,11 @@ import {
   VerificationRunDtoSchema,
 } from './agent-dto.js';
 import { ActivityItemSchema } from './activity.js';
+import {
+  ReplayEvidenceDetailSchema,
+  ReplayFactDtoSchema,
+  ReplaySessionDtoSchema,
+} from './replay.js';
 import { ProviderApiSchema, ProviderInfoSchema } from './providers.js';
 import { SkillDtoSchema, SkillSourceDtoSchema } from './skills.js';
 
@@ -807,6 +812,70 @@ export const CHANNELS = {
           binary: z.boolean(),
         })
         .nullable(),
+    }),
+  ),
+  // ---- Replay V3 (ADR-0017 am.8): session contract + paginated facts ----
+  'task.replaySession': ch(
+    'task.replaySession',
+    1,
+    z.object({ taskId: z.string() }).strict(),
+    z.object({
+      session: ReplaySessionDtoSchema,
+      latestSequence: z.number().int(),
+      eventCount: z.number().int(),
+    }),
+  ),
+  'task.replayEvents': ch(
+    'task.replayEvents',
+    1,
+    z
+      .object({
+        taskId: z.string(),
+        /** Facts with sequence strictly greater than this (cursor). */
+        afterSequence: z.number().int().min(0).default(0),
+        limit: z.number().int().min(1).max(500).default(200),
+      })
+      .strict(),
+    z.object({
+      facts: z.array(ReplayFactDtoSchema),
+      /** Cursor for the next page; null when this page is the last. */
+      nextAfterSequence: z.number().int().nullable(),
+      total: z.number().int(),
+      latestSequence: z.number().int(),
+    }),
+  ),
+  'task.replayEvidence': ch(
+    'task.replayEvidence',
+    1,
+    z.object({ taskId: z.string(), evidenceId: z.string().max(200) }).strict(),
+    z.object({ evidence: ReplayEvidenceDetailSchema.nullable() }),
+  ),
+  /** Evidence-bounded ask (§7): citations validated main-side, fail closed. */
+  'task.replayAsk': ch(
+    'task.replayAsk',
+    1,
+    z
+      .object({
+        taskId: z.string(),
+        factId: z.string().max(200),
+        question: z.string().min(1).max(500),
+      })
+      .strict(),
+    z.object({
+      text: z.string(),
+      citations: z.array(z.string()),
+      boundary: z.string().nullable(),
+    }),
+  ),
+  /** Evidence receipt export (§8): HTML + JSON with a manifest SHA-256. */
+  'task.replayReceipt': ch(
+    'task.replayReceipt',
+    1,
+    z.object({ taskId: z.string() }).strict(),
+    z.object({
+      htmlPath: z.string().nullable(),
+      jsonPath: z.string().nullable(),
+      manifestSha256: z.string().nullable(),
     }),
   ),
   'workspace.relativize': ch(

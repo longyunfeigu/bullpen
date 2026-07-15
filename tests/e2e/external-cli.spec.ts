@@ -672,32 +672,35 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(page.getByTestId('peek-tab-src/util.ts')).toBeVisible();
       await page.getByTestId('peek-close').click();
 
-      // The same external task now has a durable replay: observed provenance,
-      // terminal documentary mode and a per-write evidence frame.
+      // The same external task now has a durable Replay V3: observed
+      // provenance, per-fact evidence levels and a per-write evidence frame.
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
       await expect(page.getByTestId('replay-source')).toContainText('External Terminal');
       await expect(page.getByTestId('replay-source')).toContainText('观察记录');
-      for (let i = 0; i < 40; i += 1) {
-        const label = await page.getByTestId('replay-step').textContent();
-        if (label?.includes('src/util.ts')) break;
-        if (await page.getByTestId('replay-next').isDisabled()) break;
-        await page.getByTestId('replay-next').click();
-      }
+      // Result-first: the changed line seeks to the observed file write.
+      await page.locator('.rp-summary-changed button').first().click();
       await expect(page.getByTestId('replay-step')).toContainText('src/util.ts');
       await expect(page.getByTestId('replay-diff')).toContainText('externalTouch');
       if (process.env.CHARTER_CAPTURE_EXTERNAL_REPLAY === '1') {
         await page.waitForTimeout(150);
-        await page.screenshot({ path: '/tmp/replay-prod-external-a.png' });
+        await page.screenshot({ path: '/tmp/replay-prod-external-recap.png' });
       }
-      await page.getByTestId('replay-mode-d').click();
-      await expect(page.getByTestId('replay-view')).toContainText('promoted-echo-ok');
+      // Explore finds the observed terminal output by content; the boundary
+      // note states that a plain TUI cannot be semantically confirmed.
+      await page.getByTestId('replay-depth-explore').click();
+      await page.getByTestId('replay-search').fill('promoted-echo-ok');
+      await page.getByTestId('replay-event-list').locator('button').first().click();
+      await expect(page.getByTestId('replay-step')).toContainText('promoted-echo-ok');
+      await expect(page.getByTestId('replay-fact-level')).toContainText('观察记录');
+      await expect(page.getByTestId('replay-boundary')).toBeVisible();
       if (process.env.CHARTER_CAPTURE_EXTERNAL_REPLAY === '1') {
         await page.waitForTimeout(150);
-        await page.screenshot({ path: '/tmp/replay-prod-external-d.png' });
-        await page.getByTestId('replay-mode-e').click();
+        await page.screenshot({ path: '/tmp/replay-prod-external-explore.png' });
+        await page.getByTestId('replay-depth-verify').click();
         await page.waitForTimeout(150);
-        await page.screenshot({ path: '/tmp/replay-prod-external-e.png' });
+        await page.screenshot({ path: '/tmp/replay-prod-external-verify.png' });
+        await page.getByTestId('replay-depth-explore').click();
       }
       await page.getByTestId('replay-close').click();
 

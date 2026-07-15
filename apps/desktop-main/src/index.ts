@@ -40,6 +40,8 @@ import { TaskService } from './services/task-service.js';
 import { NotificationService } from './services/notification-service.js';
 import { detectProjectKind } from './services/project-kind.js';
 import { registerActivityHandlers } from './ipc/activity-handlers.js';
+import { registerReplayHandlers } from './ipc/replay-handlers.js';
+import { ReplayService } from './services/replay-service.js';
 import { registerImageHandlers } from './ipc/image-handlers.js';
 import { ExternalSessionService } from './services/external-session-service.js';
 import { registerExternalHandlers } from './ipc/external-handlers.js';
@@ -558,6 +560,14 @@ if (!gotLock) {
       registerM8Handlers(taskService, logger.child('ipc'));
       registerM9Handlers(taskService, logger.child('ipc'));
       registerActivityHandlers(taskService, workspaceHost, logger.child('ipc'));
+      // Replay V3 (ADR-0017 am.8): main-side projection over the same ledger.
+      const replayService = new ReplayService(
+        state.db,
+        taskService,
+        logger.child('replay'),
+        app.getVersion(),
+      );
+      registerReplayHandlers(replayService, logger.child('ipc'));
       registerImageHandlers(workspaceHost, logger.child('ipc'));
 
       // ADR-0017: external CLI agent sessions (claude/codex in user terminals).

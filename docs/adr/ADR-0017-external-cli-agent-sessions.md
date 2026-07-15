@@ -321,3 +321,43 @@ Decision:
 The layout continues Amendment 5's exclusive right-rail ownership: promoting
 an external terminal temporarily suppresses the generic Agent Panel, and the
 prior panel state returns when the focus slot is cleared.
+
+## Amendment 8 (2026-07-15) — Replay V3: one story, three depths
+
+Amendment 6 established the evidence substrate and shipped A–E as five peer
+projections. Field review (`docs/design/session-replay-unified-experience-v3.md`)
+concluded that A–E exposed the design exploration as navigation, that numeric
+"confidence" percentages were indefensible heuristics, and that one
+session-level capture badge silently upgraded mixed evidence.
+
+Decision (supersedes Amendment 6 points 3 and 5; the substrate in points 1–2
+and 4 is unchanged):
+
+1. Replay presents **three depths of one position — Recap, Explore, Verify —**
+   instead of five peer modes. A's stage and chapters live in Recap, D's dense
+   list in Explore, E's evidence table in Verify. B survives only as explicit
+   id-backed relation links; C survives as application lanes and filters.
+   Depth changes never reset the task, playhead, selected fact or evidence.
+2. The default frame is **result-first**: session contract (original goal,
+   outcome, verification state, measured coverage), a deterministic result
+   card with citations, and no autoplay. `REVIEW_READY` renders as "Agent
+   finished, awaiting review", never as an approved result.
+3. Evidence language is categorical and per fact: Verified (successful
+   verification / checkable receipt), Recorded (structured ledger event),
+   Observed (PTY/FS observation), Inferred (cited narrative), Missing.
+   Numeric confidence is removed product-wide. Coverage is a measured
+   percentage over intervals and is always labeled coverage.
+4. The timeline carries both **Story Time** (repetition grouped, idle folded,
+   mandatory facts — failures, denials, approvals, high risk, material
+   changes, verification, final result — never skipped) and **Real Time**
+   (actual wall-clock gaps). Switching projections keeps the selected fact.
+5. Relations render only from recorded ids (`callId`, `requestId`,
+   `file_changes.tool_call_id`, provider-emitted parents). Temporal adjacency
+   never draws an edge; missing semantics degrade to "surrounding context".
+6. The projection engine (`packages/ipc-contracts/src/replay.ts`) is pure and
+   shared between the renderer and the main-process ReplayService, and entry
+   is an explicit `ReplayRequest { taskId, depth, anchor, liveFollow }` bound
+   to the requested task, not to the active-task pointer.
+
+The A–E testids and screens are removed; regression coverage moved to
+`tests/e2e/replay-v3.spec.ts` plus the adapted external-CLI and P2 suites.

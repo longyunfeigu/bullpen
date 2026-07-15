@@ -516,12 +516,28 @@ function eventNode(
     }
     case 'permission.requested': {
       const card = payload.card as PermissionCardDto;
+      const resolution = context.permissionResolutions.get(card.requestId) ?? null;
       return (
-        <PermissionCard
-          key={event.id}
-          card={card}
-          resolution={context.permissionResolutions.get(card.requestId) ?? null}
-        />
+        <div key={event.id} className="rt-perm-wrap">
+          <PermissionCard card={card} resolution={resolution} />
+          {resolution ? (
+            <button
+              className="rt-verify-replay"
+              data-testid={`tl-verify-replay-${card.requestId}`}
+              title="Open Verify at this approval — claim, evidence and disposition"
+              onClick={() =>
+                useTaskStore.getState().openReplay({
+                  taskId: card.taskId,
+                  depth: 'verify',
+                  anchor: { type: 'fact', id: event.id },
+                })
+              }
+            >
+              <Ic name="shield" size={11} />
+              在回放中核验
+            </button>
+          ) : null}
+        </div>
       );
     }
     case 'permission.decided':

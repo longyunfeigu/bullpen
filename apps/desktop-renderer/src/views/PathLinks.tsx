@@ -20,7 +20,7 @@ export function openWorkspaceFile(
     const tasks = useTaskStore.getState();
     const task = tasks.tasks.find((t) => t.id === app.taskRoomTaskId);
     const focused = useWorkspaceStore.getState().workspace?.path;
-    const overlayAbove = tasks.reviewOpen || tasks.replayOpen || app.lens !== null;
+    const overlayAbove = tasks.reviewOpen || tasks.replayRequest !== null || app.lens !== null;
     // Peek reads through the task's mount — only route there when the file
     // reference actually belongs to that project.
     if (task && !overlayAbove && task.projectPath === focused) {

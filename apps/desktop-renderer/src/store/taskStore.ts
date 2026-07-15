@@ -3,6 +3,7 @@ import type {
   ChangeSetDto,
   ModelDescriptorDto,
   PlanEditDto,
+  ReplayRequest,
   TaskDto,
   TimelineEventDto,
 } from '@pi-ide/ipc-contracts';
@@ -92,9 +93,11 @@ interface TaskStore {
   reviewOpen: boolean;
   changeSet: ChangeSetDto | null;
   loadingChangeSet: boolean;
-  // P2 (PIVOT-017): action-centric session replay
-  replayOpen: boolean;
-  openReplay(): void;
+  // P2 (PIVOT-017) → Replay V3 (ADR-0017 am.8): an explicit entry request —
+  // the overlay binds to request.taskId, depth and anchor, never to whatever
+  // activeTaskId later becomes.
+  replayRequest: ReplayRequest | null;
+  openReplay(request?: Partial<ReplayRequest>): void;
   closeReplay(): void;
   decidePlan(input: {
     decision: 'approve' | 'reject' | 'request_changes';
@@ -397,13 +400,22 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   reviewOpen: false,
   changeSet: null,
   loadingChangeSet: false,
-  replayOpen: false,
+  replayRequest: null,
 
-  openReplay() {
-    set({ replayOpen: true });
+  openReplay(request) {
+    const taskId = request?.taskId ?? get().activeTaskId;
+    if (!taskId) return;
+    set({
+      replayRequest: {
+        taskId,
+        depth: request?.depth ?? 'recap',
+        anchor: request?.anchor ?? { type: 'result' },
+        ...(request?.liveFollow !== undefined ? { liveFollow: request.liveFollow } : {}),
+      },
+    });
   },
   closeReplay() {
-    set({ replayOpen: false });
+    set({ replayRequest: null });
   },
 
   async decidePlan(input) {

@@ -66,29 +66,38 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
         timeout: 30000,
       });
 
-      // Replay (PIVOT-017): action-centric scrubber over the recorded log.
+      // Replay V3 (ADR-0017 am.8): result-first opening frame, no autoplay,
+      // no A–E peer navigation, no numeric confidence.
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
-      await expect(page.getByTestId('replay-count')).toContainText('step 1 /');
+      await expect(page.getByTestId('replay-contract')).toBeVisible();
+      await expect(page.getByTestId('replay-summary')).toBeVisible();
+      await expect(page.getByTestId('replay-play')).toContainText('Replay');
+      expect(await page.locator('[data-testid^="replay-mode-"]').count()).toBe(0);
+      expect(await page.getByTestId('replay-view').textContent()).not.toMatch(/\d+%\s*confidence/i);
 
-      // Step forward until the edit action; its stored per-step patch renders.
-      for (let i = 0; i < 30; i += 1) {
-        const label = await page.getByTestId('replay-step').textContent();
-        if (label?.includes('Edited src/index.ts')) break;
-        await page.getByTestId('replay-next').click();
-      }
+      // A result-card claim reaches its material change in one interaction;
+      // the stored per-step patch renders on the stage.
+      await page.locator('.rp-summary-changed button').first().click();
       await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
       await expect(page.getByTestId('replay-diff')).toContainText('+  return add(3, 4);');
       await expect(page.getByTestId('replay-files')).toContainText('src/index.ts');
 
+      // Depth switching keeps the same selected fact (one controller).
+      await page.getByTestId('replay-depth-explore').click();
+      await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
+      await page.getByTestId('replay-depth-verify').click();
+      await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
+      await page.getByTestId('replay-depth-recap').click();
+
       if (process.env.CHARTER_CAPTURE_REPLAY === '1') {
-        await page.screenshot({ path: '/tmp/replay-prod-a.png' });
-        for (const mode of ['b', 'c', 'd', 'e'] as const) {
-          await page.getByTestId(`replay-mode-${mode}`).click();
+        await page.screenshot({ path: '/tmp/replay-prod-recap.png' });
+        for (const depth of ['explore', 'verify'] as const) {
+          await page.getByTestId(`replay-depth-${depth}`).click();
           await page.waitForTimeout(120);
-          await page.screenshot({ path: `/tmp/replay-prod-${mode}.png` });
+          await page.screenshot({ path: `/tmp/replay-prod-${depth}.png` });
         }
-        await page.getByTestId('replay-mode-a').click();
+        await page.getByTestId('replay-depth-recap').click();
         await app.evaluate(({ BrowserWindow }) => {
           BrowserWindow.getAllWindows()[0]?.setSize(1024, 768);
         });

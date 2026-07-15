@@ -5,6 +5,13 @@
 > 仓库基线：`e584d3c`，工作区存在大量用户未提交改动，**禁止 reset、checkout 或覆盖无关文件**。  
 > 产品决定：A–E 不再作为五个并列入口；最终产品是 **Recap / Explore / Verify 三层深度，共用一份事件与证据记录**。
 
+## 实际完成状态（2026-07-15，Phase 0–3 已实施）
+
+- **已交付**：ADR-0017 Amendment 8；共享投影引擎 `packages/ipc-contracts/src/replay.ts`（逐事实 evidence level、Story Time、语义章节、区间 coverage、id-backed relations）；`ReplayView` 重构为一个 controller + Recap/Explore/Verify（`views/replay/`）；显式 `ReplayRequest`（含 result/fact/change/path/actual-time anchor + liveFollow）；Main 侧 `ReplayService` + `task.replaySession`/`task.replayEvents`(分页≤500)/`task.replayEvidence`/`task.replayAsk`(fail-closed 引用)/`task.replayReceipt`(HTML+JSON+manifest SHA-256，明示未签名)；事件广播驱动刷新取代 2s 全量轮询；renderer registry（file/document/spreadsheet/terminal/approval/verification/message/web/generic，未覆盖域诚实降级）；入口：Home 卡片、Changes 行、已决审批卡 → Verify、Task Room/Agent Panel。
+- **测试证据**：unit 398/398；`tests/e2e/replay-v3.spec.ts` 4/4（含 10k 账本搜索/scrub、1024/390 响应式、console health）；p2/external 回放回归已适配并通过；tsc/boundaries/build 干净。见 `docs/TEST_REPORT.md`。
+- **已知边界**：receipt 未签名（不声称防篡改）；外部 recorder 尚未记录逐事件 redaction reason（以 boundary note 呈现）；`task.replayAsk` 为确定性账本叙事（模型管线可在同一 fail-closed 合同后接入）；`npm run check` 的 prettier 步骤在本 handoff 之前提交的 `docs/design/*` 原型文件上失败（与本实现无关）；本机 3 个 external-cli E2E 因真实 Claude Code 安装抢占测试 shim 而失败（环境问题，先于本实现存在），⌘K 为已记录 flake。
+- **ADR 注意**：本文第 9 节所述“Amendment 7”落地时已存在（terminal contexts），V3 决策实际记录为 **Amendment 8**。
+
 ## 0. 给新 Session 的直接任务
 
 在现有 Replay V2/A–E 基础上完成 Replay V3 的生产实现，不要另起一套 mock 数据或第二份回放数据库。
