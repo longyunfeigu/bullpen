@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launchApp } from './helpers/launch';
 import { createGitFixture, createTsSmallFixture } from './helpers/fixtures';
@@ -250,6 +250,65 @@ test.describe('Preview gate (ADR-0022)', () => {
       // Give the availability probe a beat — the tab must STILL be absent.
       await page.waitForTimeout(1500);
       await expect(page.getByTestId('review-tab-preview')).toHaveCount(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('one-click start: the empty state runs the project dev script in a task terminal and the preview appears (am.1)', async () => {
+    const fixture = createTsSmallFixture();
+    // A real zero-dep dev server + script — the button types `npm run dev`
+    // into a task terminal; the gate itself never owns the process.
+    writeFileSync(
+      join(fixture, 'server.mjs'),
+      [
+        "import { createServer } from 'node:http';",
+        'const s = createServer((q, r) => {',
+        "  r.setHeader('content-type', 'text/html');",
+        "  r.end('<main><h1>dev up</h1></main>');",
+        '});',
+        "s.listen(0, '127.0.0.1', () => console.log('listening on', s.address().port));",
+        '',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(fixture, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'fixture-oneclick',
+          private: true,
+          scripts: { dev: 'node server.mjs', test: 'node run-tests.mjs' },
+        },
+        null,
+        2,
+      ),
+    );
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
+    });
+    try {
+      await page.getByTestId('surface-home').click();
+      await expect(page.getByTestId('home-model')).toContainText(/mock/i, { timeout: 15000 });
+      await page.getByTestId('home-mode-auto').click();
+      await page.getByTestId('home-intent').fill('[scenario:edit-basic] one-click preview');
+      await page.getByTestId('home-submit').click();
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
+
+      await page.getByTestId('review-open').first().click();
+      await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
+      // Webish (dev script) → the tab exists even with no live port.
+      await page.getByTestId('review-tab-preview').click({ timeout: 15000 });
+      await expect(page.getByTestId('preview-empty')).toBeVisible({ timeout: 10000 });
+
+      const start = page.getByTestId('preview-start-dev');
+      await expect(start).toContainText('npm run dev');
+      await start.click();
+      // Real end to end: task terminal spawns → shell runs the script → the
+      // port poll attributes it (cwd = project root) → the iframe renders.
+      await expect(page.getByTestId('preview-frame')).toBeVisible({ timeout: 30000 });
+      await expect(page.getByTestId('preview-badge')).toContainText('task tree');
     } finally {
       await app.close();
     }

@@ -772,16 +772,18 @@ export const CHANNELS = {
     z.object({ runs: z.array(VerificationRunDtoSchema) }),
   ),
   /** ADR-0022: loopback listeners attributed to the task's own tree (cwd match).
-   * Read-only — the gate never starts a server. */
+   * Read-only — the gate never owns a server process. */
   'task.previewPorts': ch(
     'task.previewPorts',
-    1,
+    2,
     z.object({ taskId: z.string() }).strict(),
     z.object({
       /** The tree the detection ran against (worktree or project root). */
       root: z.string(),
       /** Heuristic: the root looks like a web project (dev/start/serve script). */
       webish: z.boolean(),
+      /** am.1: the project's own dev command for the one-click start (null: none). */
+      devCommand: z.string().nullable(),
       ports: z.array(PreviewPortDtoSchema),
     }),
   ),

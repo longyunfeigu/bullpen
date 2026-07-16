@@ -222,6 +222,11 @@
   color: var(--fg-muted);
   line-height: 1.6;
 }
+.pv-empty-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
 
 /* ── Checks pane ──────────────────────────────── */
 .ck-pane {

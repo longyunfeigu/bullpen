@@ -118,6 +118,23 @@ make the port Charter-shaped:
   fresh `charter/pr/…` branch from the user's current HEAD, carrying the
   just-merged working-tree changes.
 
+## Amendment 1 (2026-07-16) — one-click dev start, user-domain
+
+Field feedback on day one: "start a terminal yourself, run the dev command,
+come back" is four hops — too long. The boundary stays ("the gate never owns
+a server process") but its phrasing was too broad. What the gate must never do
+is *own* the lifecycle: spawn hidden children, kill them on close, or pretend
+a server it started is the task's. What it may do is what the user would have
+done by hand: the empty state now offers **Run `npm run dev` here** — it opens
+a task-context terminal (cwd = the task's tree, visible in the terminal panel,
+stoppable like any terminal) and types the project's own dev script
+(first of `dev/serve/preview/start` in the tree's package.json, surfaced as
+`devCommand` on `task.previewPorts` v2). Attribution is unchanged — the poll
+detects the port by cwd exactly as if the user had typed the command. This is
+the TERM-005 precedent (typing into the user's terminal is user domain), not a
+new process manager. Also fixed alongside: the Home worktree row no longer
+vanishes silently for non-git projects — it renders disabled with the reason.
+
 ## Alternatives considered
 
 - **Auto-starting the dev command from the gate**: rejected — turns a

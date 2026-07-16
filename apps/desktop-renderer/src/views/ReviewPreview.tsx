@@ -80,17 +80,51 @@ export function ReviewPreview({ task }: { task: TaskDto }): React.JSX.Element {
   const [drag, setDrag] = useState<{ start: { x: number; y: number }; rect: Marquee } | null>(null);
   const [note, setNote] = useState<{ rect: Marquee; text: string } | null>(null);
   const [sending, setSending] = useState(false);
+  const [devCommand, setDevCommand] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const portCountRef = useRef(0);
 
   const refresh = useCallback(async () => {
     const res = await rpcResult('task.previewPorts', { taskId: task.id });
     if (!res.ok) return;
     setRoot(res.data.root);
     setPorts(res.data.ports);
+    portCountRef.current = res.data.ports.length;
+    setDevCommand(res.data.devCommand);
     setSelectedPort((current) => {
       if (current !== null && res.data.ports.some((p) => p.port === current)) return current;
       return res.data.ports[0]?.port ?? null;
     });
   }, [task.id]);
+
+  // am.1: one-click start — the project's OWN dev script, typed into a task
+  // terminal (visible, stoppable, user domain). The gate never owns the
+  // process; the poll picks the port up like any other server.
+  const startDevServer = async (): Promise<void> => {
+    if (!devCommand || starting) return;
+    setStarting(true);
+    const { useTerminalStore } = await import('./TerminalPanel.js');
+    const id = await useTerminalStore.getState().create({ taskId: task.id });
+    if (!id) {
+      setStarting(false);
+      return;
+    }
+    // Give the shell a beat to print its prompt; PTY input is buffered anyway.
+    window.setTimeout(() => {
+      void rpcResult('terminal.write', { id, data: `${devCommand}\n` });
+    }, 700);
+    app.pushToast(
+      'info',
+      `Running \`${devCommand}\` in this task's terminal — watching for the port.`,
+    );
+    // Honest fallback: if no port shows up, stop spinning and point at the terminal.
+    window.setTimeout(() => {
+      setStarting(false);
+      if (portCountRef.current === 0) {
+        app.pushToast('info', 'No port yet — check the dev command output in the terminal.');
+      }
+    }, 20000);
+  };
 
   useEffect(() => {
     void refresh();
@@ -210,19 +244,34 @@ export function ReviewPreview({ task }: { task: TaskDto }): React.JSX.Element {
     return (
       <div className="pv-pane" data-testid="preview-pane">
         <div className="pv-empty empty-state" data-testid="preview-empty">
-          <div className="es-title">No dev server detected in this task’s tree</div>
+          <div className="es-title">No dev server running in this task’s tree</div>
           <div className="pv-empty-body">
-            The gate looks for processes listening on localhost whose working directory is inside
+            The gate watches for processes listening on localhost from inside
             <span className="mono pv-root"> {root || task.worktree?.path || task.projectPath}</span>
-            — it never starts one for you.
+            . It never owns the process — the server runs in a terminal you can see and stop.
           </div>
-          <div className="pv-empty-body">
-            Start your dev command (e.g. <span className="mono">npm run dev</span>) in this task’s
-            terminal, then refresh.
+          <div className="pv-empty-row">
+            {devCommand ? (
+              <button
+                className="btn primary"
+                data-testid="preview-start-dev"
+                disabled={starting}
+                onClick={() => void startDevServer()}
+              >
+                <Ic name="play" size={12} />{' '}
+                {starting ? 'Starting — watching for the port…' : `Run ${devCommand} here`}
+              </button>
+            ) : null}
+            <button className="btn" data-testid="preview-refresh" onClick={() => void refresh()}>
+              <Ic name="refresh" size={12} /> Refresh
+            </button>
           </div>
-          <button className="btn" data-testid="preview-refresh" onClick={() => void refresh()}>
-            <Ic name="refresh" size={12} /> Refresh
-          </button>
+          {!devCommand ? (
+            <div className="pv-empty-body">
+              No dev/serve/preview/start script in this tree’s package.json — start your server by
+              hand in a task terminal and it will appear here.
+            </div>
+          ) : null}
         </div>
       </div>
     );

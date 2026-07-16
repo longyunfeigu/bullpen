@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   attributeListeners,
   cwdInsideRoot,
+  devCommandForRoot,
   isWebishRoot,
   parseLsofCwds,
   parseLsofListeners,
@@ -102,5 +103,25 @@ describe('isWebishRoot (Preview tab visibility heuristic)', () => {
     expect(await isWebishRoot(web)).toBe(true);
     expect(await isWebishRoot(nonWeb)).toBe(false);
     expect(await isWebishRoot(empty)).toBe(false);
+  });
+});
+
+describe('devCommandForRoot (one-click start, ADR-0022 am.1)', () => {
+  it('picks the first of dev > serve > preview > start; null when none', async () => {
+    const both = mkdtempSync(join(tmpdir(), 'dc-'));
+    writeFileSync(
+      join(both, 'package.json'),
+      JSON.stringify({ scripts: { start: 'node s', dev: 'vite' } }),
+    );
+    expect(await devCommandForRoot(both)).toBe('npm run dev');
+
+    const serveOnly = mkdtempSync(join(tmpdir(), 'dc2-'));
+    writeFileSync(join(serveOnly, 'package.json'), JSON.stringify({ scripts: { serve: 'x' } }));
+    expect(await devCommandForRoot(serveOnly)).toBe('npm run serve');
+
+    const none = mkdtempSync(join(tmpdir(), 'dc3-'));
+    writeFileSync(join(none, 'package.json'), JSON.stringify({ scripts: { test: 'x' } }));
+    expect(await devCommandForRoot(none)).toBeNull();
+    expect(await devCommandForRoot(mkdtempSync(join(tmpdir(), 'dc4-')))).toBeNull();
   });
 });

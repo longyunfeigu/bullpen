@@ -3,7 +3,7 @@ import { productError, ProductFailure, type Logger } from '@pi-ide/foundation';
 import type { PreviewAttachmentDto } from '@pi-ide/ipc-contracts';
 import { registerHandlers } from './router.js';
 import type { PreviewFeedbackMeta, TaskService } from '../services/task-service.js';
-import { isWebishRoot, PreviewService } from '../services/preview-service.js';
+import { devCommandForRoot, isWebishRoot, PreviewService } from '../services/preview-service.js';
 
 const THUMB_WIDTH = 320;
 const PNG_MAGIC = 0x89504e47;
@@ -57,10 +57,15 @@ export function registerPreviewHandlers(
       'task.previewPorts': async ({ taskId }) => {
         const task = tasks.getTask(taskId);
         const root = task.worktree?.path ?? task.projectPath;
-        const [ports, webish] = await Promise.all([preview.detectPorts(root), isWebishRoot(root)]);
+        const [ports, webish, devCommand] = await Promise.all([
+          preview.detectPorts(root),
+          isWebishRoot(root),
+          devCommandForRoot(root),
+        ]);
         return {
           root,
           webish,
+          devCommand,
           ports: ports.map((p) => ({ ...p, url: `http://localhost:${p.port}/` })),
         };
       },

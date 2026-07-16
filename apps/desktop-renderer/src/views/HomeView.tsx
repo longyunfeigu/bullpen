@@ -861,16 +861,21 @@ export function HomeView(): React.JSX.Element {
                   />
                 </div>
               </div>
-              {workspace?.isGitRepo ? (
+              {workspace ? (
                 <div className="hm-field">
                   <label
                     className="hm-wtrow"
-                    title="The task runs on its own branch in a separate checkout; accepting merges it back"
+                    title={
+                      workspace.isGitRepo
+                        ? 'The task runs on its own branch in a separate checkout; accepting merges it back'
+                        : 'Worktree isolation needs a git repository with at least one commit'
+                    }
                   >
                     <input
                       type="checkbox"
                       data-testid="home-adv-worktree"
-                      checked={worktree}
+                      checked={workspace.isGitRepo ? worktree : false}
+                      disabled={!workspace.isGitRepo}
                       onChange={(e) => {
                         setWorktree(e.target.checked);
                         setWorktreeTouched(true);
@@ -878,7 +883,12 @@ export function HomeView(): React.JSX.Element {
                     />
                     <span>
                       Run in an isolated worktree
-                      {projectBusy ? (
+                      {!workspace.isGitRepo ? (
+                        <span className="hm-wt-hint">
+                          {' '}
+                          — needs a git repository (this project has none)
+                        </span>
+                      ) : projectBusy ? (
                         <span className="hm-wt-hint">
                           {' '}
                           — recommended: this project already has an active task
@@ -886,7 +896,7 @@ export function HomeView(): React.JSX.Element {
                       ) : null}
                     </span>
                   </label>
-                  {worktree ? (
+                  {workspace.isGitRepo && worktree ? (
                     <div className="hm-field" style={{ marginTop: 6 }}>
                       <label>
                         Worktree setup command — runs once in the fresh checkout before the agent

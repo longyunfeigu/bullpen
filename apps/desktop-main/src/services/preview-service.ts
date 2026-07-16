@@ -98,18 +98,31 @@ export function attributeListeners(
 }
 
 /** Scripts that mark a project as "web-ish" — the Preview tab shows an empty
- * state instead of hiding when one exists (ADR-0022 tab-visibility rule). */
-const WEB_SCRIPTS = ['dev', 'start', 'serve', 'preview'];
+ * state instead of hiding when one exists (ADR-0022 tab-visibility rule).
+ * Order matters: the first present script becomes the one-click dev command. */
+const WEB_SCRIPTS = ['dev', 'serve', 'preview', 'start'];
 
-export async function isWebishRoot(root: string): Promise<boolean> {
+async function readScripts(root: string): Promise<Record<string, unknown>> {
   try {
     const raw = await fs.readFile(join(root, 'package.json'), 'utf8');
     const pkg = JSON.parse(raw) as { scripts?: Record<string, unknown> };
-    const scripts = pkg.scripts ?? {};
-    return WEB_SCRIPTS.some((s) => typeof scripts[s] === 'string');
+    return pkg.scripts ?? {};
   } catch {
-    return false;
+    return {};
   }
+}
+
+export async function isWebishRoot(root: string): Promise<boolean> {
+  const scripts = await readScripts(root);
+  return WEB_SCRIPTS.some((s) => typeof scripts[s] === 'string');
+}
+
+/** ADR-0022 am.1: the project's own dev command (`npm run dev` …), used by the
+ * gate's one-click start — typed into a task terminal, never gate-owned. */
+export async function devCommandForRoot(root: string): Promise<string | null> {
+  const scripts = await readScripts(root);
+  const name = WEB_SCRIPTS.find((s) => typeof scripts[s] === 'string');
+  return name ? `npm run ${name}` : null;
 }
 
 function run(cmd: string, args: string[]): Promise<string> {
