@@ -62,6 +62,12 @@ export const TaskExternalSchema = z.object({
   status: z.enum(['active', 'ended']),
   /** Highest positively observed replay fidelity for this session. */
   captureGrade: z.enum(['structured', 'observed']).optional(),
+  /**
+   * The CLI's own conversation id (ADR-0017 amendment): resume targets this
+   * exact session (`claude --resume <id>` / `codex resume <id>`). Null when it
+   * could not be established — resume degrades to the CLI's most-recent flag.
+   */
+  sessionId: z.string().nullable().optional(),
 });
 export type TaskExternalDto = z.infer<typeof TaskExternalSchema>;
 

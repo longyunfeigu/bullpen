@@ -8,6 +8,7 @@ import { broadcast } from '../broadcast.js';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { TaskService } from './task-service.js';
 import { ExternalStructuredReplayParser } from './external-replay-parser.js';
+import { discoverCliSessionId, isSafeCliSessionId } from './cli-session-locator.js';
 
 /** Paths never attributed to an external session (product/tooling noise). */
 const IGNORED_SEGMENTS = ['node_modules', '.git'];
@@ -55,6 +56,11 @@ interface LiveSession {
   taskId: string;
   cli: string;
   root: string;
+  /** The directory the CLI ran in — where its transcripts are keyed. */
+  cwd: string;
+  startedAtMs: number;
+  /** CLI-native conversation id once established (stream or transcript). */
+  sessionId: string | null;
   isGitRepo: boolean;
   snapshotRef: string | null;
   git: GitService | null;
@@ -82,10 +88,18 @@ interface PendingResume {
   reject: (error: ProductFailure) => void;
 }
 
-/** Only known CLIs get a host-written command; custom detected programs stay review-only. */
-export function externalResumeCommand(cli: string): string | null {
-  if (cli === 'claude') return 'claude --continue';
-  if (cli === 'codex') return 'codex resume --last';
+/**
+ * Only known CLIs get a host-written command; custom detected programs stay
+ * review-only. With a recorded conversation id the command targets that exact
+ * session; without one it degrades to the CLI's most-recent flag (correct only
+ * when this task's session really was the directory's latest — the id is the
+ * fix for multi-session directories). Ids are PTY-written text: anything but
+ * an exact UUID is treated as absent.
+ */
+export function externalResumeCommand(cli: string, sessionId?: string | null): string | null {
+  const id = sessionId && isSafeCliSessionId(sessionId) ? sessionId : null;
+  if (cli === 'claude') return id ? `claude --resume ${id}` : 'claude --continue';
+  if (cli === 'codex') return id ? `codex resume ${id}` : 'codex resume --last';
   return null;
 }
 
@@ -116,6 +130,31 @@ export class ExternalSessionService {
     this.unsubscribeData = terminals.onDataEvent(({ id, data }) => this.onTerminalData(id, data));
     // App-quit strandings: close them out into review on startup.
     tasks.recoverExternalTasks();
+    // Best-effort: give ended sessions that predate session-id capture (or
+    // were stranded by a quit) their conversation id so resume can target them.
+    void this.backfillSessionIds();
+  }
+
+  private async backfillSessionIds(): Promise<void> {
+    let recovered = 0;
+    for (const task of this.tasks.externalTasksMissingSessionId()) {
+      const sessionId = await discoverCliSessionId({
+        cli: task.cli,
+        cwd: task.cwd,
+        startedAtMs: task.createdAtMs,
+        endedAtMs: task.updatedAtMs,
+      });
+      if (!sessionId) continue;
+      try {
+        this.tasks.setExternalSessionId(task.taskId, sessionId);
+        recovered += 1;
+      } catch {
+        // task raced away (archived/deleted) — backfill stays best-effort
+      }
+    }
+    if (recovered > 0) {
+      this.logger.info('external session ids backfilled', { count: recovered });
+    }
   }
 
   /** Active sessions for renderer state restore. */
@@ -136,6 +175,12 @@ export class ExternalSessionService {
     if (!session || session.ended) return;
 
     const parsed = session.parser.feed(session.cli, data);
+    // Structured streams reveal the conversation id directly — record it the
+    // moment it appears so even a crash leaves the task resumable by id.
+    if (session.parser.sessionId && session.sessionId !== session.parser.sessionId) {
+      session.sessionId = session.parser.sessionId;
+      this.tasks.setExternalSessionId(session.taskId, session.sessionId);
+    }
     if (parsed.structured && session.captureGrade !== 'structured') {
       session.captureGrade = 'structured';
       this.tasks.updateExternalCaptureGrade(session.taskId, 'structured');
@@ -327,6 +372,9 @@ export class ExternalSessionService {
       taskId,
       cli,
       root,
+      cwd,
+      startedAtMs: Date.now(),
+      sessionId: null,
       isGitRepo: rootInfo.isGitRepo,
       snapshotRef,
       git,
@@ -469,7 +517,19 @@ export class ExternalSessionService {
     session.watcher.dispose();
     this.byTerminal.delete(terminalId);
     await this.publish(session, 'ended');
+    // Establish the conversation id before the task closes into review, so a
+    // later resume targets THIS session even after newer ones ran in the same
+    // directory. Transcript discovery is bounded by this session's lifetime.
+    if (!session.sessionId) {
+      session.sessionId = await discoverCliSessionId({
+        cli: session.cli,
+        cwd: session.cwd,
+        startedAtMs: session.startedAtMs,
+        endedAtMs: Date.now(),
+      });
+    }
     try {
+      if (session.sessionId) this.tasks.setExternalSessionId(session.taskId, session.sessionId);
       this.tasks.finishExternalSession(
         session.taskId,
         session.lastFiles.length,
@@ -505,7 +565,7 @@ export class ExternalSessionService {
         }),
       );
     }
-    const command = externalResumeCommand(external.cli);
+    const command = externalResumeCommand(external.cli, external.sessionId ?? null);
     if (!command) {
       throw new ProductFailure(
         productError('EXTERNAL_RESUME_UNSUPPORTED', {
@@ -546,6 +606,10 @@ export class ExternalSessionService {
       taskId,
       cli: external.cli,
       root: task.projectPath,
+      cwd: expectedCwd,
+      startedAtMs: Date.now(),
+      // Resuming forks a fresh CLI conversation id — rediscovered at next end.
+      sessionId: null,
       isGitRepo: git !== null,
       snapshotRef: external.snapshotRef,
       git,

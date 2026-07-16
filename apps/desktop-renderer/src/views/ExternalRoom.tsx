@@ -16,9 +16,18 @@ export function ExternalTerminalColumn({ task }: { task: TaskDto }): React.JSX.E
   const external = task.external!;
   const session = useExternalStore((s) => s.sessions[task.id]);
   const termStore = useTerminalStore();
-  const item = termStore.items.find((t) => t.id === external.terminalId) ?? null;
-  const hostRef = useRef<HTMLDivElement>(null);
   const live = (session?.status ?? external.status) === 'active';
+  // One PTY can host several sequential sessions, each with its own task. The
+  // terminal is this room's window only while this task owns it: it is live,
+  // or it was the terminal's most recent session and no newer session has
+  // taken the PTY over. Superseded rooms keep their own record instead of
+  // re-parenting a terminal that now shows someone else's conversation.
+  const ownerTaskId = useExternalStore((s) => s.taskByTerminal[external.terminalId]);
+  const superseded = !live && ownerTaskId !== undefined && ownerTaskId !== task.id;
+  const item = superseded
+    ? null
+    : (termStore.items.find((t) => t.id === external.terminalId) ?? null);
+  const hostRef = useRef<HTMLDivElement>(null);
   const follow = useExternalStore((s) => s.follow[task.id] ?? true);
   const lastDelta = useExternalStore((s) => s.lastDelta);
 
@@ -100,7 +109,11 @@ export function ExternalTerminalColumn({ task }: { task: TaskDto }): React.JSX.E
       ) : (
         <div className="tr-extgone" data-testid="external-terminal-gone">
           <div className="tr-extgone-title">
-            {live ? 'The session terminal lives in another surface.' : 'This session is over.'}
+            {live
+              ? 'The session terminal lives in another surface.'
+              : superseded
+                ? 'This session is over — its terminal moved on to a newer session.'
+                : 'This session is over.'}
           </div>
           <div className="tr-extgone-body">
             {(session?.files.length ?? task.changedFiles ?? 0) > 0

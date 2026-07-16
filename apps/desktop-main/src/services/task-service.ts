@@ -1988,6 +1988,7 @@ export class TaskService {
       snapshotRef: input.snapshotRef,
       status: 'active' as const,
       captureGrade: 'observed' as const,
+      sessionId: null,
     };
     this.db
       .prepare(
@@ -2076,6 +2077,69 @@ export class TaskService {
     return task;
   }
 
+  /**
+   * Record the CLI-native conversation id (ADR-0017 amendment): resume can
+   * then target this exact session instead of the directory's most recent.
+   */
+  setExternalSessionId(taskId: string, sessionId: string): void {
+    const row = this.getRow(taskId);
+    const external = row.external_json
+      ? (JSON.parse(row.external_json) as NonNullable<TaskDto['external']>)
+      : null;
+    if (!external || external.sessionId === sessionId) return;
+    this.db
+      .prepare('UPDATE tasks SET external_json = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify({ ...external, sessionId }), new Date().toISOString(), taskId);
+    this.recordEvent(taskId, 'external.observation', {
+      cli: external.cli,
+      captureGrade: external.captureGrade ?? 'observed',
+      kind: 'state',
+      label: 'Conversation id recorded',
+      detail: `Resume targets this exact ${external.cli} session (${sessionId}).`,
+      status: 'ok',
+      evidenceKinds: ['result'],
+    });
+  }
+
+  /**
+   * Ended claude/codex tasks without a conversation id (predate capture, or
+   * stranded by a quit) — candidates for startup transcript backfill. Bounded
+   * to recent work: older sessions resume via the legacy most-recent flag.
+   */
+  externalTasksMissingSessionId(): Array<{
+    taskId: string;
+    cli: string;
+    cwd: string;
+    createdAtMs: number;
+    updatedAtMs: number;
+  }> {
+    const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const rows = this.db
+      .prepare(`${TASK_SELECT} WHERE t.external_json IS NOT NULL AND t.updated_at >= ?`)
+      .all(cutoff) as unknown as TaskRow[];
+    const out: Array<{
+      taskId: string;
+      cli: string;
+      cwd: string;
+      createdAtMs: number;
+      updatedAtMs: number;
+    }> = [];
+    for (const row of rows) {
+      const external = JSON.parse(row.external_json!) as NonNullable<TaskDto['external']>;
+      if (external.sessionId) continue;
+      if (external.status !== 'ended') continue;
+      if (external.cli !== 'claude' && external.cli !== 'codex') continue;
+      out.push({
+        taskId: row.id,
+        cli: external.cli,
+        cwd: external.cwd ?? row.project_path,
+        createdAtMs: Date.parse(row.created_at),
+        updatedAtMs: Date.parse(row.updated_at),
+      });
+    }
+    return out;
+  }
+
   /** Promote an external task once a provider JSON stream is positively observed. */
   updateExternalCaptureGrade(taskId: string, captureGrade: 'structured' | 'observed'): void {
     const row = this.getRow(taskId);
@@ -2116,7 +2180,7 @@ export class TaskService {
     this.recordEvent(taskId, 'external.sessionResuming', {
       cli: external.cli,
       terminalId,
-      strategy: external.cli === 'claude' ? 'continue' : 'last',
+      strategy: external.sessionId ? 'session-id' : external.cli === 'claude' ? 'continue' : 'last',
       captureGrade: external.captureGrade ?? 'observed',
     });
     return this.setState(taskId, 'IN_PROGRESS');

@@ -361,3 +361,39 @@ and 4 is unchanged):
 
 The A–E testids and screens are removed; regression coverage moved to
 `tests/e2e/replay-v3.spec.ts` plus the adapted external-CLI and P2 suites.
+
+## Amendment (2026-07-16) — per-session conversation ids and terminal ownership
+
+Field report (acceptance walk of the grouped rail): three sequential Claude
+sessions in one terminal produced three accounting tasks whose rooms all
+re-parented the same live PTY — clicking session 1/2/3 in the rail showed one
+identical center column. And resume was written as `claude --continue` /
+`codex resume --last`, which continues the *directory's most recent*
+conversation — wrong the moment a directory hosts more than one session.
+
+Two decisions, both engine-level (rail unchanged):
+
+1. **Terminal ownership.** One PTY hosts many sequential sessions; only the
+   owning task's room may re-parent it. Ownership is the renderer's existing
+   `taskByTerminal` projection: the live session owns its terminal, an ended
+   session keeps it until a newer session takes the PTY over. Superseded rooms
+   render their own record (changed files, review affordances) with an honest
+   "its terminal moved on to a newer session" note instead of someone else's
+   conversation.
+2. **Conversation ids.** `TaskExternalSchema` gains `sessionId`. Capture is
+   layered: structured streams record it the moment Claude's `system/init` /
+   `result` events reveal `session_id`; observed (interactive TUI) sessions
+   discover it at session end from the CLI's own transcript store, bounded by
+   the session's lifetime — Claude `~/.claude/projects/<munged cwd>/<uuid>.jsonl`
+   (munge = every non-alphanumeric → `-`, verified against real installs),
+   Codex `~/.codex/sessions/YYYY/MM/DD/rollout-…-<uuid>.jsonl`. A startup
+   backfill gives recent pre-amendment tasks their ids the same way. Resume
+   targets the exact conversation (`claude --resume <id>` /
+   `codex resume <id>`); only strict UUIDs are ever written into a PTY, and a
+   missing id degrades to the old most-recent flag. Resuming forks a fresh CLI
+   conversation, so the id is re-established at the next session end.
+
+Honest limits: discovery is best-effort mtime-window matching (no id when the
+CLI wrote no transcript — e.g. the e2e fake agents); two sessions ending inside
+the same window could mis-attribute (not observed in practice; the window is
+one session's lifetime); custom CLIs still have no resume command at all.

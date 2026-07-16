@@ -22,9 +22,22 @@ describe('isAccountablePath (ADR-0017)', () => {
 });
 
 describe('externalResumeCommand', () => {
-  it('uses each CLI’s official last-session continuation command', () => {
+  it('targets the recorded conversation id when one exists (ADR-0017 amendment)', () => {
+    const id = '924241d6-f2e8-444d-8d75-0386362bf52f';
+    expect(externalResumeCommand('claude', id)).toBe(`claude --resume ${id}`);
+    expect(externalResumeCommand('codex', id)).toBe(`codex resume ${id}`);
+  });
+
+  it('degrades to the last-session flag without an id', () => {
     expect(externalResumeCommand('claude')).toBe('claude --continue');
+    expect(externalResumeCommand('claude', null)).toBe('claude --continue');
     expect(externalResumeCommand('codex')).toBe('codex resume --last');
+  });
+
+  it('never embeds a non-UUID id into PTY input', () => {
+    expect(externalResumeCommand('claude', 'abc; rm -rf .')).toBe('claude --continue');
+    expect(externalResumeCommand('claude', '$(evil)')).toBe('claude --continue');
+    expect(externalResumeCommand('codex', 'not-a-uuid')).toBe('codex resume --last');
   });
 
   it('does not turn an arbitrary detected program name into shell input', () => {

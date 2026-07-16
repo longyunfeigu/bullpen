@@ -92,6 +92,8 @@ function firstPath(input: Record<string, unknown>): string[] {
 export class ExternalStructuredReplayParser {
   private buffer = '';
   private readonly calls = new Map<string, string>();
+  /** CLI-native conversation id when the structured stream reveals it. */
+  sessionId: string | null = null;
 
   feed(cli: string, chunk: string): ExternalReplayParseResult {
     this.buffer += cleanTerminalText(chunk);
@@ -155,6 +157,9 @@ export class ExternalStructuredReplayParser {
   private claude(event: Record<string, unknown>): ExternalReplayObservation[] | null {
     const type = text(event.type);
     if (!type) return null;
+    // init/result events carry the conversation id — retained for exact resume.
+    const sessionId = text(event.session_id);
+    if (sessionId) this.sessionId = sessionId;
     if (type === 'system' && text(event.subtype) === 'init') {
       return [
         {
