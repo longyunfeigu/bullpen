@@ -127,6 +127,28 @@ New acceptance:
 | PIVOT-036 | L2 continuity: room → Editor → room round-trips preserve the task selection, the reply draft and the timeline scroll position (per task, session-scoped), and the peek state. |
 | PIVOT-037 | Shell unification (staged, not this round): the Editor becomes a content-area state of the persistent shell; surfaces disappear; transitions morph around the conversation column. Recorded as the end-state skeleton in ADR-0014. |
 
+## Shell v6 — grouped activity rail (ADR-0023, direction D)
+
+Mockup: `docs/design/sidebar-vnext-hybrid.html` (direction D in
+`sidebar-vnext-gallery.html`, product-owner approved). The Session Rail becomes
+an activity bar (Sessions / Inbox / Projects / Search + Editor / Settings) plus
+one context panel.
+
+Revisions to earlier acceptance (authoritative where they conflict):
+
+| ID | Revision |
+| --- | --- |
+| PIVOT-011r | Project selection/browsing (recents, lazy tree, Open folder…, New project…) lives in the rail's **Projects panel**; semantics (working directory, persistence, composer targeting) unchanged. |
+| PIVOT-013r2 | The Inbox control opens the rail's **Inbox panel** — the triage list of exactly the attention sessions; each row routes to its task's room (was: jump straight to the first attention task). The amber "Needs you" row above the session groups opens the same panel. |
+| PIVOT-027r2 | The active project's lazy tree expands inside the Projects panel. |
+
+New acceptance:
+
+| ID | Requirement |
+| --- | --- |
+| PIVOT-038 | Sessions group by project with collapsible headers carrying "N need you" badges and counts; rows inside a group omit the project name; settled sessions (ACCEPTED/ROLLED_BACK/CANCELLED) fold into a default-collapsed cross-project History group; attention states never move to History; the open room's group auto-expands so the selected row is never hidden. |
+| PIVOT-039 | The sessions panel pins an amber "Needs you · N" row whenever sessions await the user, and ends with a resident working-context row naming the focused project with a one-click route to the Projects panel. The activity bar's Search opens the ⌘K launcher; Editor (⌘E) and Settings sit at its bottom. |
+
 ## Notes
 
 - Fast path vs full form: the Home input is the primary path; the Workspace

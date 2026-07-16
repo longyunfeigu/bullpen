@@ -141,8 +141,13 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
       await page.getByTestId('task-room-back').click();
       await expect(page.getByTestId('home-mc-needs')).toContainText('Review');
       await expect(page.getByTestId('home-reviews')).toContainText('1');
-      // Inbox routes to the task's room (PIVOT-028); review is one click there.
+      // ADR-0023 (PIVOT-013r2): Inbox opens the triage panel; each row routes
+      // to its task's room — review is one click from there.
       await page.getByTestId('home-reviews').click();
+      await page
+        .locator('[data-testid="rail-inbox-panel"] [data-testid^="home-task-"]')
+        .first()
+        .click();
       await expect(page.getByTestId('task-room')).toBeVisible();
       await page.getByTestId('review-open').first().click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });

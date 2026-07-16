@@ -16,7 +16,56 @@ import { useGlowTasks } from './useGlow.js';
 
 type SessionEntry =
   | { key: string; kind: 'task'; task: TaskDto }
-  | { key: string; kind: 'terminal'; terminalId: string; launch: 'claude' | 'codex' };
+  | {
+      key: string;
+      kind: 'terminal';
+      terminalId: string;
+      launch: 'claude' | 'codex';
+      projectName: string;
+    };
+
+/** ADR-0023 direction D: the rail's three panel views behind the activity bar. */
+type RailView = 'sessions' | 'inbox' | 'projects';
+
+interface RailGroup {
+  key: string;
+  name: string;
+  path: string | null;
+  entries: SessionEntry[];
+  needs: number;
+  history?: boolean;
+}
+
+/**
+ * ADR-0023: settled sessions leave their project group for the collapsed
+ * History group. Attention states (FAILED/INTERRUPTED, review) stay in their
+ * project group — History never hides something that still wants a decision.
+ */
+const SETTLED_STATES = new Set(['ACCEPTED', 'ROLLED_BACK', 'CANCELLED']);
+
+const COLLAPSED_KEY = 'charter.rail.collapsed.v1';
+
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_KEY);
+    if (raw) {
+      return new Set(
+        (JSON.parse(raw) as unknown[]).filter((v): v is string => typeof v === 'string'),
+      );
+    }
+  } catch {
+    // fall through to the default below
+  }
+  return new Set(['history']);
+}
+
+function saveCollapsed(collapsed: ReadonlySet<string>): void {
+  try {
+    window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
+  } catch {
+    // best-effort UI state
+  }
+}
 
 function providerForTask(task: TaskDto): 'pi' | 'claude' | 'codex' {
   if (task.external?.cli === 'claude') return 'claude';
@@ -47,7 +96,14 @@ function ProviderMark({ provider }: { provider: 'pi' | 'claude' | 'codex' }): Re
   );
 }
 
-function SessionTaskRow({ task }: { task: TaskDto }): React.JSX.Element {
+function SessionTaskRow({
+  task,
+  showProject = true,
+}: {
+  task: TaskDto;
+  /** Rows inside a project group drop the redundant project name (ADR-0023). */
+  showProject?: boolean;
+}): React.JSX.Element {
   const app = useAppStore();
   const taskStore = useTaskStore();
   const activity = useActivityStore((state) => state.perTask[task.id]);
@@ -84,14 +140,20 @@ function SessionTaskRow({ task }: { task: TaskDto }): React.JSX.Element {
             <span className={`sr-state ${meta.tone}`}>{live ? 'LIVE' : meta.short}</span>
           </span>
           <span className="sr-session-meta">
-            <span className="sr-session-project">{task.projectName}</span>
+            {showProject ? <span className="sr-session-project">{task.projectName}</span> : null}
             <span className="sr-session-branch">
               <Ic name="branch" size={10} />
               {task.worktree?.branch ?? 'main'}
             </span>
           </span>
           <span className="sr-session-detail">
-            {action?.label ?? (isAnswered(task) ? 'Answered · no file changes' : meta.label)}
+            {action ? (
+              <span data-testid={`home-task-ticker-${task.id}`}>{action.label}</span>
+            ) : isAnswered(task) ? (
+              'Answered · no file changes'
+            ) : (
+              meta.label
+            )}
           </span>
         </span>
       </button>
@@ -112,9 +174,11 @@ function SessionTaskRow({ task }: { task: TaskDto }): React.JSX.Element {
 function TerminalSessionRow({
   terminalId,
   launch,
+  showProject = true,
 }: {
   terminalId: string;
   launch: 'claude' | 'codex';
+  showProject?: boolean;
 }): React.JSX.Element | null {
   const app = useAppStore();
   const item = useTerminalStore((state) => state.items.find((entry) => entry.id === terminalId));
@@ -140,7 +204,7 @@ function TerminalSessionRow({
           <span className="sr-state run">{item.exited ? 'ENDED' : 'LIVE'}</span>
         </span>
         <span className="sr-session-meta">
-          <span className="sr-session-project">{item.projectName}</span>
+          {showProject ? <span className="sr-session-project">{item.projectName}</span> : null}
           <span className="sr-session-branch">
             <Ic name="branch" size={10} /> main
           </span>
@@ -280,16 +344,25 @@ function isTypingTarget(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * Session Rail, direction D (ADR-0023): a slim activity bar (Sessions / Inbox /
+ * Projects / Search, with Editor and Settings at the bottom) drives one context
+ * panel. Sessions are grouped by project with a collapsed History group for
+ * settled work; the amber "Needs you" row and the Inbox destination are the
+ * same attention queue reached two ways.
+ */
 export function SessionRail(): React.JSX.Element {
   const app = useAppStore();
   const workspaceStore = useWorkspaceStore();
   const taskStore = useTaskStore();
   const terminalStore = useTerminalStore();
   const taskByTerminal = useExternalStore((state) => state.taskByTerminal);
-  const inbox = taskStore.tasks.filter(needsAttention);
+  const inbox = taskStore.tasks.filter((task) => !task.archived && needsAttention(task));
   const [recent, setRecent] = useState<RecentWorkspaceDto[]>([]);
   const [treeOpen, setTreeOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [view, setView] = useState<RailView>('sessions');
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(loadCollapsed);
 
   useEffect(() => {
     taskStore.init();
@@ -302,7 +375,7 @@ export function SessionRail(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceStore.workspace?.path]);
 
-  const entries = useMemo<SessionEntry[]>(() => {
+  const flatEntries = useMemo<SessionEntry[]>(() => {
     const taskEntries: SessionEntry[] = taskStore.tasks
       .filter((task) => !task.archived)
       .slice(0, 20)
@@ -319,9 +392,78 @@ export function SessionRail(): React.JSX.Element {
         kind: 'terminal',
         terminalId: terminal.id,
         launch: terminal.launch as 'claude' | 'codex',
+        projectName: terminal.projectName,
       }));
     return [...terminalEntries.toReversed(), ...taskEntries];
   }, [taskStore.tasks, terminalStore.items, taskByTerminal]);
+
+  const groups = useMemo<RailGroup[]>(() => {
+    const active: RailGroup[] = [];
+    const byName = new Map<string, RailGroup>();
+    const history: RailGroup = {
+      key: 'history',
+      name: 'History',
+      path: null,
+      entries: [],
+      needs: 0,
+      history: true,
+    };
+    for (const entry of flatEntries) {
+      if (entry.kind === 'task' && SETTLED_STATES.has(entry.task.state)) {
+        history.entries.push(entry);
+        continue;
+      }
+      const name = entry.kind === 'task' ? entry.task.projectName : entry.projectName;
+      let group = byName.get(name);
+      if (!group) {
+        group = { key: `proj:${name}`, name, path: null, entries: [], needs: 0 };
+        byName.set(name, group);
+        active.push(group);
+      }
+      if (entry.kind === 'task') {
+        group.path ??= entry.task.projectPath;
+        if (needsAttention(entry.task)) group.needs += 1;
+      }
+      group.entries.push(entry);
+    }
+    return history.entries.length > 0 ? [...active, history] : active;
+  }, [flatEntries]);
+
+  /** Keyboard order mirrors the visual order (groups flattened, History last). */
+  const orderedEntries = useMemo(() => groups.flatMap((group) => group.entries), [groups]);
+
+  const toggleGroup = (key: string): void => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      saveCollapsed(next);
+      return next;
+    });
+  };
+
+  // The open room's row is never hidden: when the selection lands in (or moves
+  // into) a collapsed group — e.g. accept sends a task to History — expand it.
+  // Manual collapses are respected until the selection or its group changes.
+  const selectedKey = app.taskRoomTaskId
+    ? `task:${app.taskRoomTaskId}`
+    : app.sessionTerminalId
+      ? `terminal:${app.sessionTerminalId}`
+      : null;
+  const selectedGroupKey = selectedKey
+    ? (groups.find((group) => group.entries.some((entry) => entry.key === selectedKey))?.key ??
+      null)
+    : null;
+  useEffect(() => {
+    if (!selectedGroupKey) return;
+    setCollapsed((prev) => {
+      if (!prev.has(selectedGroupKey)) return prev;
+      const next = new Set(prev);
+      next.delete(selectedGroupKey);
+      saveCollapsed(next);
+      return next;
+    });
+  }, [selectedGroupKey, selectedKey]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -334,17 +476,17 @@ export function SessionRail(): React.JSX.Element {
           : app.sessionTerminalId
             ? `terminal:${app.sessionTerminalId}`
             : null;
-        const current = entries.findIndex((entry) => entry.key === currentKey);
+        const current = orderedEntries.findIndex((entry) => entry.key === currentKey);
         index =
           event.key === '['
             ? current <= 0
-              ? entries.length - 1
+              ? orderedEntries.length - 1
               : current - 1
-            : current < 0 || current >= entries.length - 1
+            : current < 0 || current >= orderedEntries.length - 1
               ? 0
               : current + 1;
       }
-      const entry = entries[index];
+      const entry = orderedEntries[index];
       if (!entry) return;
       event.preventDefault();
       if (entry.kind === 'task') {
@@ -356,127 +498,265 @@ export function SessionRail(): React.JSX.Element {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [app, entries, taskStore]);
+  }, [app, orderedEntries, taskStore]);
+
+  const sessionsPanel = (
+    <>
+      <div className="sr-head">
+        <strong>Sessions</strong>
+        <span className="sr-shortcuts">⌘[ ⌘]</span>
+        <div className="sr-new-wrap">
+          <button
+            className="sr-new"
+            data-testid="home-new-task"
+            title="Start from the task composer"
+            onClick={() => {
+              app.closeTaskRoom();
+              app.setSurface('home');
+              app.focusComposer();
+            }}
+          >
+            <Ic name="plus" size={13} /> New Session
+          </button>
+          <button
+            className="sr-new-menu"
+            data-testid="session-new-menu"
+            aria-label="Choose session type"
+            title="Choose Pi, Claude or Codex"
+            onClick={() => setDialogOpen(true)}
+          >
+            <Ic name="chevron" size={12} />
+          </button>
+        </div>
+      </div>
+
+      {inbox.length > 0 ? (
+        <button
+          className="sr-attention"
+          data-testid="rail-needs-you"
+          title="Open the inbox — every session waiting on you"
+          onClick={() => setView('inbox')}
+        >
+          <Ic name="inbox" size={13} />
+          <strong>Needs you</strong>
+          <span>Open inbox</span>
+          <b>{inbox.length}</b>
+        </button>
+      ) : null}
+
+      <div className="sr-scroll">
+        {groups.length === 0 ? (
+          <div className="sr-empty">No sessions yet. Start with Pi, Claude or Codex.</div>
+        ) : (
+          groups.map((group) => {
+            const isCollapsed = collapsed.has(group.key);
+            return (
+              <section key={group.key} className="sr-group">
+                <button
+                  className="sr-group-head"
+                  data-testid={`rail-group-${group.history ? 'history' : group.name}`}
+                  aria-expanded={!isCollapsed}
+                  title={group.path ?? group.name}
+                  onClick={() => toggleGroup(group.key)}
+                >
+                  <Ic
+                    name="chevron"
+                    size={12}
+                    className={`sr-group-chevron ${isCollapsed ? 'closed' : ''}`}
+                  />
+                  <Ic name={group.history ? 'clock' : 'folder'} size={12} />
+                  <strong>{group.name}</strong>
+                  {group.needs > 0 ? (
+                    <span className="sr-group-needs">{group.needs} need you</span>
+                  ) : null}
+                  <span className="sr-group-count">{group.entries.length}</span>
+                </button>
+                {isCollapsed ? null : (
+                  <div className="sr-group-items">
+                    {group.entries.map((entry) =>
+                      entry.kind === 'task' ? (
+                        <SessionTaskRow
+                          key={entry.key}
+                          task={entry.task}
+                          showProject={group.history === true}
+                        />
+                      ) : (
+                        <TerminalSessionRow
+                          key={entry.key}
+                          terminalId={entry.terminalId}
+                          launch={entry.launch}
+                          showProject={false}
+                        />
+                      ),
+                    )}
+                  </div>
+                )}
+              </section>
+            );
+          })
+        )}
+      </div>
+
+      <div className="sr-context-foot">
+        <button
+          data-testid="rail-context"
+          title={
+            workspaceStore.workspace
+              ? `${workspaceStore.workspace.path} — new sessions bind here`
+              : 'Pick the project new sessions bind to'
+          }
+          onClick={() => setView('projects')}
+        >
+          <Ic name="folder" size={13} />
+          <span>{workspaceStore.workspace?.displayName ?? 'No project selected'}</span>
+          <small>Change</small>
+        </button>
+      </div>
+    </>
+  );
+
+  const inboxPanel = (
+    <>
+      <div className="sr-head sr-head-plain">
+        <strong>Needs you</strong>
+        <span className="sr-shortcuts">{inbox.length} waiting</span>
+      </div>
+      <div className="sr-scroll" data-testid="rail-inbox-panel">
+        {inbox.length === 0 ? (
+          <div className="sr-empty">
+            Nothing needs you right now. Sessions land here when they wait on a plan, a permission
+            or a review.
+          </div>
+        ) : (
+          inbox.map((task) => <SessionTaskRow key={task.id} task={task} />)
+        )}
+      </div>
+    </>
+  );
+
+  const projectsPanel = (
+    <>
+      <div className="sr-head sr-head-plain">
+        <strong>Projects</strong>
+        <span className="sr-shortcuts">working context</span>
+      </div>
+      <div className="sr-scroll" data-testid="rail-projects-panel">
+        {recent.slice(0, 8).map((project) => {
+          const active = workspaceStore.workspace?.path === project.path;
+          return (
+            <React.Fragment key={project.path}>
+              <button
+                className={`sr-project ${active ? 'active' : ''}`}
+                data-testid={`home-recent-${project.path}`}
+                title={project.path}
+                onClick={() => {
+                  if (active) setTreeOpen(!treeOpen);
+                  else {
+                    app.setHomePick(true);
+                    void workspaceStore.openPath(project.path);
+                    // Picking a new working context completes the errand —
+                    // return to the sessions panel.
+                    setView('sessions');
+                  }
+                }}
+              >
+                <Ic name="folder" size={13} />
+                <span>{project.displayName}</span>
+                {active ? (
+                  <Ic name="chevron" size={12} className={treeOpen ? 'sr-chevron-open' : ''} />
+                ) : null}
+              </button>
+              {active && treeOpen ? <HomeProjectTree /> : null}
+            </React.Fragment>
+          );
+        })}
+        <button
+          className="sr-project muted"
+          data-testid="home-open-folder"
+          onClick={() => void workspaceStore.openViaDialog()}
+        >
+          <Ic name="folder" size={13} />
+          <span>Open folder…</span>
+        </button>
+        <button
+          className="sr-project muted"
+          data-testid="home-new-project"
+          onClick={() => app.setNewProjectOpen(true)}
+        >
+          <Ic name="plus" size={13} />
+          <span>New project…</span>
+        </button>
+      </div>
+    </>
+  );
 
   return (
     <>
       <aside className="sr-rail" data-testid="home-sidebar" aria-label="Sessions">
-        <div className="sr-head">
-          <strong>Sessions</strong>
-          <span className="sr-shortcuts">⌘[ ⌘]</span>
-          <div className="sr-new-wrap">
-            <button
-              className="sr-new"
-              data-testid="home-new-task"
-              title="Start from the task composer"
-              onClick={() => {
-                app.closeTaskRoom();
-                app.setSurface('home');
-                app.focusComposer();
-              }}
-            >
-              <Ic name="plus" size={13} /> New Session
-            </button>
-            <button
-              className="sr-new-menu"
-              data-testid="session-new-menu"
-              aria-label="Choose session type"
-              title="Choose Pi, Claude or Codex"
-              onClick={() => setDialogOpen(true)}
-            >
-              <Ic name="chevron" size={12} />
-            </button>
-          </div>
-        </div>
-
-        <div className="sr-scroll">
-          {entries.length === 0 ? (
-            <div className="sr-empty">No sessions yet. Start with Pi, Claude or Codex.</div>
-          ) : (
-            entries.map((entry) =>
-              entry.kind === 'task' ? (
-                <SessionTaskRow key={entry.key} task={entry.task} />
-              ) : (
-                <TerminalSessionRow
-                  key={entry.key}
-                  terminalId={entry.terminalId}
-                  launch={entry.launch}
-                />
-              ),
-            )
-          )}
-
-          <div className="sr-section-title">Project</div>
-          {recent.slice(0, 5).map((project) => {
-            const active = workspaceStore.workspace?.path === project.path;
-            return (
-              <React.Fragment key={project.path}>
-                <button
-                  className={`sr-project ${active ? 'active' : ''}`}
-                  data-testid={`home-recent-${project.path}`}
-                  title={project.path}
-                  onClick={() => {
-                    if (active) setTreeOpen(!treeOpen);
-                    else {
-                      app.setHomePick(true);
-                      void workspaceStore.openPath(project.path);
-                    }
-                  }}
-                >
-                  <Ic name="folder" size={13} />
-                  <span>{project.displayName}</span>
-                  {active ? (
-                    <Ic name="chevron" size={12} className={treeOpen ? 'sr-chevron-open' : ''} />
-                  ) : null}
-                </button>
-                {active && treeOpen ? <HomeProjectTree /> : null}
-              </React.Fragment>
-            );
-          })}
+        <nav className="sr-activity" aria-label="Primary destinations">
+          <span className="sr-activity-brand" aria-hidden>
+            <Ic name="flag" size={14} />
+          </span>
           <button
-            className="sr-project muted"
-            data-testid="home-open-folder"
-            onClick={() => void workspaceStore.openViaDialog()}
+            className={`sr-activity-item ${view === 'sessions' ? 'active' : ''}`}
+            data-testid="rail-view-sessions"
+            title="Sessions"
+            aria-label="Sessions"
+            onClick={() => setView('sessions')}
           >
-            <Ic name="folder" size={13} />
-            <span>Open folder…</span>
+            <Ic name="terminal" size={16} />
           </button>
           <button
-            className="sr-project muted"
-            data-testid="home-new-project"
-            onClick={() => app.setNewProjectOpen(true)}
-          >
-            <Ic name="plus" size={13} />
-            <span>New project…</span>
-          </button>
-        </div>
-
-        <div className="sr-foot">
-          <button
+            className={`sr-activity-item ${view === 'inbox' ? 'active' : ''}`}
             data-testid="home-reviews"
-            onClick={() => {
-              const task = inbox[0];
-              if (task) {
-                void taskStore.openTask(task.id);
-                app.openTaskRoom(task.id);
-              } else app.pushToast('info', 'Nothing needs you right now.');
-            }}
+            title="Inbox — sessions waiting on you"
+            aria-label="Inbox"
+            onClick={() => setView('inbox')}
           >
-            <Ic name="inbox" size={14} /> Inbox
-            {inbox.length > 0 ? <span>{inbox.length}</span> : null}
+            <Ic name="inbox" size={16} />
+            {inbox.length > 0 ? <span className="sr-mini-badge">{inbox.length}</span> : null}
           </button>
           <button
-            className={app.surface === 'workspace' ? 'active' : ''}
+            className={`sr-activity-item ${view === 'projects' ? 'active' : ''}`}
+            data-testid="rail-view-projects"
+            title="Projects"
+            aria-label="Projects"
+            onClick={() => setView('projects')}
+          >
+            <Ic name="folder" size={16} />
+          </button>
+          <button
+            className="sr-activity-item"
+            data-testid="rail-search"
+            title="Search projects, sessions and files · ⌘K"
+            aria-label="Search"
+            onClick={() => app.setLauncherOpen(true)}
+          >
+            <Ic name="search" size={16} />
+          </button>
+          <span className="sr-activity-spacer" />
+          <button
+            className={`sr-activity-item ${app.surface === 'workspace' ? 'active' : ''}`}
             data-testid="home-open-ide"
-            title="Open the editor while the Session Rail stays visible"
+            title="Editor · ⌘E — the Session Rail stays visible"
+            aria-label="Editor"
             onClick={() => app.setSurface('workspace')}
           >
-            <Ic name="layout" size={14} /> Workspace <kbd>⌘E</kbd>
+            <Ic name="layout" size={16} />
           </button>
-          <button onClick={() => app.openSettings()}>
-            <Ic name="sliders" size={14} /> Settings
+          <button
+            className="sr-activity-item"
+            data-testid="home-settings"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => app.openSettings()}
+          >
+            <Ic name="sliders" size={16} />
           </button>
-        </div>
+        </nav>
+        <section className="sr-panel">
+          {view === 'inbox' ? inboxPanel : view === 'projects' ? projectsPanel : sessionsPanel}
+        </section>
       </aside>
       {dialogOpen ? <NewSessionDialog onClose={() => setDialogOpen(false)} /> : null}
     </>

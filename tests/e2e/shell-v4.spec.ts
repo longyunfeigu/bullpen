@@ -78,7 +78,10 @@ test.describe('Shell v4 — global tasks on a multi-mount engine (ADR-0009)', ()
       await expect(page.getByTestId('plan-card')).toBeVisible({ timeout: 20000 });
 
       // Back home, focus project B — the pending task must NOT be cancelled.
+      // ADR-0023: recents live in the rail's Projects panel; switching returns
+      // the rail to the sessions panel.
       await page.getByTestId('task-room-back').click();
+      await page.getByTestId('rail-view-projects').click();
       await page.getByTestId(`home-recent-${projectB}`).click();
       await expect(page.getByTestId('home-project')).toContainText(
         projectB.split('/').pop() ?? 'fixture',

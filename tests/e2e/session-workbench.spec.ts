@@ -60,4 +60,60 @@ test.describe('Session Rail Workbench', () => {
       await app.close();
     }
   });
+
+  // ADR-0023 direction D: activity bar + project-grouped panel with an
+  // attention row, an Inbox destination and a resident working-context row.
+  test('groups sessions by project and routes attention through the inbox', async () => {
+    const fixture = realpathSync(createGitFixture());
+    const name = fixture.split('/').pop()!;
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
+      home: 'keep',
+    });
+    try {
+      await expect(page.getByTestId('home-sidebar')).toBeVisible();
+      await page.getByTestId('home-new-task').click();
+      await expect(page.getByTestId('home-view')).toBeVisible();
+      await expect(page.getByTestId('home-model')).toContainText(/mock/i, { timeout: 15000 });
+      await page.getByTestId('home-mode-auto').click();
+      await page.getByTestId('home-intent').fill('[scenario:edit-basic] direction d walk');
+      await page.getByTestId('home-submit').click();
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
+
+      // The session sits under its project group; the header carries the
+      // attention badge so a collapsed group never hides that it wants you.
+      const group = page.getByTestId(`rail-group-${name}`);
+      await expect(group).toBeVisible();
+      await expect(group).toContainText('1 need you');
+
+      // The amber Needs-you row and the Inbox destination are one queue:
+      // the row opens the triage panel, a panel row opens its room.
+      await expect(page.getByTestId('rail-needs-you')).toContainText('1');
+      await page.getByTestId('rail-needs-you').click();
+      await expect(page.getByTestId('rail-inbox-panel')).toBeVisible();
+      await page
+        .locator('[data-testid="rail-inbox-panel"] [data-testid^="home-task-"]')
+        .first()
+        .click();
+      await expect(page.getByTestId('task-room')).toBeVisible();
+
+      // Collapse hides the rows but keeps the badge; expand restores them.
+      await page.getByTestId('rail-view-sessions').click();
+      await group.click();
+      await expect(page.locator('[data-testid^="home-task-"]')).toHaveCount(0);
+      await expect(group).toContainText('1 need you');
+      await group.click();
+      await expect(page.locator('[data-testid^="home-task-"]').first()).toBeVisible();
+
+      // The resident working-context row routes to the Projects panel.
+      await expect(page.getByTestId('rail-context')).toContainText(name);
+      await page.getByTestId('rail-context').click();
+      await expect(page.getByTestId('rail-projects-panel')).toBeVisible();
+      await expect(page.locator('[data-testid^="home-recent-"].active')).toBeVisible();
+    } finally {
+      await app.close();
+    }
+  });
 });

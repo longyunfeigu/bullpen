@@ -17,6 +17,7 @@ test.describe('Sidebar — New project entry and drag-to-@ context feeding', () 
     });
     try {
       await page.getByTestId('surface-home').click();
+      await page.getByTestId('rail-view-projects').click(); // ADR-0023: entry lives in the Projects panel
       await page.getByTestId('home-new-project').click();
       await expect(page.getByTestId('new-project-dialog')).toBeVisible();
       await page.getByLabel('Close').click();
@@ -29,6 +30,7 @@ test.describe('Sidebar — New project entry and drag-to-@ context feeding', () 
       await page.getByTestId('home-intent').fill('[scenario:edit-basic] room for dialog test');
       await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('task-room')).toBeVisible();
+      await page.getByTestId('rail-view-projects').click(); // ADR-0023: entry lives in the Projects panel
       await page.getByTestId('home-new-project').click();
       await expect(page.getByTestId('new-project-dialog')).toBeVisible();
       await page.getByLabel('Close').click();
@@ -44,6 +46,7 @@ test.describe('Sidebar — New project entry and drag-to-@ context feeding', () 
     });
     try {
       await page.getByTestId('surface-home').click();
+      await page.getByTestId('rail-view-projects').click(); // ADR-0023: recents live in the Projects panel
       await page.locator('[data-testid^="home-recent-"].active').click();
       await expect(page.getByTestId('home-project-tree')).toBeVisible();
       await page.getByTestId('home-tree-src').click();
@@ -95,6 +98,7 @@ test.describe('Sidebar — New project entry and drag-to-@ context feeding', () 
     });
     try {
       await page.getByTestId('surface-home').click();
+      await page.getByTestId('rail-view-projects').click(); // ADR-0023: recents live in the Projects panel
       await page.locator('[data-testid^="home-recent-"].active').click();
       await page.getByTestId('home-tree-src').click();
       await expect(page.getByTestId('home-tree-src/index.ts')).toBeVisible();

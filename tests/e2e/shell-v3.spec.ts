@@ -143,6 +143,7 @@ test.describe('Shell v3 — Home refinements (PIVOT-027, PIVOT-012 title)', () =
     try {
       await page.getByTestId('surface-home').click();
       // The active row toggles its lazy tree in place.
+      await page.getByTestId('rail-view-projects').click(); // ADR-0023: recents live in the Projects panel
       await page.locator('[data-testid^="home-recent-"].active').click();
       await expect(page.getByTestId('home-project-tree')).toBeVisible();
       await page.getByTestId('home-tree-src').click();

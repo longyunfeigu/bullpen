@@ -47,7 +47,8 @@ test.describe('Dual-form shell pivot (ADR-0004, PIVOT-001..010)', () => {
       await expect(page.getByTestId('home-view')).toBeVisible();
 
       // PIVOT-002: choose the project from recents; Home stays up (mid-charter).
-      await page.getByTestId('home-project').click();
+      // ADR-0023: recents live in the rail's Projects panel.
+      await page.getByTestId('rail-view-projects').click();
       await page.getByTestId(`home-recent-${fixture}`).click();
       await expect(page.getByTestId('home-project')).toContainText(fixture.split('/').pop()!);
       await expect(page.getByTestId('home-view')).toBeVisible();
