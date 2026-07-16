@@ -32,8 +32,20 @@ export function registerM6Handlers(
           conversationRefTaskIds: payload.conversationRefTaskIds,
         }),
       }),
-      'task.start': async ({ taskId, prompt }) => {
-        const result = await tasks.startTask(taskId, prompt);
+      'task.start': async ({ taskId, prompt, preview }) => {
+        // ADR-0022 am.2: a follow-up seeded from preview feedback carries the
+        // screenshot into its first run (same processing as task.message).
+        const attachment = preview ? await processPreviewAttachment(tasks, taskId, preview) : null;
+        const result = await tasks.startTask(
+          taskId,
+          prompt,
+          attachment
+            ? {
+                images: [{ data: attachment.imageData, mimeType: 'image/png' }],
+                previewMeta: attachment.meta,
+              }
+            : undefined,
+        );
         return { task: result.task, queued: result.queued };
       },
       'task.message': async ({ taskId, text, during, model, preview }) => {

@@ -101,6 +101,20 @@ export const EVENT_CHANNELS = {
       status: z.enum(['ok', 'error']),
     }),
   ),
+  /** ADR-0022 am.2: a console message from a loopback preview frame (any level;
+   * the renderer's policy decides what reaches the agent). Zero-injection:
+   * captured via the window's own console-message event, filtered by origin. */
+  'preview.console': ev(
+    'preview.console',
+    1,
+    z.object({
+      port: z.number().int().min(1).max(65535),
+      level: z.enum(['error', 'warning', 'info', 'debug']),
+      message: z.string().max(2000),
+      sourceId: z.string().max(2000),
+      line: z.number().int().nullable(),
+    }),
+  ),
   /** ADR-0017: live accounting for an external CLI session (watcher-driven). */
   'external.sessionChanged': ev(
     'external.sessionChanged',

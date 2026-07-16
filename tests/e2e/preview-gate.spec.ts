@@ -95,8 +95,8 @@ test.describe('Preview gate (ADR-0022)', () => {
       await expect(frame).toHaveAttribute('src', new RegExp(`localhost:${wt.port}`));
       await expect(page.getByTestId('preview-badge')).toContainText('isolated');
 
-      // Marquee: arm → drag → note → send.
-      await page.getByTestId('preview-mark').click();
+      // Marquee (am.2: the gate uses the shared Draw mode + note popover).
+      await page.getByTestId('preview-mode-draw').click();
       const overlay = page.getByTestId('preview-overlay');
       await expect(overlay).toBeVisible();
       const box = (await overlay.boundingBox())!;

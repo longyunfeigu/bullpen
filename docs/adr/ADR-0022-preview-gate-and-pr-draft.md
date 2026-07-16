@@ -135,6 +135,53 @@ the TERM-005 precedent (typing into the user's terminal is user domain), not a
 new process manager. Also fixed alongside: the Home worktree row no longer
 vanishes silently for non-git projects — it renders disabled with the reason.
 
+## Amendment 2 (2026-07-16) — the preview is the Room's window, not the gate's evidence
+
+Two field failures on the same day exposed a framing error, not a bug: a user
+couldn't find the preview twice. First it was buried behind the gate's Preview
+tab; then — decisively — a Full-mode task (ADR-0012) auto-accepts and never
+opens a gate at all, so the most agent-trusting users had no window into what
+the agent was building. The industry has converged the other way (v0 Design
+Mode, Lovable's preview toolbar, Windsurf Send-element, Replit self-test): the
+preview is a **persistent primary surface**, and feedback is "point at the
+thing, say a word," landing in the **same conversation input**. The design
+note is `docs/design/room-live-preview-directions.html` (approved 1:1).
+
+- **Persistent rail.** The Task Room grows a resizable preview column
+  (`RoomPreviewRail`) available in EVERY state — running, review, full-auto,
+  accepted. Detection only lights a header badge (`PreviewBadge`); the layout
+  never moves on a weak signal (the external-CLI lesson). One shared
+  `LivePreview` component serves both the rail (`variant="rail"`) and the gate
+  Preview tab (`variant="gate"`) — same port detection, same iframe sandbox,
+  same boundary. The rail and the in-room peek share the side slot (mutually
+  exclusive). Width persists in localStorage.
+- **Point-and-say feedback.** Two modes over the frame: **Pick (S)** and
+  **Draw (R)**. Pick injects a self-cleaning element picker into the loopback
+  frame via `webFrameMain.executeJavaScript` — gated to frames whose URL is
+  loopback + the task's detected port; on any failure it falls back to the
+  zero-injection marquee (Draw). The picker posts `{selector, rect, text}` to
+  the parent; a cross-origin `message` listener filtered by the port's origin
+  receives it. In the rail, the selection lands as a **composer attachment
+  chip** (`draftStore.previewRefs`) — one input, one conversation, same steer
+  loop; in the gate it keeps the direct note popover. A selection made after
+  the task closed **seeds a follow-up task** whose first run carries the
+  screenshot (`task.start` v2 gains an optional `preview`). Attachments carry
+  the CSS `selector` now, so the agent locates code, not just pixels.
+- **Console self-heal.** Zero-injection capture: main relays the window's own
+  `console-message` events (`preview.console`), filtered to loopback origins.
+  Renderer policy (`preview-console.ts`, pure + unit-tested): dedupe, count,
+  and in `auto` mode forward errors to the agent ONLY when the task is running
+  and the error landed within 15s of the agent's own last write — one send per
+  write burst, capped 5/run, so a crash-loop can't spam the model. Warnings
+  never auto-send. Setting `preview.consoleToAgent` (auto | manual | off);
+  `manual` collects to a ⚠ chip with one-click send; `off` counts only. This
+  makes Full mode "有窗有自愈" — a window and a reflex, not blind flight.
+- **Injection boundary (security).** The picker is the first thing Charter
+  runs INSIDE a preview page, so it is fenced: only frames matching the task's
+  own detected loopback port; the script is self-contained and self-cleaning;
+  it posts data, never receives commands; a missing/File frame silently
+  degrades to marquee. `frame-src` is unchanged from am.0.
+
 ## Alternatives considered
 
 - **Auto-starting the dev command from the gate**: rejected — turns a

@@ -7,7 +7,7 @@ import { useAppStore } from '../store/appStore.js';
 import { ConfirmDangerButton } from './ui.js';
 import { Ic } from './home-icons.js';
 import { stateLabel } from './labels.js';
-import { ReviewPreview } from './ReviewPreview.js';
+import { LivePreview } from './LivePreview.js';
 import { ReviewChecks } from './ReviewChecks.js';
 import '../styles/review.css';
 import '../styles/preview.css';
@@ -381,7 +381,7 @@ export function ReviewView(): React.JSX.Element | null {
         </span>
       </div>
 
-      {tab === 'preview' ? <ReviewPreview task={task} /> : null}
+      {tab === 'preview' ? <LivePreview task={task} variant="gate" /> : null}
       {tab === 'checks' ? <ReviewChecks task={task} /> : null}
 
       <div className="rv-body" style={tab === 'changes' ? undefined : { display: 'none' }}>

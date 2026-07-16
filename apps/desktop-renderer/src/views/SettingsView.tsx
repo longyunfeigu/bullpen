@@ -762,6 +762,21 @@ export function SettingsView(): React.JSX.Element {
                 onChange={(v) => set({ notifications: { enabled: v } })}
               />
             </Row>
+            <Row
+              label="Preview console → agent"
+              hint="Auto: errors landing right after the agent's own write are steered back (deduped, rate-limited). Manual: collect + one-click send. Off: count only."
+            >
+              <select
+                className="st-input"
+                data-testid="settings-preview-console"
+                value={settings.preview.consoleToAgent}
+                onChange={(e) => set({ preview: { consoleToAgent: e.target.value } })}
+              >
+                <option value="auto">Auto (self-heal)</option>
+                <option value="manual">Manual</option>
+                <option value="off">Off</option>
+              </select>
+            </Row>
           </div>
         ) : null}
 

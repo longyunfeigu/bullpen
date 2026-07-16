@@ -450,6 +450,7 @@ function eventNode(
               thumbDataUrl?: unknown;
               pageUrl?: unknown;
               note?: unknown;
+              selector?: unknown;
               rect?: { x?: unknown; y?: unknown; width?: unknown; height?: unknown } | null;
             })
           : null;
@@ -484,10 +485,11 @@ function eventNode(
               />
               <span className="rt-preview-meta">
                 preview · {typeof preview.pageUrl === 'string' ? preview.pageUrl : ''}
+                {typeof preview.selector === 'string' ? ` · ${preview.selector}` : ''}
                 {preview.rect &&
                 typeof preview.rect.width === 'number' &&
                 typeof preview.rect.height === 'number'
-                  ? ` · selection ${preview.rect.width}×${preview.rect.height}`
+                  ? ` · ${preview.rect.width}×${preview.rect.height}`
                   : ''}
               </span>
               {previewNote ? (

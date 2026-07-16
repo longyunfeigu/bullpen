@@ -56,6 +56,10 @@ interface AppStore {
   lens: { taskId: string; path: string } | null;
   /** In-room file peek (ADR-0014, PIVOT-034) — global so it survives ⌘E round-trips. */
   peek: PeekState | null;
+  /** ADR-0022 am.2: the Room's live-preview rail (taskId), exclusive with peek. */
+  previewRailTaskId: string | null;
+  openPreviewRail(taskId: string): void;
+  closePreviewRail(): void;
   /** Bumped when a control asks the launcher composer to take focus. */
   composerFocusSeq: number;
 
@@ -135,6 +139,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   newProjectOpen: false,
   lens: null,
   peek: null,
+  previewRailTaskId: null,
   composerFocusSeq: 0,
 
   setSurface(surface) {
@@ -146,10 +151,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   openPeek(taskId, path, mode) {
-    set({ peek: peekOpen(get().peek, taskId, path, mode) });
+    // Peek and the preview rail share the room's side column — exclusive.
+    set({ peek: peekOpen(get().peek, taskId, path, mode), previewRailTaskId: null });
   },
   closePeek() {
     set({ peek: null });
+  },
+  openPreviewRail(taskId) {
+    set({ previewRailTaskId: taskId, peek: null });
+  },
+  closePreviewRail() {
+    set({ previewRailTaskId: null });
   },
   closePeekTab(path) {
     const peek = get().peek;

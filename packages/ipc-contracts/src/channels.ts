@@ -586,8 +586,15 @@ export const CHANNELS = {
   ),
   'task.start': ch(
     'task.start',
-    1,
-    z.object({ taskId: z.string(), prompt: z.string().max(20000).optional() }).strict(),
+    2,
+    z
+      .object({
+        taskId: z.string(),
+        prompt: z.string().max(20000).optional(),
+        /** ADR-0022 am.2: preview feedback seeding a follow-up task's first run. */
+        preview: PreviewAttachmentSchema.optional(),
+      })
+      .strict(),
     z.object({ task: TaskDtoSchema, queued: z.boolean() }),
   ),
   'task.message': ch(
@@ -808,6 +815,21 @@ export const CHANNELS = {
       })
       .strict(),
     z.object({ opened: z.boolean() }),
+  ),
+  /** ADR-0022 am.2: inject/cancel the element picker in the task's preview
+   * frame. Loopback frames only; a missing frame is a soft false (the renderer
+   * falls back to the zero-injection marquee). */
+  'task.previewPick': ch(
+    'task.previewPick',
+    1,
+    z
+      .object({
+        taskId: z.string(),
+        port: z.number().int().min(1).max(65535),
+        action: z.enum(['start', 'cancel']),
+      })
+      .strict(),
+    z.object({ injected: z.boolean() }),
   ),
   /** ADR-0022: latest stored PR draft for an accepted task (null if none). */
   'task.prDraft': ch(

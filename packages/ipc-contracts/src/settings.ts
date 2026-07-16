@@ -71,6 +71,14 @@ export const SettingsSchema = z.object({
       enabled: z.boolean().default(true),
     })
     .prefault({}),
+  preview: z
+    .object({
+      /** ADR-0022 am.2: preview console errors → agent. auto = errors that land
+       * right after the agent's own write are steered back automatically
+       * (deduped, rate-limited); manual = collect + one-click send; off = count only. */
+      consoleToAgent: z.enum(['auto', 'manual', 'off']).default('auto'),
+    })
+    .prefault({}),
   models: z
     .object({
       defaultProviderId: z.string().nullable().default(null),

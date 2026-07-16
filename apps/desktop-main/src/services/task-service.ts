@@ -78,6 +78,8 @@ export interface PreviewFeedbackMeta {
   rect: PreviewRectDto;
   /** Small data-URL thumbnail for timeline rendering (no extra read channel). */
   thumbDataUrl: string;
+  /** am.2: CSS selector from the element picker (marquee selections have none). */
+  selector?: string;
   /** The user's note verbatim — the Room leads with it. */
   note?: string;
 }

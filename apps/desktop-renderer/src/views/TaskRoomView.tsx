@@ -23,6 +23,8 @@ import {
 import { hasDragRef, readDragRef } from './dragRefs.js';
 import { useSkillSlash } from './SkillSlashPicker.js';
 import { useDraftStore, type TerminalOutputRef } from '../store/draftStore.js';
+import { PreviewBadge, RoomPreviewRail } from './RoomPreviewRail.js';
+import { buildPreviewFeedbackText } from './LivePreview.js';
 import { openTaskInEditor } from './openInEditor.js';
 import { ExternalTerminalColumn, useExternalFiles } from './ExternalRoom.js';
 import { useExternalStore } from '../store/externalStore.js';
@@ -104,6 +106,8 @@ export function TaskRoomView(): React.JSX.Element {
   const sameProject = workspace?.path === task.projectPath;
   const peek = useAppStore((s) => s.peek);
   const peeking = peek !== null && peek.taskId === task.id;
+  // ADR-0022 am.2: the live-preview column shares the peek's side slot.
+  const previewing = useAppStore((s) => s.previewRailTaskId === task.id);
 
   // ADR-0009/0014: shared with the room-aware ⌘E toggle (PIVOT-006r).
   const openInEditor = (): void => openTaskInEditor(task);
@@ -135,6 +139,7 @@ export function TaskRoomView(): React.JSX.Element {
           {task.projectName}
         </span>
         {task.worktree ? <WorktreeChip task={task} /> : null}
+        <PreviewBadge task={task} />
         {task.external ? (
           <span
             className="tr-extchip"
@@ -188,7 +193,7 @@ export function TaskRoomView(): React.JSX.Element {
         ) : null}
       </div>
 
-      <div className={`tr-body ${peeking ? 'peeking' : ''}`}>
+      <div className={`tr-body ${peeking || previewing ? 'peeking' : ''}`}>
         <div className="tr-main">
           {task.external ? (
             /* ADR-0017: the conversation with an external agent IS its terminal —
@@ -215,12 +220,17 @@ export function TaskRoomView(): React.JSX.Element {
             onOpenInEditor={openFileInEditor}
           />
         ) : null}
-        {peeking ? (
+        {previewing ? <RoomPreviewRail task={task} /> : null}
+        {peeking || previewing ? (
           <button
             className="tr-rail-tab"
             data-testid="peek-rail-restore"
-            title="Close the peek and show the task rail"
-            onClick={app.closePeek}
+            title={
+              previewing
+                ? 'Close the preview and show the task rail'
+                : 'Close the peek and show the task rail'
+            }
+            onClick={previewing ? app.closePreviewRail : app.closePeek}
           >
             Changes{files.length > 0 ? ` · ${files.length}` : ''}
           </button>
@@ -828,6 +838,8 @@ function RoomComposer({
   // Editor agent panel — it survives ⌘E round-trips.
   const input = useDraftStore((s) => s.drafts[task.id] ?? '');
   const terminalRefs = useDraftStore((s) => s.terminalRefs[task.id] ?? EMPTY_TERMINAL_REFS);
+  // ADR-0022 am.2: a picked element / drawn region waiting to ride this reply.
+  const previewRef = useDraftStore((s) => s.previewRefs[task.id] ?? null);
   const setInput = (text: string): void => useDraftStore.getState().setDraft(task.id, text);
   const [dropActive, setDropActive] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -889,16 +901,37 @@ function RoomComposer({
       app.pushToast('warning', 'No model available — add a provider key in Settings.');
       return;
     }
+    // ADR-0022 am.2: a preview selection made after the task closed seeds the
+    // follow-up — the screenshot rides the new task's first run.
+    const seed = previewRef;
+    const goal = seed
+      ? `${buildPreviewFeedbackText(seed, text)}\n\n(Follow-up to “${task.title}” — that task's changes are already applied in this project.)`
+      : `${text}\n\n(Follow-up to “${task.title}” — that task's changes are already applied in this project.)`;
     const ok = await store.createAndStart({
-      title: titleFromIntent(text),
-      goalMd: `${text}\n\n(Follow-up to “${task.title}” — that task's changes are already applied in this project.)`,
+      title: titleFromIntent(
+        text || (seed?.selector ? `Fix ${seed.selector}` : 'Preview feedback'),
+      ),
+      goalMd: goal,
       acceptance: [],
       mode,
       model: { providerId, modelId, thinkingLevel: thinking },
       projectPath: task.projectPath,
       isolation: 'none',
+      ...(seed?.dataBase64
+        ? {
+            preview: {
+              dataBase64: seed.dataBase64,
+              mimeType: 'image/png' as const,
+              pageUrl: seed.pageUrl,
+              rect: seed.rect,
+              ...(seed.selector ? { selector: seed.selector } : {}),
+              ...(text.trim() ? { note: text.trim() } : {}),
+            },
+          }
+        : {}),
     });
     if (ok) {
+      useDraftStore.getState().clearPreviewRef(task.id);
       const newId = useTaskStore.getState().activeTaskId;
       if (newId) app.openTaskRoom(newId);
     }
@@ -913,11 +946,28 @@ function RoomComposer({
       )
       .join('\n\n');
     const text = [typed, terminalContext].filter(Boolean).join('\n\n');
-    if (!text) return;
+    if (!text && !previewRef) return;
     if (planOpen) {
-      void store.decidePlan({ decision: 'request_changes', reason: text });
+      void store.decidePlan({ decision: 'request_changes', reason: text || 'See the attachment.' });
     } else if (closed) {
       void startFollowUp(text);
+    } else if (previewRef) {
+      // ADR-0022 am.2: the reply carries the preview selection — same steer
+      // loop, one conversation; the model sees the screenshot.
+      const structured = buildPreviewFeedbackText(previewRef, text);
+      if (previewRef.dataBase64) {
+        void store.sendPreviewFeedback(structured, {
+          dataBase64: previewRef.dataBase64,
+          mimeType: 'image/png',
+          pageUrl: previewRef.pageUrl,
+          rect: previewRef.rect,
+          ...(previewRef.selector ? { selector: previewRef.selector } : {}),
+          ...(text.trim() ? { note: text.trim() } : {}),
+        });
+      } else {
+        void store.send(`${structured}\n(Screenshot capture failed — none attached.)`, 'steer');
+      }
+      useDraftStore.getState().clearPreviewRef(task.id);
     } else {
       const [providerId, modelId] = modelKey.split('::');
       const override =
@@ -1015,15 +1065,38 @@ function RoomComposer({
 
   const sendButton = (
     <button
-      className={`hm-send ${input.trim() || terminalRefs.length > 0 ? 'ready' : ''}`}
+      className={`hm-send ${input.trim() || terminalRefs.length > 0 || previewRef ? 'ready' : ''}`}
       data-testid="agent-send"
-      disabled={!input.trim() && terminalRefs.length === 0}
+      disabled={!input.trim() && terminalRefs.length === 0 && !previewRef}
       aria-label={planOpen ? 'Request plan changes' : 'Send'}
       onClick={send}
     >
       <Ic name="arrowUp" size={15} strokeWidth={2} />
     </button>
   );
+
+  // ADR-0022 am.2: the pending preview selection as a composer attachment chip.
+  const previewChip = previewRef ? (
+    <div className="tr-preview-ref" data-testid="room-preview-ref">
+      {previewRef.thumbDataUrl ? (
+        <img src={previewRef.thumbDataUrl} alt="Preview selection" />
+      ) : null}
+      <span className="tr-preview-ref-meta">
+        <span className="mono">{previewRef.selector ?? 'region'}</span>
+        <span className="tr-preview-ref-dim">
+          {previewRef.rect.width}×{previewRef.rect.height} · {previewRef.pageUrl}
+        </span>
+      </span>
+      <button
+        className="tr-preview-ref-x"
+        data-testid="room-preview-ref-remove"
+        aria-label="Remove the preview attachment"
+        onClick={() => useDraftStore.getState().clearPreviewRef(task.id)}
+      >
+        ✕
+      </button>
+    </div>
+  ) : null;
 
   const terminalRefChips =
     terminalRefs.length > 0 ? (
@@ -1058,6 +1131,7 @@ function RoomComposer({
         {...dragHandlers}
       >
         <div className="tr-ccard">
+          {previewChip}
           {terminalRefChips}
           {textarea('tr-cinput')}
           {slash.menu}
@@ -1104,6 +1178,7 @@ function RoomComposer({
     >
       <div className="tr-fcard">
         <div className="hm-card">
+          {previewChip}
           {terminalRefChips}
           <div className="hm-chiprow">
             <span

@@ -8,11 +8,15 @@ import { create } from 'zustand';
 interface DraftStore {
   drafts: Record<string, string>;
   terminalRefs: Record<string, TerminalOutputRef[]>;
+  /** ADR-0022 am.2: one pending preview selection per task (replace on re-pick). */
+  previewRefs: Record<string, PreviewFeedbackRef>;
   setDraft(taskId: string, text: string): void;
   clearDraft(taskId: string): void;
   addTerminalRef(taskId: string, ref: TerminalOutputRef): void;
   removeTerminalRef(taskId: string, refId: string): void;
   clearTerminalRefs(taskId: string): void;
+  setPreviewRef(taskId: string, ref: PreviewFeedbackRef): void;
+  clearPreviewRef(taskId: string): void;
 }
 
 export interface TerminalOutputRef {
@@ -24,9 +28,22 @@ export interface TerminalOutputRef {
   lineCount: number;
 }
 
+/** A picked element / drawn region from the live preview, waiting in the
+ * composer (ADR-0022 am.2). `dataBase64` is null when capture failed —
+ * feedback then travels text-only. */
+export interface PreviewFeedbackRef {
+  id: string;
+  dataBase64: string | null;
+  thumbDataUrl: string;
+  pageUrl: string;
+  rect: { x: number; y: number; width: number; height: number };
+  selector: string | null;
+}
+
 export const useDraftStore = create<DraftStore>((set, get) => ({
   drafts: {},
   terminalRefs: {},
+  previewRefs: {},
   setDraft(taskId, text) {
     set({ drafts: { ...get().drafts, [taskId]: text } });
   },
@@ -51,5 +68,13 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
     const terminalRefs = { ...get().terminalRefs };
     delete terminalRefs[taskId];
     set({ terminalRefs });
+  },
+  setPreviewRef(taskId, ref) {
+    set({ previewRefs: { ...get().previewRefs, [taskId]: ref } });
+  },
+  clearPreviewRef(taskId) {
+    const previewRefs = { ...get().previewRefs };
+    delete previewRefs[taskId];
+    set({ previewRefs });
   },
 }));

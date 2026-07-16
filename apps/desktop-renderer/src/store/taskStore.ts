@@ -71,6 +71,8 @@ interface TaskStore {
     worktreeSetup?: string;
     /** Up to three existing task conversations used as background context. */
     conversationRefTaskIds?: string[];
+    /** ADR-0022 am.2: preview feedback seeding this task's first run. */
+    preview?: PreviewAttachmentDto;
   }): Promise<boolean>;
   send(
     text: string,
@@ -333,7 +335,10 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     set({ newTaskOpen: false });
     await get().openTask(task.id);
     await get().refreshTasks();
-    const start = await rpcResult('task.start', { taskId: task.id });
+    const start = await rpcResult('task.start', {
+      taskId: task.id,
+      ...(input.preview ? { preview: input.preview } : {}),
+    });
     if (!start.ok) {
       useAppStore.getState().pushToast('error', start.error.userMessage);
       return false;

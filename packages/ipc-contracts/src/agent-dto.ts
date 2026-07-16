@@ -231,7 +231,7 @@ export const PreviewRectSchema = z.object({
 });
 export type PreviewRectDto = z.infer<typeof PreviewRectSchema>;
 
-/** ADR-0022: marquee feedback attachment riding a task.message (schema v2). */
+/** ADR-0022: marquee/pick feedback attachment riding a task.message (schema v2). */
 export const PreviewAttachmentSchema = z.object({
   /** PNG bytes, base64 (≤ 8 MB decoded ≈ 10.7 MB encoded). */
   dataBase64: z
@@ -241,6 +241,8 @@ export const PreviewAttachmentSchema = z.object({
   mimeType: z.literal('image/png'),
   pageUrl: z.string().min(1).max(2000),
   rect: PreviewRectSchema,
+  /** am.2: CSS selector from the element picker (marquee selections have none). */
+  selector: z.string().max(500).optional(),
   /** The user's note, kept separately so the Room can render it front and
    * center (the full structured message stays inspectable). */
   note: z.string().max(4000).optional(),
