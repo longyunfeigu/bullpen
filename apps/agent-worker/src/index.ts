@@ -134,10 +134,10 @@ async function handle(message: WorkerInbound): Promise<void> {
       break;
     }
     case 'steer':
-      await runtime?.steer(message.runId, message.text);
+      await runtime?.steer(message.runId, message.text, message.images);
       break;
     case 'followUp':
-      await runtime?.followUp(message.runId, message.text);
+      await runtime?.followUp(message.runId, message.text, message.images);
       break;
     case 'setSessionModel': {
       try {

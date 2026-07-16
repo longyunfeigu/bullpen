@@ -38,6 +38,8 @@ export function registerM8Handlers(tasks: TaskService, logger: Logger): void {
           task: result.task,
           status: result.status,
           ...(result.conflicts ? { conflicts: result.conflicts } : {}),
+          // ADR-0022: evidence-ledger PR draft (null: non-git or answer-only).
+          prDraft: result.prDraft ?? null,
         };
       },
     },

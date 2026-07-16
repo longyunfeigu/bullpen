@@ -15,6 +15,7 @@ import type {
   CreateSessionInput,
   ModelDescriptor,
   ModelRef,
+  PromptImage,
   RuntimeSessionRef,
   StartRunInput,
   ToolCallRequest,
@@ -302,12 +303,12 @@ export class AgentHost {
     this.post({ type: 'startRun', taskId, input });
   }
 
-  steer(runId: string, text: string): void {
-    this.post({ type: 'steer', runId, text });
+  steer(runId: string, text: string, images?: PromptImage[]): void {
+    this.post({ type: 'steer', runId, text, ...(images?.length ? { images } : {}) });
   }
 
-  followUp(runId: string, text: string): void {
-    this.post({ type: 'followUp', runId, text });
+  followUp(runId: string, text: string, images?: PromptImage[]): void {
+    this.post({ type: 'followUp', runId, text, ...(images?.length ? { images } : {}) });
   }
 
   /** ADR-0016: switch a live session's model/effort; rejects loudly on failure. */

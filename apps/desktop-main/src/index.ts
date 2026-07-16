@@ -15,6 +15,7 @@ import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { productError, toProductError, type Logger, type ProductError } from '@pi-ide/foundation';
 import { createAppPaths, type AppPaths } from './app-paths.js';
+import { CSP, DEV_CSP } from './csp.js';
 import { installGlobalSecurityHandlers, openExternalChecked } from './security.js';
 import { registerHandlers } from './ipc/router.js';
 import { LogService } from './services/log-service.js';
@@ -45,6 +46,8 @@ import { registerActivityHandlers } from './ipc/activity-handlers.js';
 import { registerReplayHandlers } from './ipc/replay-handlers.js';
 import { ReplayService } from './services/replay-service.js';
 import { registerImageHandlers } from './ipc/image-handlers.js';
+import { registerPreviewHandlers } from './ipc/preview-handlers.js';
+import { PreviewService } from './services/preview-service.js';
 import { ExternalSessionService } from './services/external-session-service.js';
 import { registerExternalHandlers } from './ipc/external-handlers.js';
 import { buildSupportBundle } from './services/support-bundle.js';
@@ -90,30 +93,7 @@ function windowBackground(skin: string, dark: boolean): string {
   return dark ? '#1a1917' : '#fbfaf7';
 }
 
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
-  "font-src 'self' data:",
-  "worker-src 'self' blob:",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "frame-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-].join('; ');
-
-/**
- * Dev-server-only CSP: vite's @vitejs/plugin-react injects an inline
- * react-refresh preamble and HMR talks over a websocket — both are blocked by
- * the production policy (blank window). Applies exclusively to requests from
- * the localhost dev server; the packaged app:// surface always gets CSP above.
- */
-const DEV_CSP = CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'").replace(
-  "connect-src 'self'",
-  "connect-src 'self' ws:",
-);
+// §12.3 CSP — extracted to csp.ts so the directives are unit-pinned (ADR-0022).
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -576,6 +556,20 @@ if (!gotLock) {
       );
       registerReplayHandlers(replayService, logger.child('ipc'));
       registerImageHandlers(workspaceHost, logger.child('ipc'));
+      // ADR-0022: preview gate — port detection, capture, PR draft. The PR
+      // draft cites the replay receipt hash, so the provider is wired here.
+      taskService.setReceiptProvider((taskId) => {
+        try {
+          return replayService.receipt(taskId).manifestSha256;
+        } catch {
+          return null;
+        }
+      });
+      registerPreviewHandlers(
+        taskService,
+        new PreviewService(logger.child('preview')),
+        logger.child('ipc'),
+      );
 
       // ADR-0017: external CLI agent sessions (claude/codex in user terminals).
       externalSessionsRef = new ExternalSessionService(

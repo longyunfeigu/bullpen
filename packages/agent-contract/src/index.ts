@@ -130,10 +130,19 @@ export interface PriorConversationContext {
   capturedAt: string;
 }
 
+/** Image attached to a user prompt/steer — preview-gate feedback (ADR-0022). */
+export interface PromptImage {
+  /** Raw base64 bytes (no data: URL prefix). */
+  data: string;
+  mimeType: string;
+}
+
 export interface StartRunInput {
   sessionRef: RuntimeSessionRef;
   runId: string;
   prompt: string;
+  /** Screenshots and similar user-attached pixels for the opening prompt. */
+  images?: PromptImage[];
   contextAttachments?: ContextAttachment[];
   /** Up to three untrusted background conversations. Runtimes must preserve
    * turn boundaries so normal context compaction can operate on them. */
@@ -226,8 +235,8 @@ export interface AgentRuntime {
   createSession(input: CreateSessionInput): Promise<RuntimeSessionRef>;
   resumeSession(ref: RuntimeSessionRef): Promise<RuntimeSessionRef>;
   startRun(input: StartRunInput): AsyncIterable<AgentEvent>;
-  steer(runId: string, text: string): Promise<void>;
-  followUp(runId: string, text: string): Promise<void>;
+  steer(runId: string, text: string, images?: PromptImage[]): Promise<void>;
+  followUp(runId: string, text: string, images?: PromptImage[]): Promise<void>;
   /** ADR-0016: switch an existing session's model/effort; applies from the next LLM call. */
   setSessionModel(sessionId: string, model: ModelRef): Promise<void>;
   abort(runId: string, reason: AbortReason): Promise<void>;

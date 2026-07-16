@@ -7,6 +7,7 @@ import type {
   ModelDescriptor,
   ModelRef,
   ModelUsage,
+  PromptImage,
   RuntimeInfo,
   RuntimeInit,
   RuntimeSessionRef,
@@ -22,10 +23,15 @@ import { resolveScenario, type ScenarioStep } from './scenarios.js';
 interface RunHandle {
   controller: AbortController;
   abortReason: AbortReason | null;
-  steerQueue: string[];
-  followUpQueue: string[];
+  steerQueue: Array<{ text: string; imageCount: number }>;
+  followUpQueue: Array<{ text: string; imageCount: number }>;
   /** Hash of the most recent successful read_file — substituted for '$lastReadHash'. */
   lastReadHash: string | null;
+}
+
+/** Deterministic marker so tests can assert an image crossed the runtime boundary. */
+function imageSuffix(count: number): string {
+  return count > 0 ? ` [received ${count} image attachment${count === 1 ? '' : 's'}]` : '';
 }
 
 /** Replace '$lastReadHash' string values so scripted patches carry genuine base hashes. */
@@ -137,6 +143,18 @@ export class MockAgentRuntime implements AgentRuntime {
         return;
       }
 
+      // Preview-gate feedback (ADR-0022): a run opened with image attachments
+      // acknowledges them deterministically so tests can assert delivery.
+      if (input.images && input.images.length > 0) {
+        const message: VisibleMessage = {
+          messageId: newId('msg'),
+          role: 'assistant',
+          text: `Looking at your feedback${imageSuffix(input.images.length)}.`,
+          at: new Date().toISOString(),
+        };
+        yield { ...base(), type: 'message.completed', message };
+      }
+
       const { steps } = resolveScenario({ prompt: input.prompt, session });
       const usage: ModelUsage = {
         provider: 'mock',
@@ -163,7 +181,7 @@ export class MockAgentRuntime implements AgentRuntime {
           const message: VisibleMessage = {
             messageId: newId('msg'),
             role: 'assistant',
-            text: `Adjusting approach based on your instruction: ${steer}`,
+            text: `Adjusting approach based on your instruction: ${steer.text}${imageSuffix(steer.imageCount)}`,
             at: new Date().toISOString(),
           };
           yield { ...base(), type: 'message.completed', message };
@@ -182,7 +200,7 @@ export class MockAgentRuntime implements AgentRuntime {
         const message: VisibleMessage = {
           messageId: newId('msg'),
           role: 'assistant',
-          text: `Follow-up handled: ${followUp} (deterministic mock answer)`,
+          text: `Follow-up handled: ${followUp.text}${imageSuffix(followUp.imageCount)} (deterministic mock answer)`,
           at: new Date().toISOString(),
         };
         yield { ...base(), type: 'message.completed', message };
@@ -351,12 +369,12 @@ export class MockAgentRuntime implements AgentRuntime {
     }
   }
 
-  async steer(runId: string, text: string): Promise<void> {
-    this.runs.get(runId)?.steerQueue.push(text);
+  async steer(runId: string, text: string, images?: PromptImage[]): Promise<void> {
+    this.runs.get(runId)?.steerQueue.push({ text, imageCount: images?.length ?? 0 });
   }
 
-  async followUp(runId: string, text: string): Promise<void> {
-    this.runs.get(runId)?.followUpQueue.push(text);
+  async followUp(runId: string, text: string, images?: PromptImage[]): Promise<void> {
+    this.runs.get(runId)?.followUpQueue.push({ text, imageCount: images?.length ?? 0 });
   }
 
   /** ADR-0016: record the switch; scenarios are model-agnostic but the session stays honest. */

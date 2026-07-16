@@ -4,6 +4,7 @@ import type {
   AgentEvent,
   CreateSessionInput,
   ModelRef,
+  PromptImage,
   RuntimeSessionRef,
   StartRunInput,
   ToolCallRequest,
@@ -33,8 +34,8 @@ export type WorkerInbound =
   | { type: 'createSession'; reqId: string; input: CreateSessionInput }
   | { type: 'resumeSession'; reqId: string; ref: RuntimeSessionRef }
   | { type: 'startRun'; taskId: string; input: StartRunInput }
-  | { type: 'steer'; runId: string; text: string }
-  | { type: 'followUp'; runId: string; text: string }
+  | { type: 'steer'; runId: string; text: string; images?: PromptImage[] }
+  | { type: 'followUp'; runId: string; text: string; images?: PromptImage[] }
   /** ADR-0016: request/response — the caller must learn if the switch failed. */
   | { type: 'setSessionModel'; reqId: string; sessionId: string; model: ModelRef }
   | { type: 'abort'; runId: string; reason: AbortReason }

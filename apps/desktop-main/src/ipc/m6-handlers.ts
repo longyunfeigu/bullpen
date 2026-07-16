@@ -1,6 +1,7 @@
 import { productError, ProductFailure, type Logger } from '@pi-ide/foundation';
 import { providerPreset } from '@pi-ide/ipc-contracts';
 import { registerHandlers } from './router.js';
+import { processPreviewAttachment } from './preview-handlers.js';
 import type { TaskService } from '../services/task-service.js';
 import type { AgentHost } from '../services/agent-host.js';
 import type { SecretService } from '../services/secret-service.js';
@@ -35,9 +36,25 @@ export function registerM6Handlers(
         const result = await tasks.startTask(taskId, prompt);
         return { task: result.task, queued: result.queued };
       },
-      'task.message': async ({ taskId, text, during, model }) => ({
-        delivered: await tasks.steerOrQueue(taskId, text, during, model),
-      }),
+      'task.message': async ({ taskId, text, during, model, preview }) => {
+        // ADR-0022: marquee feedback — persist the screenshot, attach the
+        // timeline meta, and hand the pixels to the runtime with the text.
+        const attachment = preview ? await processPreviewAttachment(tasks, taskId, preview) : null;
+        return {
+          delivered: await tasks.steerOrQueue(
+            taskId,
+            text,
+            during,
+            model,
+            attachment
+              ? {
+                  images: [{ data: attachment.imageData, mimeType: 'image/png' }],
+                  previewMeta: attachment.meta,
+                }
+              : undefined,
+          ),
+        };
+      },
       'task.stop': async ({ taskId }) => ({ task: await tasks.stopTask(taskId) }),
       'task.list': async ({ filter, includeArchived, scope }) => ({
         tasks: tasks.listTasks(filter, includeArchived, scope),

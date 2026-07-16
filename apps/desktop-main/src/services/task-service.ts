@@ -14,6 +14,7 @@ import type {
   CreateSessionInput,
   ModelRef,
   PriorConversationContext,
+  PromptImage,
   RuntimeSessionRef,
   TaskPlan,
   ToolCallRequest,
@@ -25,6 +26,8 @@ import type {
   ChangeSetFileDto,
   PermissionCardDto,
   PlanEditDto,
+  PrDraftDto,
+  PreviewRectDto,
   TaskDto,
   TimelineEventDto,
   VerificationCommandSchema,
@@ -46,13 +49,13 @@ import {
   type ToolGateway,
   type VerificationGate,
 } from '@pi-ide/tool-gateway';
-import { parseHunks } from '@pi-ide/change-service';
+import { parseHunks, type ChangeSet } from '@pi-ide/change-service';
 import type {
   VerificationCommand as VerCommand,
   VerificationRunRecord,
 } from '@pi-ide/verification-service';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, promises as fsp } from 'node:fs';
 import { join } from 'node:path';
 import { GitService } from '@pi-ide/git-service';
 import { openWorkspaceInfo } from '@pi-ide/workspace-service';
@@ -60,12 +63,30 @@ import type { AgentHost, RuntimeKind } from './agent-host.js';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { SettingsService } from './settings-service.js';
 import type { SkillStore } from './skill-store.js';
-import type { AppPaths } from '../app-paths.js';
+import { workspaceDataDir, type AppPaths } from '../app-paths.js';
 import { ProjectContexts, type ProjectContext } from './project-contexts.js';
 import { WorktreeService, type TaskWorktree } from './worktree-service.js';
+import { buildPrCommands, buildPrDraft } from './pr-draft.js';
 import { broadcast } from '../broadcast.js';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
+
+/** ADR-0022: preview-feedback metadata recorded on the user.message event. */
+export interface PreviewFeedbackMeta {
+  pngPath: string;
+  pageUrl: string;
+  rect: PreviewRectDto;
+  /** Small data-URL thumbnail for timeline rendering (no extra read channel). */
+  thumbDataUrl: string;
+  /** The user's note verbatim — the Room leads with it. */
+  note?: string;
+}
+
+/** Extra payload riding a run launch (preview feedback from REVIEW_READY). */
+interface LaunchExtras {
+  images?: PromptImage[];
+  previewMeta?: PreviewFeedbackMeta;
+}
 
 function countPatchLines(patch: string | null): { additions: number; deletions: number } {
   if (!patch) return { additions: 0, deletions: 0 };
@@ -127,7 +148,11 @@ export class TaskService {
   private readonly sequences = createSequenceAllocator();
   private readonly sessionRefs = new Map<string, RuntimeSessionRef>();
   private readonly runsByTask = new Map<string, string>();
-  private readonly startQueue: Array<{ taskId: string; prompt: string | undefined }> = [];
+  private readonly startQueue: Array<{
+    taskId: string;
+    prompt: string | undefined;
+    extras?: LaunchExtras;
+  }> = [];
   /** Per-root agent contexts (ADR-0009) — tasks execute against these, never "the open workspace". */
   private readonly contexts: ProjectContexts;
   private readonly worktrees: WorktreeService;
@@ -172,15 +197,19 @@ export class TaskService {
     }) => void
   >();
 
+  /** ADR-0022: replay receipt hash for the PR draft (injected post-construction). */
+  private receiptProvider: ((taskId: string) => string | null) | null = null;
+
   constructor(
     private readonly db: SqlDatabase,
     private readonly host: AgentHost,
     private readonly workspace: WorkspaceHost,
     private readonly settings: SettingsService,
     private readonly skills: SkillStore,
-    paths: AppPaths,
+    private readonly appPaths: AppPaths,
     private readonly logger: Logger,
   ) {
+    const paths = appPaths;
     this.worktrees = new WorktreeService(paths, logger);
     this.contexts = new ProjectContexts(
       this.db,
@@ -916,6 +945,8 @@ export class TaskService {
     task: TaskDto;
     status: 'accepted' | 'conflicts';
     conflicts?: Array<{ path: string; reason: string }>;
+    /** ADR-0022: evidence-ledger PR draft (git projects only; never pushed). */
+    prDraft?: PrDraftDto | null;
   }> {
     const task = this.getTask(taskId);
     if (task.state !== 'REVIEW_READY') {
@@ -926,12 +957,14 @@ export class TaskService {
       );
     }
     const context = this.contextForTask(taskId);
+    // Captured before merge-back/discard: the PR draft's change list must
+    // describe exactly what the accept applied (ADR-0022).
+    const changeSetAtAccept = await context.changes.changeSet(taskId);
     // VER-007/E2E-018: accepting real changes without any verification needs a
     // second, explicit confirmation.
     const verificationRuns = context.verifications.listForTask(taskId);
     if (verificationRuns.length === 0 && task.mode !== 'ask' && !options.confirmUnverified) {
-      const changed = await context.changes.changeSet(taskId);
-      if (changed.files.length > 0) {
+      if (changeSetAtAccept.files.length > 0) {
         throw new ProductFailure(
           productError('ACCEPT_NEEDS_CONFIRM', {
             userMessage:
@@ -945,7 +978,7 @@ export class TaskService {
     // ADR-0009: merge the worktree's net changes back into the main tree.
     if (task.worktree) {
       const mainRoot = task.projectPath;
-      const cs = await context.changes.changeSet(taskId);
+      const cs = changeSetAtAccept;
       if (cs.files.length > 0) {
         const conflicts = await this.worktrees.mergeBackPreflight(mainRoot, cs);
         if (conflicts.length > 0 && !options.confirmConflicts) {
@@ -974,12 +1007,115 @@ export class TaskService {
         await this.buildFinalReportData(taskId, null, 'completed'),
       );
     }
+    const unverifiedConfirmed = verificationRuns.length === 0 && options.confirmUnverified === true;
     this.recordEvent(taskId, 'task.accepted', {
       at: new Date().toISOString(),
       actor: options.actor ?? 'user',
-      unverifiedConfirmed: verificationRuns.length === 0 && options.confirmUnverified === true,
+      unverifiedConfirmed,
     });
-    return { task: this.setState(taskId, 'ACCEPTED'), status: 'accepted' };
+    const accepted = this.setState(taskId, 'ACCEPTED');
+    // ADR-0022: PR draft — an export of the evidence, generated for git
+    // projects with real changes. Failure to draft never fails the accept.
+    let prDraft: PrDraftDto | null = null;
+    try {
+      prDraft = await this.generatePrDraft(accepted, changeSetAtAccept, verificationRuns, {
+        unverifiedConfirmed,
+      });
+    } catch (e) {
+      this.logger.warn('pr draft generation failed', {
+        taskId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+    return { task: accepted, status: 'accepted', prDraft };
+  }
+
+  /** ADR-0022: build + persist the PR draft (body file under the workspace's
+   * attachments dir) and record it on the ledger. Null for non-git projects
+   * and answer-only tasks. The app never runs any of the commands (GIT-007). */
+  private async generatePrDraft(
+    task: TaskDto,
+    changeSet: ChangeSet,
+    verificationRuns: VerificationRunRecord[],
+    flags: { unverifiedConfirmed: boolean },
+  ): Promise<PrDraftDto | null> {
+    if (changeSet.files.length === 0) return null;
+    if (!existsSync(join(task.projectPath, '.git'))) return null;
+    const receiptSha256 = this.receiptProvider ? this.receiptProvider(task.id) : null;
+    const draft = buildPrDraft({
+      taskId: task.id,
+      title: task.title,
+      goalMd: task.goalMd,
+      acceptance: task.acceptance,
+      worktreeBranch: task.worktree?.branch ?? null,
+      files: changeSet.files.map((f) => ({
+        path: f.path,
+        status: f.status,
+        additions: f.additions,
+        deletions: f.deletions,
+        ...(f.renamedFrom ? { renamedFrom: f.renamedFrom } : {}),
+      })),
+      verification: verificationRuns,
+      receiptSha256,
+      unverifiedConfirmed: flags.unverifiedConfirmed,
+      acceptedAt: new Date().toISOString(),
+    });
+    const dir = join(workspaceDataDir(this.appPaths, task.workspaceId), 'attachments', task.id);
+    await fsp.mkdir(dir, { recursive: true });
+    const bodyPath = join(dir, 'pr-draft.md');
+    const tmp = `${bodyPath}.tmp-${process.pid}`;
+    await fsp.writeFile(tmp, draft.body, 'utf8');
+    await fsp.rename(tmp, bodyPath);
+    const commands = buildPrCommands({
+      branch: draft.branch,
+      title: draft.title,
+      files: changeSet.files,
+      bodyPath,
+    });
+    const dto: PrDraftDto = {
+      branch: draft.branch,
+      title: draft.title,
+      body: draft.body,
+      commands,
+      bodyPath,
+      receiptSha256,
+    };
+    this.recordEvent(task.id, 'task.prDraft', dto);
+    return dto;
+  }
+
+  /** ADR-0022: latest stored PR draft (null when none was generated). */
+  prDraftFor(taskId: string): PrDraftDto | null {
+    const row = this.db
+      .prepare(
+        "SELECT payload_json FROM task_events WHERE task_id = ? AND type = 'task.prDraft' ORDER BY sequence DESC LIMIT 1",
+      )
+      .get(taskId) as { payload_json: string } | undefined;
+    if (!row) return null;
+    try {
+      return JSON.parse(row.payload_json) as PrDraftDto;
+    } catch {
+      return null;
+    }
+  }
+
+  /** ADR-0022: inject the replay receipt hasher (wired after ReplayService exists). */
+  setReceiptProvider(provider: (taskId: string) => string | null): void {
+    this.receiptProvider = provider;
+  }
+
+  /** ADR-0022: persist a preview-feedback screenshot outside any workspace or
+   * worktree (change accounting and merge-back must stay byte-identical). */
+  async savePreviewShot(taskId: string, png: Buffer): Promise<string> {
+    const task = this.getTask(taskId);
+    const dir = join(workspaceDataDir(this.appPaths, task.workspaceId), 'attachments', taskId);
+    await fsp.mkdir(dir, { recursive: true });
+    const name = `preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.png`;
+    const absPath = join(dir, name);
+    const tmp = `${absPath}.tmp-${process.pid}`;
+    await fsp.writeFile(tmp, png);
+    await fsp.rename(tmp, absPath);
+    return absPath;
   }
 
   /** Full rollback with preflight (CHG-009/010, M9-04). Conflicts stop; force overrides explicitly. */
@@ -2029,7 +2165,11 @@ export class TaskService {
    * TASK-004 (as amended by ADR-0006): up to maxConcurrentRuns active runs;
    * additional starts queue FIFO and drain as slots free up.
    */
-  async startTask(taskId: string, prompt?: string): Promise<{ task: TaskDto; queued: boolean }> {
+  async startTask(
+    taskId: string,
+    prompt?: string,
+    extras?: LaunchExtras,
+  ): Promise<{ task: TaskDto; queued: boolean }> {
     const task = this.getTask(taskId);
     // ADR-0017: external sessions run in their terminal, never on the agent host.
     if (task.external) {
@@ -2047,27 +2187,27 @@ export class TaskService {
       );
     }
     if (this.host.activeRunCount() + this.launching >= this.runCapacity()) {
-      this.startQueue.push({ taskId, prompt });
+      this.startQueue.push({ taskId, prompt, ...(extras ? { extras } : {}) });
       this.recordEvent(taskId, 'task.queued', { reason: 'all agent slots are busy' });
       return { task, queued: true };
     }
-    await this.launch(taskId, prompt);
+    await this.launch(taskId, prompt, extras);
     return { task: this.getTask(taskId), queued: false };
   }
 
   /** Launches admitted but not yet registered with the host (capacity accounting). */
   private launching = 0;
 
-  private async launch(taskId: string, prompt?: string): Promise<void> {
+  private async launch(taskId: string, prompt?: string, extras?: LaunchExtras): Promise<void> {
     this.launching += 1;
     try {
-      await this.doLaunch(taskId, prompt);
+      await this.doLaunch(taskId, prompt, extras);
     } finally {
       this.launching -= 1;
     }
   }
 
-  private async doLaunch(taskId: string, prompt?: string): Promise<void> {
+  private async doLaunch(taskId: string, prompt?: string, extras?: LaunchExtras): Promise<void> {
     const task = this.getTask(taskId);
     // ADR-0009: the task executes against its own mounted context — its
     // worktree or its project root — independent of the focused workspace.
@@ -2155,6 +2295,7 @@ export class TaskService {
         turnCount: context.turns.length,
         hasDiff: context.latestDiff !== null,
       })),
+      ...(extras?.previewMeta ? { preview: extras.previewMeta } : {}),
     });
     this.setState(taskId, task.state === 'READY' ? 'EXPLORING' : 'IN_PROGRESS');
 
@@ -2173,6 +2314,7 @@ export class TaskService {
           : []),
         this.skills.expandCommand(userText),
       ].join('\n\n'),
+      ...(extras?.images?.length ? { images: extras.images } : {}),
       priorConversations,
     });
   }
@@ -2230,6 +2372,8 @@ export class TaskService {
     text: string,
     during: 'steer' | 'followUp',
     model?: ModelRef,
+    /** ADR-0022: preview-gate feedback — screenshot for the model + event meta. */
+    attachments?: LaunchExtras,
   ): Promise<'steered' | 'queued' | 'started'> {
     // ADR-0016: a reply may re-point the task's model/effort for the next turn.
     // Applied BEFORE the message so a failed switch rejects the send loudly.
@@ -2237,7 +2381,11 @@ export class TaskService {
     const runId = this.runsByTask.get(taskId);
     const task = this.getTask(taskId);
     if (runId && isRunningState(task.state as TaskState)) {
-      this.recordEvent(taskId, 'user.message', { text, kind: during });
+      this.recordEvent(taskId, 'user.message', {
+        text,
+        kind: during,
+        ...(attachments?.previewMeta ? { preview: attachments.previewMeta } : {}),
+      });
       // ADR-0019: active-session replies also receive the current linked
       // catalog; explicit commands are expanded from the same live revision.
       const currentSkills = this.skills.preambleBlock();
@@ -2247,8 +2395,8 @@ export class TaskService {
           : []),
         this.skills.expandCommand(text),
       ].join('\n\n');
-      if (during === 'steer') this.host.steer(runId, expanded);
-      else this.host.followUp(runId, expanded);
+      if (during === 'steer') this.host.steer(runId, expanded, attachments?.images);
+      else this.host.followUp(runId, expanded, attachments?.images);
       return during === 'steer' ? 'steered' : 'queued';
     }
     // Closed tasks cannot restart (ACCEPTED/ROLLED_BACK/CANCELLED/ARCHIVED —
@@ -2263,7 +2411,7 @@ export class TaskService {
     }
     // Idle: start a fresh run with this text as the prompt. Failures must not
     // vanish (a swallowed rejection here read as "typing does nothing").
-    void this.startTask(taskId, text).catch((e) => {
+    void this.startTask(taskId, text, attachments).catch((e) => {
       this.logger.warn('reply-start failed', {
         taskId,
         error: e instanceof Error ? e.message : String(e),
@@ -2683,7 +2831,7 @@ export class TaskService {
     ) {
       const next = this.startQueue.shift()!;
       this.launching += 1; // reserve the slot synchronously to avoid over-admission
-      void this.doLaunch(next.taskId, next.prompt)
+      void this.doLaunch(next.taskId, next.prompt, next.extras)
         .catch((e) => {
           this.logger.error('queued task launch failed', {
             taskId: next.taskId,

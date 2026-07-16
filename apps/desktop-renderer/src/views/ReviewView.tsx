@@ -7,14 +7,23 @@ import { useAppStore } from '../store/appStore.js';
 import { ConfirmDangerButton } from './ui.js';
 import { Ic } from './home-icons.js';
 import { stateLabel } from './labels.js';
+import { ReviewPreview } from './ReviewPreview.js';
+import { ReviewChecks } from './ReviewChecks.js';
 import '../styles/review.css';
+import '../styles/preview.css';
 
 /**
  * Task review v2 (ADR-0013): Changes list + Monaco side-by-side diff, per-hunk
  * accept/reject with the same content-derived keys and hash guards as before,
  * and "Request fix" — selected lines flow back to the agent as a steer message.
  * Presentation only: every decision still goes through task.reviewDecision.
+ *
+ * ADR-0022 adds two more projections of the same evidence: a Preview tab
+ * (the task's own dev server, sandboxed) and a Checks tab (verification
+ * records). Three tabs, one `task → main` question.
  */
+
+type GateTab = 'changes' | 'preview' | 'checks';
 
 const STATUS_META: Record<
   ChangeSetFileDto['status'],
@@ -248,6 +257,11 @@ export function ReviewView(): React.JSX.Element | null {
     code: string;
   } | null>(null);
   const [fixNote, setFixNote] = useState('');
+  const [tab, setTab] = useState<GateTab>('changes');
+  // ADR-0022: the Preview tab exists only for web-ish trees (ports live now, or
+  // a dev/start/serve script waiting to be run). Once shown it stays for this
+  // review session — tabs must not vanish underfoot.
+  const [previewAvailable, setPreviewAvailable] = useState(false);
 
   const cs = store.changeSet;
   const files = useMemo(() => cs?.files ?? [], [cs]);
@@ -259,6 +273,30 @@ export function ReviewView(): React.JSX.Element | null {
       setSelectedPath(files[0]!.path);
     }
   }, [files, selectedPath]);
+
+  const reviewOpen = store.reviewOpen;
+  const taskId = task?.id ?? null;
+  useEffect(() => {
+    setTab('changes');
+    setPreviewAvailable(false);
+    if (!reviewOpen || !taskId) return;
+    let cancelled = false;
+    let found = false;
+    const probe = async (): Promise<void> => {
+      if (found) return;
+      const res = await rpcResult('task.previewPorts', { taskId });
+      if (!cancelled && res.ok && (res.data.webish || res.data.ports.length > 0)) {
+        found = true;
+        setPreviewAvailable(true);
+      }
+    };
+    void probe();
+    const timer = window.setInterval(() => void probe(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [reviewOpen, taskId]);
 
   if (!store.reviewOpen || !task) return null;
   const canDecide = task.state === 'REVIEW_READY';
@@ -308,7 +346,45 @@ export function ReviewView(): React.JSX.Element | null {
         </button>
       </div>
 
-      <div className="rv-body">
+      <div className="rv-tabs" role="tablist" aria-label="Evidence">
+        <button
+          className={`rv-tab ${tab === 'changes' ? 'on' : ''}`}
+          role="tab"
+          aria-selected={tab === 'changes'}
+          data-testid="review-tab-changes"
+          onClick={() => setTab('changes')}
+        >
+          Changes
+        </button>
+        {previewAvailable ? (
+          <button
+            className={`rv-tab ${tab === 'preview' ? 'on' : ''}`}
+            role="tab"
+            aria-selected={tab === 'preview'}
+            data-testid="review-tab-preview"
+            onClick={() => setTab('preview')}
+          >
+            Preview
+          </button>
+        ) : null}
+        <button
+          className={`rv-tab ${tab === 'checks' ? 'on' : ''}`}
+          role="tab"
+          aria-selected={tab === 'checks'}
+          data-testid="review-tab-checks"
+          onClick={() => setTab('checks')}
+        >
+          Checks
+        </button>
+        <span className="rv-tabnote">
+          three projections of the same change — code, checks, pixels
+        </span>
+      </div>
+
+      {tab === 'preview' ? <ReviewPreview task={task} /> : null}
+      {tab === 'checks' ? <ReviewChecks task={task} /> : null}
+
+      <div className="rv-body" style={tab === 'changes' ? undefined : { display: 'none' }}>
         <aside className="rv-files">
           {store.loadingChangeSet ? (
             <div className="rv-note">Computing change set…</div>

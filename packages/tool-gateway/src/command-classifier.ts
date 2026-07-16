@@ -82,6 +82,33 @@ const DESTRUCTIVE_SYSTEM = new Set([
   'csrutil',
 ]);
 const PRIVILEGE_EXECUTABLES = new Set(['sudo', 'doas', 'su', 'pkexec']);
+/** Forge CLIs can publish (PRs, releases, repo mutations) with stored auth —
+ * the same outward-action class as `git push` (GIT-007 / ADR-0022). Reads are
+ * plain network access; everything else, including unknown subcommands and
+ * `gh api`, fails closed to R4. */
+const FORGE_EXECUTABLES = new Set(['gh', 'glab', 'hub']);
+const FORGE_READ_RESOURCES = new Set([
+  'pr',
+  'issue',
+  'release',
+  'repo',
+  'run',
+  'workflow',
+  'gist',
+  'label',
+  'cache',
+  'project',
+  'mr',
+]);
+const FORGE_READ_VERBS = new Set(['view', 'list', 'status', 'diff', 'checks', 'download']);
+const FORGE_READ_TOPLEVEL = new Set([
+  'search',
+  'status',
+  'browse',
+  'help',
+  'completion',
+  'version',
+]);
 /** Common credential locations the agent must never touch (PERM-008). */
 const CREDENTIAL_PATH_RE =
   /(^|[\s/\\])\.(ssh|aws|gnupg|gpg|azure|kube|netrc|npmrc|pypirc|docker\/config\.json)([/\\]|$)|id_(rsa|ed25519|ecdsa|dsa)(\.pub)?$|\.pem$|\.keychain(-db)?$|credentials(\.json)?$|\.netrc$/i;
@@ -146,6 +173,23 @@ function classifySimple(exe: string, args: string[], reasons: string[]): RiskLev
   if (exe === 'git' && sub === 'push') {
     reasons.push('git push is forbidden by product policy');
     return 'R4';
+  }
+  if (FORGE_EXECUTABLES.has(exe)) {
+    const nonFlags = args.filter((a) => !a.startsWith('-'));
+    const resource = nonFlags[0] ?? '';
+    const verb = nonFlags[1] ?? '';
+    const isRead =
+      FORGE_READ_TOPLEVEL.has(resource) ||
+      (resource === 'auth' && verb === 'status') ||
+      (FORGE_READ_RESOURCES.has(resource) && FORGE_READ_VERBS.has(verb));
+    if (!isRead) {
+      reasons.push(
+        `${exe} ${resource || '(no subcommand)'} can publish or mutate outside the repo — outward actions are yours to run (GIT-007)`,
+      );
+      return 'R4';
+    }
+    reasons.push(`${exe} ${resource} ${verb} reads from a remote (network access)`);
+    return 'R3';
   }
   if (isRootDestructive(exe, args)) {
     reasons.push('destructive command targeting the filesystem root');

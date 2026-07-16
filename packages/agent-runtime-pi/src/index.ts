@@ -43,6 +43,7 @@ import {
   type ModelRef,
   type ModelUsage,
   type PriorConversationContext,
+  type PromptImage,
   type ThinkingLevel,
   type RuntimeInfo,
   type RuntimeInit,
@@ -679,7 +680,11 @@ export class PiAgentRuntime implements AgentRuntime {
         promptText = `<charter-instructions>\n${entry.input.systemPreamble}\n</charter-instructions>\n\n${input.prompt}`;
         entry.preambleDelivered = true;
       }
-      await entry.session.prompt(promptText);
+      await entry.session.prompt(promptText, {
+        ...(input.images && input.images.length > 0
+          ? { images: input.images.map((i) => ({ type: 'image' as const, ...i })) }
+          : {}),
+      });
     })()
       .then(() => {
         const run = this.runs.get(input.runId);
@@ -716,11 +721,16 @@ export class PiAgentRuntime implements AgentRuntime {
     return queue.iterate();
   }
 
-  async steer(runId: string, text: string): Promise<void> {
+  async steer(runId: string, text: string, images?: PromptImage[]): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) return;
     const entry = this.sessions.get(run.sessionId);
-    await entry?.session.prompt(text, { streamingBehavior: 'steer' });
+    await entry?.session.prompt(text, {
+      streamingBehavior: 'steer',
+      ...(images && images.length > 0
+        ? { images: images.map((i) => ({ type: 'image' as const, ...i })) }
+        : {}),
+    });
   }
 
   /**
@@ -757,11 +767,16 @@ export class PiAgentRuntime implements AgentRuntime {
     entry.input = { ...entry.input, model };
   }
 
-  async followUp(runId: string, text: string): Promise<void> {
+  async followUp(runId: string, text: string, images?: PromptImage[]): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) return;
     const entry = this.sessions.get(run.sessionId);
-    await entry?.session.prompt(text, { streamingBehavior: 'followUp' });
+    await entry?.session.prompt(text, {
+      streamingBehavior: 'followUp',
+      ...(images && images.length > 0
+        ? { images: images.map((i) => ({ type: 'image' as const, ...i })) }
+        : {}),
+    });
   }
 
   async abort(runId: string, reason: AbortReason): Promise<void> {

@@ -9,6 +9,7 @@ import { TasksView } from '../views/TasksView.js';
 import { AgentPanel } from '../views/AgentPanel.js';
 import { ReviewView } from '../views/ReviewView.js';
 import { ReplayView } from '../views/ReplayView.js';
+import { PrDraftCard } from '../views/PrDraftCard.js';
 import { useTaskStore } from '../store/taskStore.js';
 import { useAppStore } from '../store/appStore.js';
 import { useSkillsStore } from '../store/skillsStore.js';
@@ -18,7 +19,8 @@ export function registerM6(): void {
   agentPanelRegistry.main = AgentPanel;
   // Review/Replay overlay both surfaces (ADR-0008): they must open from the
   // Task Room (Home surface) as well as from the Editor's agent panel.
-  overlayRegistry.push(ReviewView, ReplayView);
+  // The PR draft card (ADR-0022) pops over whichever surface accepted.
+  overlayRegistry.push(ReviewView, ReplayView, PrDraftCard);
   initRegistry.push(() => {
     useTaskStore.getState().init();
     useSkillsStore.getState().init();

@@ -140,6 +140,37 @@ function Bubble(props: {
   );
 }
 
+/** ADR-0022: the PR draft as a durable timeline entry (copy-out only). */
+function PrDraftEntry(props: {
+  branch: string;
+  body: string;
+  commands: string;
+}): React.JSX.Element {
+  const app = useAppStore();
+  const copy = async (label: string, text: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text);
+      app.pushToast('success', `${label} copied.`);
+    } catch {
+      app.pushToast('error', `Could not copy the ${label.toLowerCase()}.`);
+    }
+  };
+  return (
+    <div className="rt-prdraft" data-testid="tl-pr-draft">
+      <div className="rt-prdraft-title">PR draft — from the evidence ledger</div>
+      <div className="rt-prdraft-branch mono">{props.branch} → your default branch</div>
+      <div className="rt-prdraft-row">
+        <button className="btn" onClick={() => void copy('PR body', props.body)}>
+          Copy body
+        </button>
+        <button className="btn" onClick={() => void copy('Commands', props.commands)}>
+          Copy commands
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Open a timeline evidence path: peek by default (ADR-0014), Editor on ⌘/alt. */
 function openTimelinePath(
   path: string,
@@ -412,6 +443,19 @@ function eventNode(
     }
     case 'user.message': {
       const kind = typeof payload.kind === 'string' ? payload.kind : null;
+      // ADR-0022: marquee feedback carries a screenshot thumbnail + selection.
+      const preview =
+        payload.preview && typeof payload.preview === 'object'
+          ? (payload.preview as {
+              thumbDataUrl?: unknown;
+              pageUrl?: unknown;
+              note?: unknown;
+              rect?: { x?: unknown; y?: unknown; width?: unknown; height?: unknown } | null;
+            })
+          : null;
+      // The note leads; the coordinate block the agent received stays
+      // inspectable but folded — it's for the agent, not for reading twice.
+      const previewNote = preview && typeof preview.note === 'string' ? preview.note : null;
       const conversationRefs = Array.isArray(payload.conversationRefs)
         ? payload.conversationRefs.flatMap((value) => {
             if (!value || typeof value !== 'object') return [];
@@ -429,7 +473,31 @@ function eventNode(
       return (
         <Bubble key={event.id} who="you" testid="tl-user">
           {kind === 'answer' ? <span className="rt-kind">answer · </span> : null}
-          {String(payload.text ?? '')}
+          {previewNote ? previewNote : String(payload.text ?? '')}
+          {preview && typeof preview.thumbDataUrl === 'string' ? (
+            <>
+              <img
+                className="rt-preview-thumb"
+                data-testid="tl-preview-feedback"
+                src={preview.thumbDataUrl}
+                alt="Preview screenshot with the selected region"
+              />
+              <span className="rt-preview-meta">
+                preview · {typeof preview.pageUrl === 'string' ? preview.pageUrl : ''}
+                {preview.rect &&
+                typeof preview.rect.width === 'number' &&
+                typeof preview.rect.height === 'number'
+                  ? ` · selection ${preview.rect.width}×${preview.rect.height}`
+                  : ''}
+              </span>
+              {previewNote ? (
+                <details className="rt-preview-full">
+                  <summary>full message sent to the agent</summary>
+                  <pre>{String(payload.text ?? '')}</pre>
+                </details>
+              ) : null}
+            </>
+          ) : null}
           {conversationRefs.length > 0 ? (
             <span className="rt-conversation-refs" aria-label="Referenced conversations">
               {conversationRefs.map((ref) => (
@@ -593,6 +661,14 @@ function eventNode(
           testid="tl-merged-back"
         />
       );
+    }
+    case 'task.prDraft': {
+      // ADR-0022: evidence-ledger PR draft — persists here so dismissing the
+      // post-accept card loses nothing. Copy-out only; never executed.
+      const branch = typeof payload.branch === 'string' ? payload.branch : '';
+      const body = typeof payload.body === 'string' ? payload.body : '';
+      const commands = typeof payload.commands === 'string' ? payload.commands : '';
+      return <PrDraftEntry key={event.id} branch={branch} body={body} commands={commands} />;
     }
     case 'merge.blocked': {
       const conflicts = (payload.conflicts ?? []) as Array<{ path: string; reason: string }>;

@@ -12,6 +12,10 @@ import {
   ModelRefSchema,
   PermissionCardDtoSchema,
   PlanEditDtoSchema,
+  PreviewAttachmentSchema,
+  PreviewPortDtoSchema,
+  PreviewRectSchema,
+  PrDraftDtoSchema,
   TaskDtoSchema,
   TimelineEventDtoSchema,
   VerificationCommandSchema,
@@ -588,7 +592,7 @@ export const CHANNELS = {
   ),
   'task.message': ch(
     'task.message',
-    1,
+    2,
     z
       .object({
         taskId: z.string(),
@@ -596,6 +600,8 @@ export const CHANNELS = {
         during: z.enum(['steer', 'followUp']).default('steer'),
         /** ADR-0016: optional model/effort override for the next turn onward. */
         model: ModelRefSchema.optional(),
+        /** ADR-0022: marquee feedback from the acceptance-gate preview. */
+        preview: PreviewAttachmentSchema.optional(),
       })
       .strict(),
     z.object({ delivered: z.enum(['started', 'steered', 'queued']) }),
@@ -725,7 +731,7 @@ export const CHANNELS = {
   ),
   'task.accept': ch(
     'task.accept',
-    1,
+    2,
     z
       .object({
         taskId: z.string(),
@@ -738,6 +744,8 @@ export const CHANNELS = {
       task: TaskDtoSchema,
       status: z.enum(['accepted', 'conflicts']).default('accepted'),
       conflicts: z.array(z.object({ path: z.string(), reason: z.string() })).optional(),
+      /** ADR-0022: evidence-ledger PR draft (git projects only; never pushed). */
+      prDraft: PrDraftDtoSchema.nullable().optional(),
     }),
   ),
   'task.rollback': ch(
@@ -762,6 +770,49 @@ export const CHANNELS = {
     1,
     z.object({ taskId: z.string() }).strict(),
     z.object({ runs: z.array(VerificationRunDtoSchema) }),
+  ),
+  /** ADR-0022: loopback listeners attributed to the task's own tree (cwd match).
+   * Read-only — the gate never starts a server. */
+  'task.previewPorts': ch(
+    'task.previewPorts',
+    1,
+    z.object({ taskId: z.string() }).strict(),
+    z.object({
+      /** The tree the detection ran against (worktree or project root). */
+      root: z.string(),
+      /** Heuristic: the root looks like a web project (dev/start/serve script). */
+      webish: z.boolean(),
+      ports: z.array(PreviewPortDtoSchema),
+    }),
+  ),
+  /** ADR-0022: compositor screenshot of the preview region (cross-origin iframe
+   * pixels are unreadable from the renderer; main captures the window region). */
+  'task.capturePreview': ch(
+    'task.capturePreview',
+    1,
+    z.object({ taskId: z.string(), rect: PreviewRectSchema }).strict(),
+    z.object({ dataBase64: z.string(), width: z.number(), height: z.number() }),
+  ),
+  /** ADR-0022: open the preview in the system browser. Loopback-only and only
+   * for a currently detected port — the general https allowlist is unchanged. */
+  'task.previewOpenExternal': ch(
+    'task.previewOpenExternal',
+    1,
+    z
+      .object({
+        taskId: z.string(),
+        port: z.number().int().min(1).max(65535),
+        path: z.string().max(500).default('/'),
+      })
+      .strict(),
+    z.object({ opened: z.boolean() }),
+  ),
+  /** ADR-0022: latest stored PR draft for an accepted task (null if none). */
+  'task.prDraft': ch(
+    'task.prDraft',
+    1,
+    z.object({ taskId: z.string() }).strict(),
+    z.object({ draft: PrDraftDtoSchema.nullable() }),
   ),
   'task.suggestVerifications': ch(
     'task.suggestVerifications',

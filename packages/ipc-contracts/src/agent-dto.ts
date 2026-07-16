@@ -222,6 +222,55 @@ export const VerificationRunDtoSchema = z.object({
 });
 export type VerificationRunDto = z.infer<typeof VerificationRunDtoSchema>;
 
+/** ADR-0022: a selection rectangle on the preview page, CSS px, viewport-relative. */
+export const PreviewRectSchema = z.object({
+  x: z.number().min(0).max(100000),
+  y: z.number().min(0).max(100000),
+  width: z.number().min(1).max(100000),
+  height: z.number().min(1).max(100000),
+});
+export type PreviewRectDto = z.infer<typeof PreviewRectSchema>;
+
+/** ADR-0022: marquee feedback attachment riding a task.message (schema v2). */
+export const PreviewAttachmentSchema = z.object({
+  /** PNG bytes, base64 (≤ 8 MB decoded ≈ 10.7 MB encoded). */
+  dataBase64: z
+    .string()
+    .min(8)
+    .max(11 * 1024 * 1024),
+  mimeType: z.literal('image/png'),
+  pageUrl: z.string().min(1).max(2000),
+  rect: PreviewRectSchema,
+  /** The user's note, kept separately so the Room can render it front and
+   * center (the full structured message stays inspectable). */
+  note: z.string().max(4000).optional(),
+});
+export type PreviewAttachmentDto = z.infer<typeof PreviewAttachmentSchema>;
+
+/** ADR-0022: one detected dev server inside the task's own tree. */
+export const PreviewPortDtoSchema = z.object({
+  port: z.number().int().min(1).max(65535),
+  pid: z.number().int().min(1),
+  command: z.string(),
+  url: z.string(),
+});
+export type PreviewPortDto = z.infer<typeof PreviewPortDtoSchema>;
+
+/** ADR-0022: PR draft generated from the evidence ledger at accept. The app
+ * never pushes; the draft is copy-out only (GIT-007). */
+export const PrDraftDtoSchema = z.object({
+  branch: z.string(),
+  title: z.string(),
+  /** Markdown body (goal, changes, verification matrix, receipt hash). */
+  body: z.string(),
+  /** Ready-to-paste shell block: branch → add → commit → push → gh pr create. */
+  commands: z.string(),
+  /** Body persisted here so `--body-file` works out of the box. */
+  bodyPath: z.string(),
+  receiptSha256: z.string().nullable(),
+});
+export type PrDraftDto = z.infer<typeof PrDraftDtoSchema>;
+
 export const ModelDescriptorDtoSchema = z.object({
   providerId: z.string(),
   providerName: z.string(),

@@ -91,6 +91,28 @@ describe('command classifier (§10.2/§10.4, PERM-008/009, CMD-001/002)', () => 
     expect(classify('sh', ['-c', 'git push origin main']).level).toBe('R4');
   });
 
+  // ADR-0022: forge CLIs are the same outward-action class as git push.
+  it('classifies forge CLI mutations as R4 (gh pr create, gh api, glab, unknown subs fail closed)', () => {
+    expect(classify('gh', ['pr', 'create', '--draft']).level).toBe('R4');
+    expect(classify('gh', ['pr', 'merge', '1']).level).toBe('R4');
+    expect(classify('gh', ['release', 'create', 'v1']).level).toBe('R4');
+    expect(classify('gh', ['api', 'repos/x/y', '-f', 'a=b']).level).toBe('R4');
+    expect(classify('gh', ['api', 'repos/x/y']).level).toBe('R4'); // api fails closed even for GETs
+    expect(classify('gh', ['auth', 'login']).level).toBe('R4');
+    expect(classify('gh', []).level).toBe('R4');
+    expect(classify('glab', ['mr', 'create']).level).toBe('R4');
+    expect(classify('sh', ['-c', 'git commit -m x; gh pr create']).level).toBe('R4');
+  });
+
+  it('classifies forge CLI reads as R3 network access', () => {
+    expect(classify('gh', ['pr', 'view', '12']).level).toBe('R3');
+    expect(classify('gh', ['pr', 'list']).level).toBe('R3');
+    expect(classify('gh', ['run', 'view', '99']).level).toBe('R3');
+    expect(classify('gh', ['pr', 'checks', '12']).level).toBe('R3');
+    expect(classify('gh', ['auth', 'status']).level).toBe('R3');
+    expect(classify('glab', ['mr', 'list']).level).toBe('R3');
+  });
+
   it('classifies destructive root commands as R4', () => {
     expect(classify('rm', ['-rf', '/']).level).toBe('R4');
     expect(classify('rm', ['-fr', '/*']).level).toBe('R4');

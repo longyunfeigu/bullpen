@@ -3,6 +3,8 @@ import type {
   ChangeSetDto,
   ModelDescriptorDto,
   PlanEditDto,
+  PrDraftDto,
+  PreviewAttachmentDto,
   ReplayRequest,
   TaskDto,
   TimelineEventDto,
@@ -120,6 +122,13 @@ interface TaskStore {
   // M9: verification + rollback
   rollbackTask(): Promise<boolean>;
   runVerification(label?: string): Promise<void>;
+
+  // ADR-0022: preview gate — marquee feedback + post-accept PR draft.
+  /** Set after a successful accept when the ledger produced a draft. */
+  prDraft: { taskId: string; draft: PrDraftDto } | null;
+  dismissPrDraft(): void;
+  /** Marquee feedback: same steer loop as request-fix, plus the screenshot. */
+  sendPreviewFeedback(text: string, preview: PreviewAttachmentDto): Promise<boolean>;
 
   // PIVOT-005: Home fast path — one-line intent charters a task.
   createFromIntent(input: {
@@ -401,6 +410,27 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   changeSet: null,
   loadingChangeSet: false,
   replayRequest: null,
+  prDraft: null,
+
+  dismissPrDraft() {
+    set({ prDraft: null });
+  },
+
+  async sendPreviewFeedback(text, preview) {
+    const taskId = get().activeTaskId;
+    if (!taskId) return false;
+    const res = await rpcResult('task.message', {
+      taskId,
+      text,
+      during: 'steer',
+      preview,
+    });
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      return false;
+    }
+    return true;
+  },
 
   openReplay(request) {
     const taskId = request?.taskId ?? get().activeTaskId;
@@ -485,6 +515,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     if (!taskId) return false;
     let confirmUnverified = false;
     let confirmConflicts = false;
+    let lastAccept: { prDraft?: PrDraftDto | null } | null = null;
     for (;;) {
       const res = await rpcResult('task.accept', { taskId, confirmUnverified, confirmConflicts });
       if (!res.ok) {
@@ -517,9 +548,13 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         confirmConflicts = true;
         continue;
       }
+      lastAccept = res.data;
       break;
     }
     set({ reviewOpen: false });
+    // ADR-0022: surface the evidence-ledger PR draft (git projects only).
+    const draft = lastAccept?.prDraft ?? null;
+    set({ prDraft: draft ? { taskId, draft } : null });
     await get().refreshTasks();
     return true;
   },
