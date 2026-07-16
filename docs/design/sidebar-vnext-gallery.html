@@ -43,7 +43,7 @@
 
       .gallery-header {
         display: grid;
-        grid-template-columns: minmax(270px, 0.8fr) minmax(520px, 1.6fr);
+        grid-template-columns: minmax(240px, 0.7fr) minmax(620px, 2fr);
         align-items: center;
         gap: 22px;
         padding: 13px 18px;
@@ -68,7 +68,7 @@
 
       .direction-tabs {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
         gap: 6px;
       }
 
@@ -161,19 +161,22 @@
           <span>同一批会话、同一主工作区，只比较左侧导航模型</span>
         </div>
         <nav class="direction-tabs" aria-label="Sidebar directions">
-          <button class="direction-tab active" data-src="./sidebar-vnext-focus.html" type="button">
+          <button class="direction-tab" data-src="./sidebar-vnext-focus.html" type="button">
             <b>A</b><strong>Focus Rail</strong><span>最低改造成本 · 清晰排序</span>
           </button>
           <button class="direction-tab" data-src="./sidebar-vnext-grouped.html" type="button">
-            <b>B</b><strong>Project Groups</strong><span>推荐 · 会话按项目组织</span>
+            <b>B</b><strong>Project Groups</strong><span>会话按项目组织</span>
           </button>
           <button class="direction-tab" data-src="./sidebar-vnext-activity.html" type="button">
             <b>C</b><strong>Activity Rail</strong><span>长期扩展 · IDE 双轨导航</span>
           </button>
+          <button class="direction-tab active" data-src="./sidebar-vnext-hybrid.html" type="button">
+            <b>D</b><strong>Grouped Activity</strong><span>融合稿 · C 外壳 × B 分组</span>
+          </button>
         </nav>
       </header>
       <section class="preview-wrap">
-        <iframe id="preview" title="Charter sidebar direction preview" src="./sidebar-vnext-focus.html"></iframe>
+        <iframe id="preview" title="Charter sidebar direction preview" src="./sidebar-vnext-hybrid.html"></iframe>
       </section>
     </main>
     <script>

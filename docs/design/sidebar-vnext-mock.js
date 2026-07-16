@@ -116,6 +116,9 @@
   const reviewSessions = () => sessions.filter((session) => session.state === "review");
   const liveSessions = () => sessions.filter((session) => session.state === "live");
 
+  const attentionOrder = { review: 0, live: 1, accepted: 2 };
+  const byAttention = (a, b) => attentionOrder[a.state] - attentionOrder[b.state];
+
   function providerMark(session) {
     return `<span class="provider ${session.provider}" aria-hidden="true">${session.providerLabel}</span>`;
   }
@@ -141,11 +144,11 @@
     </div>`;
   }
 
-  function attentionRow() {
+  function attentionRow(hint = "Review ready") {
     return `<button class="attention-row" data-action="needs-you" type="button">
       ${icon("inbox", 14)}
       <strong>Needs you</strong>
-      <span>Review ready</span>
+      <span>${hint}</span>
       <span class="attention-count">${reviewSessions().length}</span>
     </button>`;
   }
@@ -191,7 +194,7 @@
     </aside>`;
   }
 
-  function projectGroup(id, title, groupSessions, extra = "") {
+  function projectGroup(id, title, groupSessions, extra = "", { hideProject = true } = {}) {
     const expanded = state.groups[id];
     const needs = groupSessions.filter((session) => session.state === "review").length;
     return `<section class="group ${expanded ? "" : "collapsed"}">
@@ -201,7 +204,7 @@
         ${needs ? `<span class="group-needs">${needs} need you</span>` : ""}
         <span class="group-count">${extra || groupSessions.length}</span>
       </button>
-      <div class="group-items">${groupSessions.map((session) => sessionRow(session, { hideProject: true })).join("")}</div>
+      <div class="group-items">${groupSessions.map((session) => sessionRow(session, { hideProject })).join("")}</div>
     </section>`;
   }
 
@@ -283,9 +286,47 @@
     </aside>`;
   }
 
+  function hybridSessionsPanel() {
+    const activeFable = sessions
+      .filter((session) => session.project === "fable5" && session.state !== "accepted")
+      .sort(byAttention);
+    const scratch = sessions
+      .filter((session) => session.project === "Scratch" && session.state !== "accepted")
+      .sort(byAttention);
+    const history = sessions.filter((session) => session.state === "accepted");
+    return `<div class="panel-heading"><strong>Sessions</strong><span>grouped by project</span><button class="icon-button" data-action="new-session" type="button" aria-label="New session">${icon("plus", 13)}</button></div>
+      ${reviewSessions().length ? `<div class="panel-pinned">${attentionRow("Open inbox")}</div>` : ""}
+      <div class="context-panel-scroll group-scroll">
+        ${projectGroup("fable5", "fable5", activeFable, `${activeFable.length} active`)}
+        ${projectGroup("scratch", "Scratch", scratch)}
+        ${projectGroup("history", "History", history, "", { hideProject: false })}
+      </div>
+      <div class="rail-footer">
+        <button class="footer-row" data-action="switch-project" type="button">${icon("folder", 14)}<span>fable5 · main</span><span>Change</span></button>
+      </div>`;
+  }
+
+  function hybridRail() {
+    return `<aside class="rail activity-shell" aria-label="Grouped activity navigation">
+      <nav class="activity-bar" aria-label="Primary destinations">
+        <span class="activity-brand">${icon("flag", 15)}</span>
+        <span class="direction-chip">D</span>
+        ${activityButton("sessions", "terminal")}
+        ${activityButton("inbox", "inbox", reviewSessions().length)}
+        ${activityButton("projects", "folder")}
+        ${activityButton("search", "search")}
+        <span class="activity-spacer"></span>
+        <button class="activity-nav-item" data-action="open-editor" type="button" title="Editor">${icon("layout", 16)}</button>
+        <button class="activity-nav-item" data-action="settings" type="button" title="Settings">${icon("sliders", 16)}</button>
+      </nav>
+      <section class="context-panel">${state.activity === "sessions" ? hybridSessionsPanel() : activityPanel()}</section>
+    </aside>`;
+  }
+
   function renderRail() {
     if (direction === "b") return groupedRail();
     if (direction === "c") return activityRail();
+    if (direction === "d") return hybridRail();
     return focusRail();
   }
 
@@ -526,7 +567,7 @@
     });
 
     document.querySelector('[data-action="needs-you"]')?.addEventListener("click", () => {
-      if (direction === "c") state.activity = "inbox";
+      if (direction === "c" || direction === "d") state.activity = "inbox";
       else state.filter = "review";
       render();
     });

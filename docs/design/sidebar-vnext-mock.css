@@ -93,6 +93,10 @@ svg.icon {
   --rail-width: 296px;
 }
 
+.direction-d {
+  --rail-width: 324px;
+}
+
 .rail {
   min-width: 0;
   min-height: 0;
@@ -674,6 +678,37 @@ svg.icon {
 .direction-c .session-row {
   min-height: 50px;
   padding-left: 7px;
+}
+
+.direction-chip {
+  margin: -7px 0 3px;
+  color: var(--faint);
+  font: 700 9px var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.panel-pinned {
+  flex: none;
+  padding: 0 8px;
+}
+
+.panel-pinned .attention-row {
+  margin-top: 8px;
+}
+
+.group-scroll {
+  padding: 4px 8px 10px;
+}
+
+.direction-d .session-row {
+  min-height: 51px;
+  padding-left: 7px;
+}
+
+.direction-d .session-row.selected {
+  border-color: transparent;
+  background: #e4e8f4;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .project-list {
@@ -1377,6 +1412,10 @@ svg.icon {
   .direction-b,
   .direction-c {
     --rail-width: 270px;
+  }
+
+  .direction-d {
+    --rail-width: 292px;
   }
 
   .workbench-body {
