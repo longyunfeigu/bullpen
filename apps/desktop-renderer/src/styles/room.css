@@ -626,6 +626,7 @@
   font-size: 11.5px;
 }
 
+.rt-plan-toggle:focus,
 .rt-plan-toggle:focus-visible,
 .rt-think-head:focus-visible,
 .rt-tool-line:focus-visible,

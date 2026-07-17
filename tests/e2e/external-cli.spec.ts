@@ -293,8 +293,10 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await page.getByTestId('external-return-dock').click();
       await expect(page.getByTestId('external-panel')).toHaveCount(0);
       await expect(page.getByTestId(`terminal-tab-${codex.id}`)).not.toContainText('IN SIDE');
-      await expect(page.getByTestId('agent-panel')).toBeVisible();
-      await expect(page.getByTestId('sidebar')).toBeVisible();
+      await expect(page.getByTestId('home-sidebar')).toBeVisible();
+      await expect(page.getByTestId('terminal-panel')).toBeVisible();
+      await expect(page.getByTestId('agent-panel')).toHaveCount(0);
+      await expect(page.getByTestId('sidebar')).toHaveCount(0);
 
       // Seed the fourth context kind used by the approved visual: a real
       // isolated Task worktree. Returning editor focus to Charter makes
@@ -488,11 +490,11 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(second.page.getByTestId('task-resume')).toContainText('Resume Claude session');
 
       await second.page.getByTestId('task-resume').click();
-      await expect(second.page.getByTestId('terminal-panel')).toContainText(
+      await expect(second.page.getByTestId('external-terminal-host')).toContainText(
         'resumed-original-session',
         { timeout: 20000 },
       );
-      await expect(second.page.getByTestId('terminal-panel')).toContainText(
+      await expect(second.page.getByTestId('external-terminal-host')).toContainText(
         'resume-arg=--continue',
       );
 
@@ -566,7 +568,9 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(bar).toContainText('EXT');
       await expect(page.getByTestId('external-panel')).toHaveCount(0);
       await expect(page.getByTestId('bottom-panel')).toBeVisible();
-      await expect(page.getByTestId('agent-panel')).toBeVisible();
+      await expect(page.getByTestId('home-sidebar')).toBeVisible();
+      await expect(page.getByTestId('agent-panel')).toHaveCount(0);
+      await expect(page.getByTestId('sidebar')).toHaveCount(0);
       await expect(page.locator('[data-testid^="terminal-open-room-"]')).toBeVisible({
         timeout: 15000,
       });
@@ -650,7 +654,9 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await page.getByTestId('external-return-dock').click();
       await expect(page.getByTestId('external-panel')).toHaveCount(0);
       await expect(page.getByTestId('bottom-panel')).toBeVisible();
-      await expect(page.getByTestId('agent-panel')).toBeVisible();
+      await expect(page.getByTestId('home-sidebar')).toBeVisible();
+      await expect(page.getByTestId('agent-panel')).toHaveCount(0);
+      await expect(page.getByTestId('sidebar')).toHaveCount(0);
       await expect(page.getByTestId('terminal-host')).toContainText('promoted-echo-ok');
       await expect(page.getByTestId('session-bar-ended')).toContainText('1 file');
 
@@ -658,7 +664,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       // follows the instance), rail row, review entry; rail row click peeks.
       await page.getByTestId('session-bar-review').click();
       await expect(page.getByTestId('task-room')).toBeVisible();
-      await expect(page.getByTestId('task-room-external-chip')).toContainText('fakeagent');
+      await expect(page.getByTestId('session-agent-chip')).toContainText('fakeagent');
       await expect(page.getByTestId('external-terminal-column')).toBeVisible();
       await expect(page.getByTestId('external-terminal-host')).toContainText(
         'fake agent session started',
@@ -666,14 +672,20 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       );
       await expect(page.getByTestId('external-ended')).toBeVisible();
       await expect(page.getByTestId('task-room-file-src/util.ts')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByTestId('review-open').first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByTestId('session-tool-review')).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      await expect(page.getByTestId('session-action-dock')).toBeVisible();
       await page.getByTestId('task-room-file-src/util.ts').click();
       await expect(page.getByTestId('file-peek')).toBeVisible();
       await expect(page.getByTestId('peek-tab-src/util.ts')).toBeVisible();
-      await page.getByTestId('peek-close').click();
+      await page.getByTestId('session-tool-review').click();
+      await expect(page.getByTestId('review-bar')).toBeVisible();
 
       // The same external task now has a durable Replay V3: observed
       // provenance, per-fact evidence levels and a per-write evidence frame.
+      await page.getByTestId('session-more').click();
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
       await expect(page.getByTestId('replay-source')).toContainText('External Terminal');

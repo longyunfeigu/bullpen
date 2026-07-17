@@ -9,7 +9,7 @@ import { launchApp } from './helpers/launch.js';
 test('providers: presets, custom gateways and required-URL validation', async () => {
   const { app, page } = await launchApp();
   try {
-    await page.getByTestId('activity-settings').click();
+    await page.getByTestId('home-settings').click();
     await page.getByText('Models', { exact: true }).click();
 
     // 1) OpenRouter preset: key only — the default endpoint is implied.

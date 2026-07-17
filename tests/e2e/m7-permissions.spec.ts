@@ -10,13 +10,13 @@ async function createTask(
   mode: 'ask' | 'edit' | 'auto',
   title = 'Perm task',
 ) {
-  await page.getByTestId('new-task-btn').click();
-  await expect(page.getByTestId('new-task-dialog')).toBeVisible();
-  await page.getByTestId('task-title').fill(title);
-  await page.getByTestId('task-goal').fill(goal);
-  await page.getByTestId(`mode-${mode}`).check();
-  await expect(page.getByTestId('task-model')).toHaveValue(/mock/);
-  await page.getByTestId('task-create-start').click();
+  await page.getByTestId('surface-home').click();
+  await page.getByTestId('home-advanced-toggle').click();
+  await page.getByTestId('home-adv-title').fill(title);
+  await page.getByTestId('home-intent').fill(goal);
+  await page.getByTestId(`home-mode-${mode}`).click();
+  await expect(page.getByTestId('home-model')).toContainText(/mock/i);
+  await page.getByTestId('home-submit').click();
 }
 
 test.describe('M7 permission engine (PERM-001..010, §13.3)', () => {

@@ -14,16 +14,17 @@ async function createTask(
   title: string,
   options: { verification?: string } = {},
 ) {
-  await page.getByTestId('new-task-btn').click();
-  await expect(page.getByTestId('new-task-dialog')).toBeVisible();
-  await page.getByTestId('task-title').fill(title);
-  await page.getByTestId('task-goal').fill(goal);
+  await page.getByTestId('surface-home').click();
+  await page.getByTestId('home-advanced-toggle').click();
+  await page.getByTestId('home-adv-title').fill(title);
+  await page.getByTestId('home-intent').fill(goal);
   if (options.verification) {
-    await page.getByTestId('task-verification-custom').fill(options.verification);
+    await page.getByTestId('home-verif-custom').fill(options.verification);
+    await page.getByTestId('home-verif-custom').press('Enter');
   }
-  await page.getByTestId(`mode-${mode}`).check();
-  await expect(page.getByTestId('task-model')).toHaveValue(/mock/);
-  await page.getByTestId('task-create-start').click();
+  await page.getByTestId(`home-mode-${mode}`).click();
+  await expect(page.getByTestId('home-model')).toContainText(/mock/i);
+  await page.getByTestId('home-submit').click();
 }
 
 test.describe('M9 verification, final report and rollback (E2E-016/017/018)', () => {
@@ -53,7 +54,7 @@ test.describe('M9 verification, final report and rollback (E2E-016/017/018)', ()
       expect(existsSync(join(fixture, 'src/mathlib.ts'))).toBe(false);
 
       // Roll everything back from the review page.
-      await page.getByTestId('review-open').click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible();
       await page.getByTestId('review-rollback').click();
       await page.getByTestId('review-rollback-confirm').click();
@@ -94,10 +95,11 @@ test.describe('M9 verification, final report and rollback (E2E-016/017/018)', ()
       // The fix really landed.
       expect(readFileSync(join(fixture, 'check-target.txt'), 'utf8').trim()).toBe('RIGHT');
 
-      // The final report shows the superseded old result and the passing current one.
-      await expect(page.getByTestId('report-verification')).toContainText('1 passed');
-      await expect(page.getByTestId('report-verification')).toContainText('superseded');
-      await expect(page.getByTestId('report-verification')).toContainText('stale');
+      // The in-Session evidence ledger keeps the superseded old result and the
+      // passing current one instead of overwriting history.
+      await expect(page.getByTestId('checks-pane')).toContainText('passed');
+      await expect(page.locator('[data-testid^="check-superseded-"]')).toHaveCount(1);
+      await expect(page.locator('[data-testid^="check-stale-"]')).toHaveCount(1);
     } finally {
       await app.close();
     }
@@ -120,13 +122,10 @@ test.describe('M9 verification, final report and rollback (E2E-016/017/018)', ()
         timeout: 30000,
       });
 
-      // The report clearly flags the missing verification (VER-007).
-      await expect(page.getByTestId('report-unverified')).toBeVisible();
-      await expect(page.getByTestId('report-unverified')).toContainText(
-        'no verification commands were run',
-      );
+      // The Session evidence ledger clearly flags missing verification (VER-007).
+      await expect(page.getByTestId('checks-unverified')).toContainText('No verification has run');
 
-      await page.getByTestId('review-open').click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible();
       await page.getByTestId('review-accept-all').click();
 

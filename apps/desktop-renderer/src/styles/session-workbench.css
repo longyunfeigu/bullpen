@@ -320,9 +320,6 @@
 .sr-provider.shell {
   color: var(--fg);
 }
-.sr-modal .sr-provider {
-  --pm-hole: var(--bg-card);
-}
 .stv-header .sr-provider {
   --pm-hole: var(--bg-titlebar);
 }
@@ -461,8 +458,6 @@
 .sr-chevron-open {
   transform: rotate(90deg);
 }
-/* Hover-revealed per-project session starters (π / Claude / Codex). The chip
-   overlays the row's right edge; the row itself keeps its full hit area. */
 .sr-project-wrap {
   position: relative;
 }
@@ -470,46 +465,6 @@
   background: var(--bg-hover);
   color: var(--fg);
 }
-.sr-project-qs {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  background: var(--bg-sidebar);
-  box-shadow: var(--shadow-card);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s;
-}
-.sr-project-wrap:hover .sr-project-qs,
-.sr-project-qs:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-.sr-qs-btn {
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  cursor: pointer;
-}
-.sr-qs-btn:hover {
-  background: var(--bg-hover);
-}
-.sr-qs-btn .sr-provider {
-  width: auto;
-  height: auto;
-}
-
 /* Absorbed from direction B: the resident working-context row. */
 .sr-context-foot {
   padding: 6px 8px 7px;
@@ -548,115 +503,6 @@
   font: 9px var(--font-mono);
 }
 
-/* New Session */
-.sr-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 140;
-  display: grid;
-  place-items: center;
-  padding: 28px;
-  background: var(--bg-overlay);
-}
-.sr-modal {
-  width: min(680px, calc(100vw - 48px));
-  max-height: calc(100vh - 64px);
-  overflow: auto;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-card);
-  background: var(--bg-card);
-  color: var(--fg);
-  box-shadow: var(--shadow-menu);
-}
-.sr-modal > header {
-  display: flex;
-  gap: 20px;
-  align-items: flex-start;
-  padding: 18px 20px 14px;
-  border-bottom: 1px solid var(--border-soft);
-}
-.sr-modal h2 {
-  margin: 0 0 5px;
-  font-size: 17px;
-}
-.sr-modal p {
-  margin: 0;
-  color: var(--fg-muted);
-  font-size: 11.5px;
-  line-height: 1.55;
-}
-.sr-modal > header > button {
-  margin-left: auto;
-}
-.sr-kind-grid {
-  display: grid;
-  gap: 8px;
-  padding: 16px 20px;
-}
-.sr-kind-grid > button {
-  min-height: 64px;
-  display: grid;
-  grid-template-columns: 30px 1fr;
-  align-items: center;
-  gap: 11px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius-chip) + 2px);
-  background: var(--bg-editor);
-  color: var(--fg);
-  text-align: left;
-  font-family: var(--font-ui);
-  cursor: pointer;
-}
-.sr-kind-grid > button:hover {
-  background: var(--bg-hover);
-}
-.sr-kind-grid > button.selected {
-  border-color: var(--info);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--info) 12%, transparent);
-}
-.sr-kind-grid strong,
-.sr-kind-grid small {
-  display: block;
-}
-.sr-kind-grid strong {
-  font-size: 12px;
-  margin-bottom: 3px;
-}
-.sr-kind-grid small {
-  color: var(--fg-muted);
-  font-size: 10.5px;
-  line-height: 1.4;
-}
-.sr-context {
-  display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: 4px 12px;
-  margin: 0 20px 16px;
-  padding: 11px 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-chip);
-  background: var(--bg-editor);
-  font-size: 11px;
-}
-.sr-context > span {
-  grid-row: 1 / 3;
-  color: var(--fg-muted);
-}
-.sr-context small {
-  color: var(--fg-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sr-modal > footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 20px 16px;
-  border-top: 1px solid var(--border-soft);
-}
-
 /* A raw external PTY before accounting-task detection. */
 .stv-root {
   flex: 1;
@@ -666,6 +512,238 @@
   flex-direction: column;
   background: var(--bg-editor);
   color: var(--fg);
+}
+.stv-manager-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.stv-terminal-dock {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: clip;
+}
+.stv-manager-body > .external-panel {
+  max-width: min(600px, calc(100% - 420px));
+}
+.stv-manager-body.only-external > .external-panel {
+  max-width: none;
+  margin-left: auto;
+}
+
+/* Project tools are a content state of the one persistent shell. The narrow
+ * contextual column belongs to the selected tool, not a second global nav. */
+.project-tool-root {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr) 27px;
+  background: var(--bg-card);
+}
+
+.project-tool-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-card);
+}
+
+.project-tool-head > button,
+.project-tool-head nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.project-tool-head > button:hover,
+.project-tool-head nav button:hover,
+.project-tool-head nav button.active {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.project-tool-title {
+  min-width: 0;
+  display: grid;
+}
+
+.project-tool-title strong,
+.project-tool-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-tool-title span {
+  max-width: 340px;
+  color: var(--fg-faint);
+  font-size: 10.5px;
+}
+
+.project-tool-head nav {
+  margin-left: auto;
+  display: flex;
+  align-self: stretch;
+}
+
+.project-tool-head nav button {
+  min-width: 78px;
+  justify-content: center;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+}
+
+.project-tool-head nav button.active {
+  background: transparent;
+  border-bottom-color: var(--accent);
+}
+
+.project-tool-body {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 278px minmax(0, 1fr);
+}
+
+.project-tool-context,
+.project-tool-stage,
+.project-tool-editor {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.project-tool-context {
+  border-right: 1px solid var(--border-soft);
+  background: var(--bg-sidebar);
+}
+
+.project-tool-context > * {
+  height: 100%;
+}
+
+.project-tool-editor {
+  position: relative;
+  display: flex;
+  background: var(--bg-editor);
+}
+
+.project-tool-stage {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.project-tool-stage.with-bottom {
+  grid-template-rows: minmax(180px, 1fr) minmax(150px, 0.36fr);
+}
+
+.project-tool-editor > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.project-tool-bottom {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 31px minmax(0, 1fr);
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.project-tool-bottom > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--fg-muted);
+  font-size: 10.5px;
+}
+
+.project-tool-bottom > header strong {
+  color: var(--fg);
+  font-size: 11px;
+}
+
+.project-tool-bottom > header span {
+  color: var(--fg-faint);
+}
+
+.project-tool-bottom > header button {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.project-tool-bottom > header button:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.project-tool-bottom-body {
+  min-height: 0;
+  overflow: auto;
+}
+
+.project-tool-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-faint);
+  font-size: 10.5px;
+}
+
+.project-tool-foot span:first-child {
+  margin-right: auto;
+}
+
+.project-tool-foot i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+@media (max-width: 920px) {
+  .stv-manager-body {
+    flex-direction: column;
+  }
+  .stv-manager-body > .xp-resize {
+    display: none;
+  }
+  .stv-manager-body > .external-panel {
+    width: 100% !important;
+    max-width: none;
+    max-height: 50%;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
 }
 .stv-header {
   min-height: 48px;

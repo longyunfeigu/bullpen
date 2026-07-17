@@ -81,7 +81,7 @@ test.describe('Shell v4 — global tasks on a multi-mount engine (ADR-0009)', ()
       // ADR-0023: recents live in the rail's Projects panel; switching returns
       // the rail to the sessions panel.
       await page.getByTestId('task-room-back').click();
-      await page.getByTestId('rail-view-projects').click();
+      await page.getByTestId('rail-context').click();
       await page.getByTestId(`home-recent-${projectB}`).click();
       await expect(page.getByTestId('home-project')).toContainText(
         projectB.split('/').pop() ?? 'fixture',
@@ -92,7 +92,7 @@ test.describe('Shell v4 — global tasks on a multi-mount engine (ADR-0009)', ()
       const row = page.locator('[data-testid^="home-task-"]').first();
       await expect(row).toBeVisible();
       await expect(row).toHaveAttribute('data-state', 'AWAITING_PLAN_APPROVAL');
-      await expect(page.getByTestId('home-reviews')).toContainText('1');
+      await expect(page.getByTestId('rail-needs-you')).toContainText('1');
 
       // Open its room from B, approve the plan there — multi-mount execution.
       await row.click();
@@ -112,7 +112,7 @@ test.describe('Shell v4 — global tasks on a multi-mount engine (ADR-0009)', ()
       // ADR-0016: no Done ceremony and no review bar for an answered task.
       await expect(page.getByTestId('tl-done')).toHaveCount(0);
       await expect(page.getByTestId('review-bar')).toHaveCount(0);
-      await expect(page.getByTestId('review-open')).toHaveCount(0);
+      await expect(page.getByTestId('review-bar-open')).toHaveCount(0);
       await page.getByTestId('task-done').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'ACCEPTED', {
         timeout: 15000,
@@ -165,7 +165,8 @@ test.describe('Shell v4 — worktree isolation and merge-back (ADR-0009)', () =>
       await expect(page.getByTestId('file-peek')).toHaveCount(0);
 
       // Review, accept-all, accept the task (native confirm for unverified).
-      await page.getByTestId('review-open').first().click();
+      await page.getByTestId('session-tool-review').click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
       page.once('dialog', (d) => void d.accept());
       await page.getByTestId('review-accept-all').click();
@@ -232,7 +233,7 @@ test.describe('Shell v4 — the composer is "Request changes" (ADR-0009)', () =>
 });
 
 test.describe('Shell v4 — heartbeat + focus layers (PIVOT-028/025)', () => {
-  test('running tasks tick in the sidebar and the room rail carries the live board', async () => {
+  test('running Sessions tick in the rail and show actionable evidence in the room', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
@@ -245,9 +246,38 @@ test.describe('Shell v4 — heartbeat + focus layers (PIVOT-028/025)', () => {
       await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('task-room')).toBeVisible();
 
-      // Focus layer: the rail live board lights up from write events.
-      await expect(page.locator('[data-testid^="live-board-"]')).toBeVisible({ timeout: 25000 });
-      await expect(page.locator('[data-testid^="live-tile-"]').first()).toBeVisible();
+      // Fleet layer: the Launcher keeps a full per-Session Live Board under
+      // the running card. It appears only after a real write event.
+      await page.getByTestId('task-room-back').click();
+      await expect(page.getByTestId('home-view')).toBeVisible();
+      const launcherBoard = page.locator('[data-testid^="live-board-"]').first();
+      await expect(launcherBoard).toBeVisible({ timeout: 25000 });
+      await expect(launcherBoard.getByTestId('live-tile-notes-live-a.txt')).toBeVisible();
+      await page.screenshot({ path: '/tmp/charter-live-launcher-1440.png' });
+
+      await page.locator('[data-testid^="home-mc-card-"]').first().click();
+      await expect(page.getByTestId('task-room')).toBeVisible();
+
+      // Focus layer: the same write events become stable file heat tiles in
+      // the Session tool canvas; the timeline and rail keep their own layers.
+      await expect(page.getByTestId('session-summary')).toBeVisible();
+      const roomBoard = page.locator('[data-testid^="live-board-"]').first();
+      await expect(roomBoard).toBeVisible();
+      await expect(roomBoard).toContainText('THIS SESSION');
+      await expect(roomBoard.getByTestId('live-tile-notes-live-a.txt')).toBeVisible({
+        timeout: 25000,
+      });
+
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.screenshot({ path: '/tmp/charter-live-presence-1440.png' });
+      await page.setViewportSize({ width: 900, height: 900 });
+      await expect(roomBoard).toBeVisible();
+      await page.screenshot({ path: '/tmp/charter-live-presence-900.png' });
+      await page.setViewportSize({ width: 1440, height: 900 });
+
+      // Live file rows are evidence shortcuts, not decoration.
+      await roomBoard.getByTestId('live-tile-notes-live-a.txt').click();
+      await expect(page.getByTestId('file-peek')).toBeVisible();
 
       // Heartbeat layer: the sidebar row ticks with the current action.
       await expect(page.locator('[data-testid^="home-task-ticker-"]').first()).toBeVisible();

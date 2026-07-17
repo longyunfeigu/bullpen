@@ -35,7 +35,7 @@ test.describe('Shell v3 — Task Room and entry consolidation', () => {
       await expect(page.getByTestId('task-room-file-src/index.ts')).toBeVisible();
 
       // Review works without ever entering the Editor.
-      await page.getByTestId('review-open').click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible();
       await expect(page.getByTestId('review-file-src/index.ts')).toBeVisible();
       await page.getByTestId('review-accept-all').click();
@@ -52,7 +52,7 @@ test.describe('Shell v3 — Task Room and entry consolidation', () => {
     }
   });
 
-  test('PIVOT-022: Editor entries — room header in, ⌂ Home back, room state kept', async () => {
+  test('PIVOT-022: Session tools keep the room and its pending plan mounted', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
@@ -69,23 +69,15 @@ test.describe('Shell v3 — Task Room and entry consolidation', () => {
       await page.getByTestId('task-room-back').click();
       await expect(page.getByTestId('home-enter-ide')).toHaveCount(0);
 
-      // Sidebar row → Editor; ⌂ Home → back to the launcher.
-      await page.getByTestId('home-open-ide').click();
-      await expect(page.getByTestId('workbench')).toBeVisible();
-      await expect(page.getByTestId('home-view')).toHaveCount(0);
-      await page.getByTestId('surface-home').click();
-      await expect(page.getByTestId('home-view')).toBeVisible();
-
-      // Task Room → "Open in editor" carries the task context (agent panel).
+      // Reopen the Session from the one global rail. There is no alternate
+      // workspace shell or duplicate Agent Panel.
       await page.getByTestId(`home-task-${await taskIdOf(page)}`).click();
       await expect(page.getByTestId('task-room')).toBeVisible();
-      await page.getByTestId('task-room-open-editor').click();
-      await expect(page.getByTestId('agent-panel-main')).toBeVisible();
       await expect(page.getByTestId('plan-card')).toBeVisible();
+      await expect(page.getByTestId('session-tool-canvas')).toBeVisible();
+      await expect(page.getByTestId('agent-panel-main')).toHaveCount(0);
 
-      // The waiting plan is decidable from the room too.
-      await page.getByTestId('surface-home').click();
-      await expect(page.getByTestId('task-room')).toBeVisible(); // state kept
+      // The waiting plan is decidable without leaving the conversation.
       await page.getByTestId('plan-approve').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
@@ -96,8 +88,8 @@ test.describe('Shell v3 — Task Room and entry consolidation', () => {
   });
 });
 
-test.describe('Shell v3 — Live Board (PIVOT-025)', () => {
-  test('tiles appear from write events, open the read-only lens, and collapse when idle', async () => {
+test.describe('Shell v3 — layered live supervision (PIVOT-025)', () => {
+  test('current work, live file heat and touched files share one event stream', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
@@ -109,25 +101,19 @@ test.describe('Shell v3 — Live Board (PIVOT-025)', () => {
       await page.getByTestId('home-intent').fill('[scenario:edit-live] watch the agent work');
       await page.getByTestId('home-submit').click();
 
-      // Watch from the launcher: the running card grows a live board.
+      // Supervision remains in the Session: timeline action, right-side file
+      // heat and touched-file evidence all project the same change events.
       await expect(page.getByTestId('task-room')).toBeVisible();
-      await page.getByTestId('task-room-back').click();
-      const tile = page.getByTestId('live-tile-notes-live-a.txt');
-      await expect(tile).toBeVisible({ timeout: 15000 });
-      await expect(tile).toHaveAttribute('data-heat', /hot|warm/);
-
-      // Tile → diff-so-far lens (read-only, from recorded changes).
-      await tile.click();
-      await expect(page.getByTestId('file-lens')).toBeVisible();
-      await expect(page.getByTestId('file-lens')).toContainText('live board A');
-      await page.getByTestId('file-lens-close').click();
-      await expect(page.getByTestId('file-lens')).toHaveCount(0);
-
-      // When nothing runs, the board folds away — Home goes quiet again.
-      await expect(page.locator('[data-testid^="live-board-"]')).toHaveCount(0, {
+      await expect(page.getByTestId('session-summary')).toBeVisible();
+      await expect(page.locator('[data-testid^="live-board-"]').first()).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(page.getByTestId('live-tile-notes-live-a.txt')).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
       });
-      await expect(page.getByTestId('home-mc-needs')).toContainText('watch the agent work');
     } finally {
       await app.close();
     }
@@ -143,15 +129,16 @@ test.describe('Shell v3 — Home refinements (PIVOT-027, PIVOT-012 title)', () =
     try {
       await page.getByTestId('surface-home').click();
       // The active row toggles its lazy tree in place.
-      await page.getByTestId('rail-view-projects').click(); // ADR-0023: recents live in the Projects panel
+      await page.getByTestId('rail-context').click();
       await page.locator('[data-testid^="home-recent-"].active').click();
       await expect(page.getByTestId('home-project-tree')).toBeVisible();
       await page.getByTestId('home-tree-src').click();
       await expect(page.getByTestId('home-tree-src/index.ts')).toBeVisible();
       await page.getByTestId('home-tree-src/index.ts').click();
-      await expect(page.getByTestId('workbench')).toBeVisible();
+      await expect(page.getByTestId('project-tool-view')).toBeVisible();
       await expect(page.getByTestId('home-view')).toHaveCount(0);
       await expect(page.getByTestId('tab-src/index.ts')).toBeVisible();
+      await expect(page.getByTestId('agent-panel-main')).toHaveCount(0);
     } finally {
       await app.close();
     }

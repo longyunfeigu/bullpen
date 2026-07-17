@@ -32,6 +32,8 @@ function useWindowFocus(): boolean {
 export function LiveBoard(props: {
   taskId: string;
   onOpenLens: (path: string) => void;
+  currentAction?: { label: string; path?: string | null; elapsed?: number | null };
+  fileStats?: Record<string, { additions: number; deletions: number }>;
   /** 'launcher' (default): grid under the mission-control card.
    *  'rail': single-column focus layer inside the Task Room (PIVOT-028). */
   variant?: 'launcher' | 'rail';
@@ -49,9 +51,13 @@ export function LiveBoard(props: {
 
   const now = Date.now();
   const tiles = tilesForTask(pulses, props.taskId, now);
-  if (tiles.length === 0) return null;
-  const rate = writesPerMinute(pulses, props.taskId, now);
   const rail = props.variant === 'rail';
+  if (tiles.length === 0 && (!rail || !props.currentAction)) return null;
+  const rate = writesPerMinute(pulses, props.taskId, now);
+  const livePath = props.currentAction?.path ?? null;
+  const actionIsWritingTile =
+    livePath !== null && tiles.some((tile) => tile.path === livePath && tile.writing);
+  const showCurrentAction = rail && props.currentAction && !actionIsWritingTile;
 
   return (
     <div
@@ -60,14 +66,44 @@ export function LiveBoard(props: {
     >
       <div className="hm-board-head">
         <span className="hm-board-beacon" />
-        <span>{rail ? 'Writing now' : 'Working right now'}</span>
-        <span className="hm-board-rate">{rate} writes/min</span>
+        {rail ? (
+          <>
+            <span className="hm-board-scope">THIS SESSION</span>
+            <span className="hm-board-livechip">LIVE</span>
+          </>
+        ) : (
+          <span>Working right now</span>
+        )}
+        <span className="hm-board-rate">
+          {rate > 0 ? `${rate} writes/min` : 'waiting for a file change'}
+        </span>
       </div>
-      <div className="hm-tiles">
+      {showCurrentAction ? (
+        livePath ? (
+          <button
+            type="button"
+            className="hm-board-now"
+            data-testid="live-board-now"
+            onClick={() => props.onOpenLens(livePath)}
+          >
+            <Ic name="pencil" size={11} />
+            <span>{props.currentAction!.label}</span>
+            {props.currentAction!.elapsed ? <time>{props.currentAction!.elapsed}s</time> : null}
+          </button>
+        ) : (
+          <div className="hm-board-now" data-testid="live-board-now" aria-live="polite">
+            <Ic name="zap" size={11} />
+            <span>{props.currentAction!.label}</span>
+            {props.currentAction!.elapsed ? <time>{props.currentAction!.elapsed}s</time> : null}
+          </div>
+        )
+      ) : null}
+      <div className="hm-tiles" aria-live="polite">
         {tiles.slice(0, TILE_CAP).map((tile) => {
           const slash = tile.path.lastIndexOf('/');
           const name = slash >= 0 ? tile.path.slice(slash + 1) : tile.path;
           const dir = slash >= 0 ? tile.path.slice(0, slash + 1) : './';
+          const stat = props.fileStats?.[tile.path];
           return (
             <button
               key={tile.path}
@@ -79,6 +115,12 @@ export function LiveBoard(props: {
             >
               <span className="hm-tile-f">{name}</span>
               <span className="hm-tile-dir">{dir}</span>
+              {stat ? (
+                <span className="hm-tile-stat mono">
+                  <i className="plus">+{stat.additions}</i>{' '}
+                  <i className="minus">−{stat.deletions}</i>
+                </span>
+              ) : null}
               <span className="hm-tile-spark" aria-hidden>
                 {tile.rhythm.map((v, i) => (
                   <i key={i} style={{ height: `${Math.max(2, Math.round(v * 13))}px` }} />

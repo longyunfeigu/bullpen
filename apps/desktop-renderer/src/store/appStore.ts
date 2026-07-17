@@ -13,6 +13,12 @@ import { peekOpen, peekCloseTab, type PeekState } from '../views/peek.js';
 import { applyAppearance } from '../appearance.js';
 
 export type OverlayKind = 'none' | 'settings' | 'diagnostics' | 'about';
+/** Contextual tools owned by the active Session. These replace the old
+ * app-level workspace shell. */
+export type SessionTool = 'summary' | 'diff' | 'file' | 'preview' | 'terminal' | 'review';
+/** Project-level tools used before a Session exists. They render inside the
+ * persistent Session shell and never recreate the legacy IDE frame. */
+export type ProjectTool = 'files' | 'search' | 'changes';
 export type SettingsSection =
   | 'general'
   | 'editor'
@@ -42,9 +48,9 @@ interface AppStore {
   overlay: OverlayKind;
   settingsSection: SettingsSection;
   toasts: Toast[];
-  /** Dual-form shell (ADR-0004): Home task launcher vs full IDE workspace. */
+  /** Compatibility surface flag; the runtime now always renders the unified Session shell. */
   surface: 'home' | 'workspace';
-  /** Task Room (ADR-0008, PIVOT-021): task page inside the Home surface. */
+  /** The managed task selected as the active user-facing Session. */
   taskRoomTaskId: string | null;
   /**
    * Session-first shell: a terminal can be selected before external-agent
@@ -64,8 +70,20 @@ interface AppStore {
   peek: PeekState | null;
   /** ADR-0022 am.2: the Room's live-preview rail (taskId), exclusive with peek. */
   previewRailTaskId: string | null;
+  /** The right-hand tool canvas follows the Session instead of becoming a
+   * second application shell. */
+  sessionTool: SessionTool;
+  sessionToolExpanded: boolean;
+  projectTool: ProjectTool | null;
+  /** Contextual lower panel for project diagnostics. It belongs to Project
+   * Tools and does not resurrect the retired global workspace shell. */
+  projectBottomTab: BottomTab | null;
   openPreviewRail(taskId: string): void;
   closePreviewRail(): void;
+  setSessionTool(tool: SessionTool): void;
+  setSessionToolExpanded(expanded: boolean): void;
+  setProjectTool(tool: ProjectTool | null): void;
+  setProjectBottomTab(tab: BottomTab | null): void;
   /** Bumped when a control asks the launcher composer to take focus. */
   composerFocusSeq: number;
 
@@ -148,10 +166,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
   lens: null,
   peek: null,
   previewRailTaskId: null,
+  sessionTool: 'summary',
+  sessionToolExpanded: false,
+  projectTool: null,
+  projectBottomTab: null,
   composerFocusSeq: 0,
 
   setSurface(surface) {
-    set({ surface });
+    // The compatibility "workspace" value now opens a contextual tool state
+    // inside the one Session shell. With an active Session it expands that
+    // Session's tool canvas; otherwise it opens the current project's Files
+    // tool beside the persistent global rail.
+    if (surface === 'workspace' && get().taskRoomTaskId) {
+      set({ surface: 'home', sessionToolExpanded: true, projectTool: null });
+      return;
+    }
+    set({
+      surface,
+      projectTool: surface === 'workspace' ? (get().projectTool ?? 'files') : null,
+    });
   },
 
   setLens(lens) {
@@ -160,16 +193,43 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   openPeek(taskId, path, mode) {
     // Peek and the preview rail share the room's side column — exclusive.
-    set({ peek: peekOpen(get().peek, taskId, path, mode), previewRailTaskId: null });
+    const nextMode = mode ?? 'diff';
+    set({
+      peek: peekOpen(get().peek, taskId, path, nextMode),
+      previewRailTaskId: null,
+      sessionTool: nextMode === 'diff' ? 'diff' : 'file',
+    });
   },
   closePeek() {
-    set({ peek: null });
+    set({ peek: null, sessionTool: 'summary', sessionToolExpanded: false });
   },
   openPreviewRail(taskId) {
-    set({ previewRailTaskId: taskId, peek: null });
+    set({ previewRailTaskId: taskId, peek: null, sessionTool: 'preview' });
   },
   closePreviewRail() {
-    set({ previewRailTaskId: null });
+    set({ previewRailTaskId: null, sessionTool: 'summary', sessionToolExpanded: false });
+  },
+  setSessionTool(sessionTool) {
+    set({
+      sessionTool,
+      ...(sessionTool !== 'preview' ? { previewRailTaskId: null } : {}),
+      ...(sessionTool !== 'diff' && sessionTool !== 'file' ? { peek: null } : {}),
+    });
+  },
+  setSessionToolExpanded(sessionToolExpanded) {
+    set({ sessionToolExpanded });
+  },
+  setProjectTool(projectTool) {
+    set({
+      projectTool,
+      surface: projectTool ? 'workspace' : 'home',
+      ...(projectTool
+        ? { taskRoomTaskId: null, sessionTerminalId: null }
+        : { projectBottomTab: null }),
+    });
+  },
+  setProjectBottomTab(projectBottomTab) {
+    set({ projectBottomTab });
   },
   closePeekTab(path) {
     const peek = get().peek;
@@ -177,7 +237,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
   setPeekMode(mode) {
     const peek = get().peek;
-    if (peek) set({ peek: { ...peek, mode } });
+    if (peek) {
+      set({ peek: { ...peek, mode }, sessionTool: mode === 'diff' ? 'diff' : 'file' });
+    }
   },
   setPeekActive(path) {
     const peek = get().peek;
@@ -195,6 +257,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       taskRoomTaskId: taskId,
       sessionTerminalId: null,
       surface: 'home',
+      sessionTool: 'summary',
+      sessionToolExpanded: false,
+      projectTool: null,
+      projectBottomTab: null,
       ...(peek && peek.taskId !== taskId ? { peek: null } : {}),
     });
   },
@@ -206,11 +272,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
       surface: 'home',
       peek: null,
       previewRailTaskId: null,
+      sessionTool: 'terminal',
+      sessionToolExpanded: false,
+      projectTool: null,
+      projectBottomTab: null,
     });
   },
 
   closeTaskRoom() {
-    set({ taskRoomTaskId: null, sessionTerminalId: null, peek: null, previewRailTaskId: null });
+    set({
+      taskRoomTaskId: null,
+      sessionTerminalId: null,
+      peek: null,
+      previewRailTaskId: null,
+      sessionTool: 'summary',
+      sessionToolExpanded: false,
+      projectTool: null,
+      projectBottomTab: null,
+    });
   },
 
   setHomePick(inProgress) {
@@ -260,28 +339,52 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   toggleSidebar() {
-    get().setLayout({ sideBarVisible: !get().layout.sideBarVisible });
+    if (!get().taskRoomTaskId) {
+      set({ projectTool: get().projectTool === 'files' ? null : 'files' });
+    }
   },
   toggleAgentPanel() {
-    get().setLayout({ agentPanelVisible: !get().layout.agentPanelVisible });
+    if (get().taskRoomTaskId) {
+      set({ sessionTool: 'summary', sessionToolExpanded: !get().sessionToolExpanded });
+    }
   },
   toggleBottomPanel() {
-    if (get().surface === 'home') {
-      get().setSurface('workspace');
-      get().setLayout({ bottomPanelVisible: true });
-      return;
+    if (get().taskRoomTaskId) {
+      set({
+        sessionTool: get().sessionTool === 'terminal' ? 'summary' : 'terminal',
+        sessionToolExpanded: get().sessionTool !== 'terminal',
+      });
     }
-    get().setLayout({ bottomPanelVisible: !get().layout.bottomPanelVisible });
   },
   showSideBarView(view) {
-    get().setLayout({ sideBarView: view, sideBarVisible: true });
+    if (!get().taskRoomTaskId) {
+      set({
+        surface: 'workspace',
+        projectTool: view === 'search' ? 'search' : view === 'scm' ? 'changes' : 'files',
+      });
+      return;
+    }
+    set({
+      sessionTool: view === 'explorer' ? 'file' : view === 'scm' ? 'diff' : 'summary',
+      sessionToolExpanded: view === 'explorer' || view === 'scm',
+    });
   },
   showBottomTab(tab) {
-    // Bottom-panel commands remain globally available while Home covers the
-    // workbench. Reveal the Editor before opening the requested tab so actions
-    // such as Terminal → New Terminal never succeed invisibly behind Home.
-    get().setSurface('workspace');
-    get().setLayout({ bottomTab: tab, bottomPanelVisible: true });
+    if (!get().taskRoomTaskId) {
+      if (tab !== 'terminal') {
+        set({
+          surface: 'workspace',
+          projectTool: 'files',
+          projectBottomTab: tab,
+        });
+      }
+      return;
+    }
+    set({
+      surface: 'home',
+      sessionTool: tab === 'terminal' ? 'terminal' : tab === 'tests' ? 'review' : 'summary',
+      sessionToolExpanded: tab === 'terminal',
+    });
   },
   setPaletteOpen(open) {
     set({ paletteOpen: open });

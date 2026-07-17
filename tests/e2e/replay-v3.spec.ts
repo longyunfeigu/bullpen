@@ -32,15 +32,18 @@ test.describe('Replay V3 — one story, three depths', () => {
         timeout: 30000,
       });
 
-      // 0) Changes-panel entry: the play affordance on a file row opens the
-      //    replay anchored at that path's material change (not at 00:00).
-      await page.getByTestId('task-room-file-replay-src/index.ts').click();
+      // 0) Replay is a secondary Session action. A result claim seeks directly
+      //    to the file's material change rather than exposing peer navigation.
+      await page.getByTestId('session-more').click();
+      await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
+      await page.locator('.rp-summary-changed button').first().click();
       await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
       await page.getByTestId('replay-close').click();
       await expect(page.getByTestId('replay-view')).toHaveCount(0);
 
       // 1) Result-first: session contract + result card, and no autoplay.
+      await page.getByTestId('session-more').click();
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
       await expect(page.getByTestId('replay-contract')).toContainText('原始目标');
@@ -164,18 +167,20 @@ test.describe('Replay V3 — one story, three depths', () => {
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
     });
     try {
-      await page.getByTestId('new-task-btn').click();
-      await expect(page.getByTestId('new-task-dialog')).toBeVisible();
-      await page.getByTestId('task-title').fill('Replay verification');
-      await page.getByTestId('task-goal').fill('[scenario:verify-fail-fix] make the check pass');
-      await page.getByTestId('task-verification-custom').fill('node check-agent.mjs');
-      await page.getByTestId('mode-auto').check();
-      await expect(page.getByTestId('task-model')).toHaveValue(/mock/);
-      await page.getByTestId('task-create-start').click();
+      await page.getByTestId('surface-home').click();
+      await expect(page.getByTestId('home-model')).toContainText(/mock/i);
+      await page.getByTestId('home-mode-auto').click();
+      await page.getByTestId('home-advanced-toggle').click();
+      await page.getByTestId('home-adv-title').fill('Replay verification');
+      await page.getByTestId('home-verif-custom').fill('node check-agent.mjs');
+      await page.getByTestId('home-verif-custom').press('Enter');
+      await page.getByTestId('home-intent').fill('[scenario:verify-fail-fix] make the check pass');
+      await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 40000,
       });
 
+      await page.getByTestId('session-more').click();
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
 
@@ -308,6 +313,7 @@ test.describe('Replay V3 — one story, three depths', () => {
       ) {
         await page.getByTestId('review-close').click();
       }
+      await page.getByTestId('session-more').click();
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
       await expect(page.getByTestId('replay-count')).toContainText('/ 10', { timeout: 30000 });
@@ -343,12 +349,13 @@ test.describe('Replay V3 — one story, three depths', () => {
     });
     try {
       page.on('dialog', (dialog) => void dialog.accept());
-      await page.getByTestId('new-task-btn').click();
-      await page.getByTestId('task-title').fill('Replay approvals');
-      await page.getByTestId('task-goal').fill('[scenario:edit-rollback] touch everything');
-      await page.getByTestId('mode-auto').check();
-      await expect(page.getByTestId('task-model')).toHaveValue(/mock/);
-      await page.getByTestId('task-create-start').click();
+      await page.getByTestId('surface-home').click();
+      await expect(page.getByTestId('home-model')).toContainText(/mock/i);
+      await page.getByTestId('home-mode-auto').click();
+      await page.getByTestId('home-advanced-toggle').click();
+      await page.getByTestId('home-adv-title').fill('Replay approvals');
+      await page.getByTestId('home-intent').fill('[scenario:edit-rollback] touch everything');
+      await page.getByTestId('home-submit').click();
 
       // delete_file is R3 — approve it, then let the run finish.
       await expect(page.getByTestId('perm-card')).toBeVisible({ timeout: 20000 });
@@ -364,6 +371,7 @@ test.describe('Replay V3 — one story, three depths', () => {
       await expect(page.getByTestId('replay-step')).toContainText('Waiting for approval');
       await page.getByTestId('replay-close').click();
 
+      await page.getByTestId('session-more').click();
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
 

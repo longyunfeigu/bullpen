@@ -98,7 +98,11 @@ test.describe('P3 full mode (ADR-0012)', () => {
       await expect(page.getByTestId('timeline')).toContainText('Auto-apply paused', {
         timeout: 20000,
       });
-      await expect(page.getByTestId('review-open')).toBeVisible();
+      await expect(page.getByTestId('session-tool-review')).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      await expect(page.getByTestId('review-bar-open')).toBeVisible();
       // Still REVIEW_READY (no delayed auto-accept sneaking in).
       await page.waitForTimeout(600);
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY');

@@ -198,17 +198,17 @@ export function FilePeek(props: {
             <button
               className="ghostbtn"
               data-testid="peek-open-editor"
-              title="Open the same buffer in the full workspace"
+              title="Edit the same buffer in the expanded Session tool canvas"
               onClick={() => props.onOpenInEditor(active)}
             >
               <Ic name="layout" size={11} />
-              Full workspace
+              Expand editor
             </button>
           </>
         ) : (
           <span
             className="tr-peek-wt"
-            title="This task works in an isolated worktree — the project tree does not contain these changes until you accept"
+            title="This Session works in an isolated worktree — the project tree does not contain these changes until you accept"
           >
             worktree
           </span>

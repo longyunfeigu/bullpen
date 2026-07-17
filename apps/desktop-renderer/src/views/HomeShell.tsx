@@ -7,27 +7,33 @@ import { useExternalStore } from '../store/externalStore.js';
 import { HomeView } from './HomeView.js';
 import { TaskRoomView } from './TaskRoomView.js';
 import { SessionTerminalView } from './SessionTerminalView.js';
+import { ProjectToolView } from './ProjectToolView.js';
+import { useTerminalStore } from './TerminalPanel.js';
 import { FileLens } from './FileLens.js';
 import { NewProjectDialog } from './NewProjectDialog.js';
 import '../styles/home.css';
 import '../styles/room.css';
 import '../styles/session-workbench.css';
+import '../styles/session-canvas.css';
 
 /**
- * Persistent shell (ADR-0009, PIVOT-028): the sidebar is the app's skeleton —
- * it never unmounts. The content area swaps between the Launcher (composer +
- * mission control) and a Task Room. Being inside a room no longer costs you
- * the global picture: other tasks' heartbeats stay one glance away.
+ * Persistent Session shell: the rail is the app's skeleton and never unmounts.
+ * The content area swaps between the shared Composer, a managed Session Canvas
+ * and a native-agent terminal without creating another application frame.
  */
 export function HomeShell(): React.JSX.Element {
   const taskRoomTaskId = useAppStore((s) => s.taskRoomTaskId);
   const sessionTerminalId = useAppStore((s) => s.sessionTerminalId);
+  const projectTool = useAppStore((s) => s.projectTool);
   const lens = useAppStore((s) => s.lens);
   const setLens = useAppStore((s) => s.setLens);
   const newProjectOpen = useAppStore((s) => s.newProjectOpen);
   const setNewProjectOpen = useAppStore((s) => s.setNewProjectOpen);
   const taskStore = useTaskStore();
   const taskByTerminal = useExternalStore((s) => s.taskByTerminal);
+  const selectedTerminal = useTerminalStore((s) =>
+    sessionTerminalId ? s.items.find((item) => item.id === sessionTerminalId) : undefined,
+  );
   const hydrate = useActivityStore((s) => s.hydrate);
 
   useEffect(() => {
@@ -54,11 +60,15 @@ export function HomeShell(): React.JSX.Element {
   // selection to the richer Task Room without recreating or moving the PTY.
   useEffect(() => {
     if (!sessionTerminalId) return;
+    // A plain shell may later launch several external agents and remains the
+    // user's Terminal Session manager. Composer-launched Claude/Codex sessions
+    // can migrate directly into their richer evidence room.
+    if (selectedTerminal?.launch === 'shell') return;
     const detectedTaskId = taskByTerminal[sessionTerminalId];
     if (!detectedTaskId || !taskStore.tasks.some((task) => task.id === detectedTaskId)) return;
     void taskStore.openTask(detectedTaskId);
     useAppStore.getState().openTaskRoom(detectedTaskId);
-  }, [sessionTerminalId, taskByTerminal, taskStore]);
+  }, [sessionTerminalId, selectedTerminal?.launch, taskByTerminal, taskStore]);
 
   return (
     <div className="hm-root" data-testid="home-shell">
@@ -67,6 +77,8 @@ export function HomeShell(): React.JSX.Element {
           <SessionTerminalView terminalId={sessionTerminalId} />
         ) : taskRoomTaskId ? (
           <TaskRoomView />
+        ) : projectTool ? (
+          <ProjectToolView tool={projectTool} />
         ) : (
           <HomeView />
         )}

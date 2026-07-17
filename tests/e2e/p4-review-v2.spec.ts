@@ -26,7 +26,7 @@ test.describe('P4 review v2 + decorations (ADR-0013)', () => {
         timeout: 30000,
       });
 
-      await page.getByTestId('review-open').click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible();
 
       // The Monaco diff renders both sides of the selected file.
@@ -79,13 +79,15 @@ test.describe('P4 review v2 + decorations (ADR-0013)', () => {
         timeout: 30000,
       });
 
-      // Editor surface: the modified file carries an agent-record mark (M)
-      // even though git has nothing to say in this folder.
-      await page.getByTestId('task-room-open-editor').click();
-      const srcRow = page.getByTestId('tree-item-src');
-      await expect(srcRow).toBeVisible({ timeout: 15000 });
-      await srcRow.click();
-      await expect(page.getByTestId('tree-git-src/index.ts')).toHaveText('M', { timeout: 15000 });
+      // A non-git change remains first-class evidence. Opening it expands the
+      // Session-owned File tool and mounts the real editor beside the conversation.
+      await page.getByTestId('task-room-file-src/index.ts').click();
+      await page.getByTestId('peek-mode-edit').click();
+      await expect(page.getByTestId('file-peek').getByTestId('editor-groups')).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(page.getByTestId('tab-src/index.ts')).toBeVisible();
+      await expect(page.getByTestId('home-sidebar')).toBeVisible();
     } finally {
       await app.close();
     }

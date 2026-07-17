@@ -39,7 +39,7 @@ test.describe('Shell v5 — in-room file peek and zoom continuity', () => {
       await expect(page.getByTestId('peek-body')).toContainText('add(3, 4)', { timeout: 10000 });
 
       // Timeline evidence paths open the peek too (read tool → file mode).
-      await page.getByTestId('peek-close').click();
+      await page.keyboard.press('Escape');
       await expect(page.getByTestId('file-peek')).toHaveCount(0);
       await page.getByTestId('tl-path-src/index.ts').first().click();
       await expect(page.getByTestId('file-peek')).toBeVisible();
@@ -50,11 +50,14 @@ test.describe('Shell v5 — in-room file peek and zoom continuity', () => {
       await expect(page.getByTestId('file-peek')).toHaveCount(0);
       await expect(page.getByTestId('task-room-file-src/index.ts')).toBeVisible();
 
-      // Escape hatch: the peek header button is an EXPLICIT Editor entry.
+      // Explicit edit expands the same File tool; room and conversation stay mounted.
       await page.getByTestId('task-room-file-src/index.ts').click();
       await page.getByTestId('peek-open-editor').click();
-      await expect(page.getByTestId('home-shell')).toHaveCount(0);
-      await expect(page.getByTestId('agent-panel-main')).toBeVisible();
+      await expect(page.getByTestId('home-shell')).toBeVisible();
+      await expect(page.getByTestId('task-room')).toBeVisible();
+      await expect(page.getByTestId('agent-panel-main')).toHaveCount(0);
+      await expect(page.getByTestId('peek-mode-edit')).toHaveAttribute('aria-checked', 'true');
+      await expect(page.getByTestId('file-peek').getByTestId('editor-groups')).toBeVisible();
       await expect(page.getByTestId('tab-src/index.ts')).toBeVisible();
     } finally {
       await app.close();
@@ -77,22 +80,19 @@ test.describe('Shell v5 — in-room file peek and zoom continuity', () => {
         timeout: 30000,
       });
 
-      // Open a peek and start typing a reply — then jump to the Editor.
+      // Open a peek and start typing a reply — then expand into edit mode.
       await page.getByTestId('task-room-file-src/index.ts').click();
       await expect(page.getByTestId('file-peek')).toBeVisible();
       await page.getByTestId('agent-input').fill('also add a unit test for main()');
-      await page.getByTestId('task-room-open-editor').click();
+      await page.getByTestId('peek-mode-edit').click();
 
-      // The Editor carries the task context: panel visible, SAME draft text.
-      await expect(page.getByTestId('home-shell')).toHaveCount(0);
-      await expect(page.getByTestId('agent-panel-main')).toBeVisible();
-      await expect(page.getByTestId('agent-input')).toHaveValue('also add a unit test for main()');
-
-      // ⌂ Home returns to the same room with the draft AND the peek intact.
-      await page.getByTestId('surface-home').click();
+      // The real Editor shares the Session canvas and preserves the SAME draft.
+      await expect(page.getByTestId('home-shell')).toBeVisible();
       await expect(page.getByTestId('task-room')).toBeVisible();
-      await expect(page.getByTestId('file-peek')).toBeVisible();
+      await expect(page.getByTestId('agent-panel-main')).toHaveCount(0);
+      await expect(page.getByTestId('file-peek').getByTestId('editor-groups')).toBeVisible();
       await expect(page.getByTestId('agent-input')).toHaveValue('also add a unit test for main()');
+      await expect(page.getByTestId('file-peek')).toBeVisible();
     } finally {
       await app.close();
     }

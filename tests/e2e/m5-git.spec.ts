@@ -17,7 +17,7 @@ test.describe('M5 git workflow', () => {
       // Modify a file externally (same as editing+saving).
       writeFileSync(join(fixture, 'src/util.ts'), 'export const changed = true;\n');
 
-      await page.getByTestId('activity-scm').click();
+      await page.getByTestId('project-tool-changes').click();
       await expect(page.getByTestId('scm-view')).toBeVisible();
       await expect(page.getByTestId('scm-entry-src/util.ts')).toBeVisible({ timeout: 15000 });
 
@@ -82,10 +82,10 @@ test.describe('M5 git workflow', () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     try {
-      await page.getByTestId('activity-scm').click();
+      await page.getByTestId('project-tool-changes').click();
       await expect(page.getByTestId('scm-no-repo')).toBeVisible();
       // Editor still fully works.
-      await page.getByTestId('activity-explorer').click();
+      await page.getByTestId('project-tool-files').click();
       await page.getByTestId('tree-item-README.md').click();
       await expect(page.getByTestId('tab-README.md')).toBeVisible();
     } finally {

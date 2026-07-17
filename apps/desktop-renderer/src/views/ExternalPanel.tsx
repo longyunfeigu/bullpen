@@ -23,7 +23,6 @@ export function ExternalPanel(): React.JSX.Element | null {
   );
   const session = useExternalStore((s) => (promoted ? s.sessions[promoted.taskId] : undefined));
   const width = useExternalStore((s) => s.panelWidth);
-  const surface = useAppStore((s) => s.surface);
   const items = useTerminalStore((s) => s.items);
   const task = useTaskStore((s) =>
     promoted ? (s.tasks.find((entry) => entry.id === promoted.taskId) ?? null) : null,
@@ -34,15 +33,14 @@ export function ExternalPanel(): React.JSX.Element | null {
 
   const item = promoted ? (items.find((t) => t.id === promoted.terminalId) ?? null) : null;
 
-  // Mount the promoted terminal (same mount substrate as the dock / the room).
-  // The room takes the instance while it is open (Home surface) — only claim
-  // it while the Editor surface is actually in front.
+  // This panel is mounted only inside the Terminal Session manager, so it can
+  // claim the promoted xterm without relying on the removed workspace surface.
   useEffect(() => {
     const host = hostRef.current;
-    if (!host || !item || surface !== 'workspace') return;
+    if (!host || !item) return;
     mountTerminal(host, item);
     return observeTerminalFit(host, item);
-  }, [item, surface]);
+  }, [item]);
 
   // Keep the resize cursor and suppress accidental editor/terminal selection
   // while pointer capture carries the drag across Monaco and xterm.

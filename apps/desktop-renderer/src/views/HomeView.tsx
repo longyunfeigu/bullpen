@@ -8,7 +8,7 @@ import { useTaskStore, titleFromIntent, RUNNING_TASK_STATES } from '../store/tas
 import { useActivityStore, currentActionLine } from '../store/activityStore.js';
 import { useGlowTasks } from './useGlow.js';
 import { needsAttention, ATTENTION_STATES } from './HomeSidebar.js';
-import { Ic } from './home-icons.js';
+import { Ic, ProviderMark } from './home-icons.js';
 import {
   MODE_META,
   type ThinkingLevelId,
@@ -17,9 +17,10 @@ import {
   presentedMeta,
 } from './labels.js';
 import { ArmedIconButton, ModelEffortControl } from './ui.js';
-import { LiveBoard } from './LiveBoard.js';
 import { readDragRef } from './dragRefs.js';
 import { useSkillSlash } from './SkillSlashPicker.js';
+import { useTerminalStore } from './TerminalPanel.js';
+import { LiveBoard } from './LiveBoard.js';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
 
@@ -32,6 +33,7 @@ interface SelectedConversationRef {
 }
 
 type ReferencePickerItem = { kind: 'conversation'; task: TaskDto } | { kind: 'file'; path: string };
+type ComposerAgent = 'pi' | 'claude' | 'codex';
 
 function parseCustomCommand(raw: string): VerificationCommand | null {
   const parts = raw.trim().split(/\s+/);
@@ -59,6 +61,8 @@ export function HomeView(): React.JSX.Element {
   const glowTasks = useGlowTasks();
 
   const [intent, setIntent] = useState('');
+  const [agent, setAgent] = useState<ComposerAgent>('pi');
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   // Settings → Agent → default mode seeds the composer (it loads before mount).
   const [mode, setMode] = useState<'ask' | 'edit' | 'auto' | 'full'>(
     () => useAppStore.getState().settings?.agent.defaultMode ?? 'edit',
@@ -204,22 +208,24 @@ export function HomeView(): React.JSX.Element {
 
   // Dropdowns close on any outside interaction (they overlay the composer).
   useEffect(() => {
-    if (!projectMenuOpen && !pickerOpen) return;
+    if (!projectMenuOpen && !pickerOpen && !agentMenuOpen) return;
     const onDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
       if (
         target &&
         !target.closest('.hm-menu') &&
+        !target.closest('.hm-agent-picker-wrap') &&
         !target.closest('[data-testid="home-project"]') &&
         !target.closest('[data-testid="home-attach"]')
       ) {
         setProjectMenuOpen(false);
         setPickerOpen(false);
+        setAgentMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
-  }, [projectMenuOpen, pickerOpen]);
+  }, [projectMenuOpen, pickerOpen, agentMenuOpen]);
 
   // ADR-0008 (PIVOT-021/022): tasks open in their Task Room — never the Editor.
   const openTask = useCallback(
@@ -246,11 +252,6 @@ export function HomeView(): React.JSX.Element {
       setProjectMenuOpen(true);
       return;
     }
-    const [providerId, modelId] = modelKey.split('::');
-    if (!providerId || !modelId) {
-      app.pushToast('warning', 'No model available — add a provider key in Settings.');
-      return;
-    }
     let goal = intent.trim();
     if (advanced && boundaries.trim()) goal += `\n\nConstraints:\n${boundaries.trim()}`;
     if (refs.length > 0) goal += `\n\nContext files:\n${refs.map((r) => `- @${r}`).join('\n')}`;
@@ -264,6 +265,38 @@ export function HomeView(): React.JSX.Element {
     const verification = advanced
       ? [...suggestions.filter((s) => selectedVerif.has(s.label)), ...customVerif]
       : [];
+
+    // Claude and Codex are execution backends inside the same Composer. Their
+    // native PTY is still preserved, but it is no longer a separate creation
+    // doorway in the global rail.
+    if (agent !== 'pi') {
+      setSubmitting(true);
+      useTerminalStore.getState().init();
+      const id = await useTerminalStore.getState().create({
+        launch: agent,
+        context: { kind: 'focused' },
+        title: titleFromIntent(intent),
+        reveal: false,
+      });
+      if (id) {
+        app.openTerminalSession(id);
+        const prompt = goal;
+        window.setTimeout(() => {
+          void rpcResult('terminal.write', { id, data: `\u001b[200~${prompt}\u001b[201~\r` });
+        }, 350);
+        setIntent('');
+        setRefs([]);
+        setConversationRefs([]);
+      }
+      setSubmitting(false);
+      return;
+    }
+
+    const [providerId, modelId] = modelKey.split('::');
+    if (!providerId || !modelId) {
+      app.pushToast('warning', 'No model available — add a provider key in Settings.');
+      return;
+    }
 
     setSubmitting(true);
     const ok = await taskStore.createAndStart({
@@ -757,7 +790,7 @@ export function HomeView(): React.JSX.Element {
             className="hm-ta"
             data-testid="home-intent"
             value={intent}
-            placeholder="Describe a task, ask a question, or paste an error…"
+            placeholder="Describe an outcome, ask a question, or paste an error…"
             rows={2}
             onChange={(e) => {
               setIntent(e.target.value);
@@ -779,7 +812,7 @@ export function HomeView(): React.JSX.Element {
           />
           {slash.menu}
 
-          {advanced ? (
+          {advanced && agent === 'pi' ? (
             <div className="hm-adv" data-testid="home-advanced">
               <div className="hm-field">
                 <label>Title (optional — defaults to the first line)</label>
@@ -928,60 +961,144 @@ export function HomeView(): React.JSX.Element {
             >
               <Ic name="at" size={15} />
             </button>
-            <div
-              className="hm-seg"
-              data-testid="home-mode"
-              data-mode={mode}
-              role="radiogroup"
-              aria-label="Trust level"
-              title={activeModeHint}
-            >
-              {MODE_META.map((m) => (
-                <button
-                  key={m.id}
-                  className={`${mode === m.id ? 'on' : ''} ${m.danger ? 'danger' : ''}`}
-                  data-testid={`home-mode-${m.id}`}
-                  role="radio"
-                  aria-checked={mode === m.id}
-                  title={`${m.label} — ${m.hint}`}
-                  onClick={() => setMode(m.id)}
-                >
-                  {m.seg}
-                </button>
-              ))}
+            <div className="hm-agent-picker-wrap">
+              <button
+                type="button"
+                className="hm-agent-picker"
+                data-testid="home-agent"
+                aria-haspopup="menu"
+                aria-expanded={agentMenuOpen}
+                title="Choose the Agent backend for this Session"
+                onClick={() => setAgentMenuOpen(!agentMenuOpen)}
+              >
+                <ProviderMark provider={agent} size={15} />
+                <span>{agent === 'pi' ? 'Charter' : agent === 'claude' ? 'Claude' : 'Codex'}</span>
+                <Ic name="chevron" size={11} />
+              </button>
+              {agentMenuOpen ? (
+                <div className="hm-agent-menu" data-testid="home-agent-menu" role="menu">
+                  {(
+                    [
+                      ['pi', 'Charter Agent', 'Plans, permissions, tools and evidence ledger'],
+                      [
+                        'claude',
+                        'Claude Code',
+                        'Native CLI, preserved inside the same Session shell',
+                      ],
+                      ['codex', 'Codex', 'Native CLI, preserved inside the same Session shell'],
+                    ] as const
+                  ).map(([id, label, detail]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={agent === id ? 'active' : ''}
+                      role="menuitemradio"
+                      aria-checked={agent === id}
+                      data-testid={`home-agent-${id}`}
+                      onClick={() => {
+                        setAgent(id);
+                        setAgentMenuOpen(false);
+                      }}
+                    >
+                      <ProviderMark provider={id} size={18} />
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{detail}</small>
+                      </span>
+                      {agent === id ? <Ic name="check" size={12} /> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
+            {agent === 'pi' ? (
+              <div
+                className="hm-seg"
+                data-testid="home-mode"
+                data-mode={mode}
+                role="radiogroup"
+                aria-label="Trust level"
+                title={activeModeHint}
+              >
+                {MODE_META.map((m) => (
+                  <button
+                    key={m.id}
+                    className={`${mode === m.id ? 'on' : ''} ${m.danger ? 'danger' : ''}`}
+                    data-testid={`home-mode-${m.id}`}
+                    role="radio"
+                    aria-checked={mode === m.id}
+                    title={`${m.label} — ${m.hint}`}
+                    onClick={() => setMode(m.id)}
+                  >
+                    {m.seg}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="hm-native-chip">
+                <Ic name="terminal" size={12} /> Native CLI permissions
+              </span>
+            )}
             <button
               className="hm-chip lite"
               data-testid="home-advanced-toggle"
+              disabled={agent !== 'pi'}
+              title={
+                agent === 'pi'
+                  ? 'Show Session charter options'
+                  : 'Advanced charter options apply to managed Charter Agents'
+              }
               onClick={() => setAdvanced(!advanced)}
             >
               {advanced ? 'Simple' : 'Advanced'}
             </button>
             <span className="hm-spacer" />
-            <ModelEffortControl
-              models={configuredModels}
-              modelKey={modelKey}
-              onModelKey={setModelKey}
-              thinking={thinking}
-              onThinking={setThinking}
-              onConfigureModels={() => app.openSettings('models')}
-              testid="home"
-            />
+            {agent === 'pi' ? (
+              <ModelEffortControl
+                models={configuredModels}
+                modelKey={modelKey}
+                onModelKey={setModelKey}
+                thinking={thinking}
+                onThinking={setThinking}
+                onConfigureModels={() => app.openSettings('models')}
+                testid="home"
+              />
+            ) : null}
             <button
-              className={`hm-send ${intent.trim() && !submitting && modelKey ? 'ready' : ''}`}
+              className={`hm-send ${intent.trim() && !submitting && (agent !== 'pi' || modelKey) ? 'ready' : ''}`}
               data-testid="home-submit"
-              disabled={!intent.trim() || submitting || !modelKey}
-              aria-label={modelKey ? 'Start task' : 'Configure a model before starting a task'}
-              title={modelKey ? 'Start task' : 'Configure a model before starting a task'}
+              disabled={!intent.trim() || submitting || (agent === 'pi' && !modelKey)}
+              aria-label={
+                agent === 'pi' && !modelKey
+                  ? 'Configure a model before starting a Session'
+                  : 'Start Session'
+              }
+              title={
+                agent === 'pi' && !modelKey
+                  ? 'Configure a model before starting a Session'
+                  : 'Start Session'
+              }
               onClick={() => void submit()}
             >
               <Ic name="arrowUp" size={15} strokeWidth={2} />
             </button>
           </div>
         </div>
-        <div className={`hm-hint ${mode === 'full' ? 'danger' : ''}`} data-testid="home-mode-hint">
-          <b>{MODE_META.find((m) => m.id === mode)?.label}</b> — {activeModeHint}. ⏎ to start · ⇧⏎
-          new line.
+        <div
+          className={`hm-hint ${agent === 'pi' && mode === 'full' ? 'danger' : ''}`}
+          data-testid="home-mode-hint"
+        >
+          {agent === 'pi' ? (
+            <>
+              <b>{MODE_META.find((m) => m.id === mode)?.label}</b> — {activeModeHint}.
+            </>
+          ) : (
+            <>
+              <b>{agent === 'claude' ? 'Claude Code' : 'Codex'}</b> — opens a preserved native
+              session in this project.
+            </>
+          )}{' '}
+          ⏎ to start · ⇧⏎ new line.
         </div>
       </div>
 
@@ -999,12 +1116,15 @@ export function HomeView(): React.JSX.Element {
             <>
               <div className="hm-mc-label">RUNNING</div>
               <div data-testid="home-mc-running">
-                {running.map((t) => (
-                  <React.Fragment key={t.id}>
-                    {mcCard(t)}
+                {running.map((task) => (
+                  <React.Fragment key={task.id}>
+                    {mcCard(task)}
                     <LiveBoard
-                      taskId={t.id}
-                      onOpenLens={(path) => app.setLens({ taskId: t.id, path })}
+                      taskId={task.id}
+                      onOpenLens={(path) => {
+                        openTask(task.id);
+                        app.openPeek(task.id, path, 'diff');
+                      }}
                     />
                   </React.Fragment>
                 ))}

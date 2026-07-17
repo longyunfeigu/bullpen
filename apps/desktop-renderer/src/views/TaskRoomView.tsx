@@ -7,9 +7,6 @@ import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useEditorStore } from '../store/editorStore.js';
 import { StateBadge } from './AgentPanel.js';
 import { RoomTimeline } from './RoomTimeline.js';
-import { Markdown } from './Markdown.js';
-import { LiveBoard } from './LiveBoard.js';
-import { FilePeek } from './FilePeek.js';
 import { ConfirmDangerButton, ModelEffortControl } from './ui.js';
 import { Ic } from './home-icons.js';
 import {
@@ -18,22 +15,37 @@ import {
   canArchiveTask,
   isAnswered,
   modeLabel,
-  presentedMeta,
 } from './labels.js';
 import { hasDragRef, readDragRef } from './dragRefs.js';
 import { useSkillSlash } from './SkillSlashPicker.js';
 import { useDraftStore, type TerminalOutputRef } from '../store/draftStore.js';
-import { PreviewBadge, RoomPreviewRail } from './RoomPreviewRail.js';
+import { PreviewBadge } from './RoomPreviewRail.js';
 import { buildPreviewFeedbackText } from './LivePreview.js';
-import { openTaskInEditor } from './openInEditor.js';
 import { ExternalTerminalColumn, useExternalFiles } from './ExternalRoom.js';
-import { useExternalStore } from '../store/externalStore.js';
 import { roomCopyFor } from './roomCopy.js';
+import { SessionToolCanvas, type SessionFileStat } from './SessionToolCanvas.js';
 
 const EMPTY_TERMINAL_REFS: TerminalOutputRef[] = [];
 
+function sessionTitle(title: string): string {
+  const withoutFixtureDirective = title.replace(/^\[scenario:[^\]]+\]\s*/i, '').trim();
+  return withoutFixtureDirective || 'Untitled Session';
+}
+
+function sessionAgentLabel(task: {
+  external?: { cli: string } | null;
+  model: { providerId: string };
+}): string {
+  if (task.external) {
+    if (task.external.cli === 'claude') return 'Claude';
+    if (task.external.cli === 'codex') return 'Codex';
+    return task.external.cli;
+  }
+  return task.model.providerId === 'mock' ? 'Charter' : task.model.providerId;
+}
+
 /**
- * Task Room v2 (ADR-0008/0009, PIVOT-021/028): the per-task page rendered in
+ * Session Canvas (ADR-0008/0009, PIVOT-021/028): the collaboration ledger rendered in
  * the persistent shell's content area — the sidebar stays alive next to it.
  * Approvals, observation, the live focus board and the final decision live
  * here; the Editor is an optional deep-dive, never a required passage.
@@ -46,8 +58,9 @@ export function TaskRoomView(): React.JSX.Element {
   const workspaceStore = useWorkspaceStore();
   const taskId = useAppStore((s) => s.taskRoomTaskId);
   const task = store.tasks.find((t) => t.id === taskId) ?? null;
-  const resumingExternalTaskId = useExternalStore((s) => s.resumingTaskId);
   const activity = useActivityStore((s) => (taskId ? s.perTask[taskId] : undefined));
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     store.init();
@@ -85,7 +98,7 @@ export function TaskRoomView(): React.JSX.Element {
           </button>
         </div>
         <div className="empty-state">
-          <div>This task is not available anymore.</div>
+          <div>This Session is not available anymore.</div>
         </div>
       </div>
     );
@@ -93,11 +106,6 @@ export function TaskRoomView(): React.JSX.Element {
 
   const running = RUNNING_TASK_STATES.has(task.state);
   const answered = isAnswered(task);
-  const externalCanResume =
-    task.external?.status === 'ended' &&
-    (task.external.cli === 'claude' || task.external.cli === 'codex') &&
-    ['REVIEW_READY', 'INTERRUPTED', 'FAILED'].includes(task.state);
-  const externalResuming = resumingExternalTaskId === task.id;
   // ADR-0017: an external session's rail is fed by watcher accounting, not by
   // agent tool events (there are none). Same rows, same peek behavior.
   const externalFiles = useExternalFiles(task);
@@ -105,108 +113,135 @@ export function TaskRoomView(): React.JSX.Element {
     ? externalFiles.filter((f) => f.status !== 'deleted').map((f) => f.path)
     : (activity?.filesTouched ?? []);
   const sameProject = workspace?.path === task.projectPath;
-  const peek = useAppStore((s) => s.peek);
-  const peeking = peek !== null && peek.taskId === task.id;
-  // ADR-0022 am.2: the live-preview column shares the peek's side slot.
-  const previewing = useAppStore((s) => s.previewRailTaskId === task.id);
+  const fileStats = useMemo<Record<string, SessionFileStat>>(() => {
+    const stats: Record<string, SessionFileStat> = {};
+    for (const file of externalFiles) {
+      stats[file.path] = { additions: file.additions, deletions: file.deletions };
+    }
+    if (store.activeTaskId === task.id) {
+      for (const file of store.changeSet?.files ?? []) {
+        stats[file.path] = { additions: file.additions, deletions: file.deletions };
+      }
+    }
+    return stats;
+  }, [externalFiles, store.activeTaskId, store.changeSet, task.id]);
 
-  // ADR-0009/0014: shared with the room-aware ⌘E toggle (PIVOT-006r).
-  const openInEditor = (): void => openTaskInEditor(task);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (event: MouseEvent): void => {
+      if (moreRef.current && !moreRef.current.contains(event.target as Node)) setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [moreOpen]);
 
-  // Full-workspace escape hatch remains available, but the normal edit path is
-  // now the resident Session pane opened by task-room-edit-file / FilePeek.
+  // Editing is the expanded File tool state. The Session and conversation stay
+  // mounted; there is no separate Full workspace surface.
   const openFileInEditor = (path: string): void => {
     void editor.openFile(path);
-    openInEditor();
+    app.openPeek(task.id, path, 'edit');
+    app.setSessionToolExpanded(true);
   };
 
   return (
     <div className="tr-root" data-testid="task-room">
-      <div className="tr-head">
+      <div className="tr-head session-identity-head">
         <div className="tr-head-drag" />
         <button className="tr-back" data-testid="task-room-back" onClick={app.closeTaskRoom}>
           <Ic name="chevron" size={13} className="tr-back-ic" />
-          Sessions
+          All Sessions
         </button>
-        <span className="tr-title" title={task.title}>
-          {task.title}
-        </span>
-        {/* PIVOT-031: an answered task presents as such; data-state stays honest. */}
-        <StateBadge
-          state={task.state}
-          {...(answered ? { label: 'Answered', tone: 'ok' as const } : {})}
-        />
-        <span className="tr-proj" data-testid="task-room-project" title={task.projectPath}>
-          <Ic name="folder" size={11} />
-          {task.projectName}
-        </span>
-        {task.worktree ? <WorktreeChip task={task} /> : null}
-        <PreviewBadge task={task} />
-        {task.external ? (
-          <span
-            className="tr-extchip"
-            data-testid="task-room-external-chip"
-            title="External CLI session — runs outside the Tool Gateway. Entry snapshot taken; changes tracked and reviewable."
-          >
-            EXT · {task.external.cli}
-          </span>
-        ) : null}
+        <div className="session-identity">
+          <div className="session-identity-title">
+            <span className="tr-title" title={sessionTitle(task.title)}>
+              {sessionTitle(task.title)}
+            </span>
+            <StateBadge
+              state={task.state}
+              {...(answered ? { label: 'Answered', tone: 'ok' as const } : {})}
+            />
+          </div>
+          <div className="session-identity-meta">
+            <span className="tr-proj" data-testid="task-room-project" title={task.projectPath}>
+              <Ic name="folder" size={11} />
+              {task.projectName}
+            </span>
+            {task.worktree ? (
+              <WorktreeChip task={task} />
+            ) : (
+              <span className="tr-proj">
+                <Ic name="branch" size={11} />
+                <span className="mono">main</span>
+              </span>
+            )}
+            <span className="session-agent-chip" data-testid="session-agent-chip">
+              <Ic name={task.external ? 'terminal' : 'bot'} size={11} />
+              {sessionAgentLabel(task)}
+            </span>
+            {task.external ? (
+              <span
+                className="tr-extchip"
+                data-testid="task-room-external-chip"
+                title="External CLI session — process state and file evidence stay attached to this Session."
+              >
+                external
+              </span>
+            ) : null}
+          </div>
+        </div>
         <span className="tr-sp" />
-        {running && !task.external ? (
-          <button className="btn danger" data-testid="agent-stop" onClick={() => void store.stop()}>
-            Stop
-          </button>
-        ) : null}
-        {files[0] && sameProject && !task.worktree ? (
+        <PreviewBadge task={task} />
+        <div className="session-more" ref={moreRef}>
           <button
-            className="ghostbtn"
-            data-testid="task-room-edit-file"
-            title={`Edit ${files[0]} beside this Session`}
-            onClick={() => app.openPeek(task.id, files[0]!, 'edit')}
+            className="session-more-button"
+            data-testid="session-more"
+            aria-label="More Session actions"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen(!moreOpen)}
           >
-            <Ic name="pencil" size={12} />
-            Edit file
+            <span>More</span>
+            <Ic name="chevron" size={11} />
           </button>
-        ) : null}
-        <button
-          className="ghostbtn"
-          data-testid="replay-open"
-          title={
-            task.external
-              ? 'Replay the observed terminal, file versions and structured provider events'
-              : 'Replay what the agent did, step by step'
-          }
-          onClick={() => store.openReplay()}
-        >
-          <Ic name="play" size={12} />
-          Replay
-        </button>
-        <button
-          className="ghostbtn"
-          data-testid="task-room-open-editor"
-          title="Open the full workspace with this task's context"
-          onClick={openInEditor}
-        >
-          <Ic name="layout" size={12} />
-          Full workspace
-        </button>
-        {canArchiveTask(task) ? (
-          <ConfirmDangerButton
-            label="Archive…"
-            confirmLabel="Confirm — archive"
-            testid="task-archive"
-            quiet
-            title={
-              isAnswered(task)
-                ? 'Close out this answered task and hide it from the task list'
-                : 'Hide this finished task from the task list'
-            }
-            onConfirm={() => void store.archiveTask(task.id)}
-          />
-        ) : null}
+          {moreOpen ? (
+            <div className="session-more-menu" role="menu">
+              <button
+                data-testid="replay-open"
+                onClick={() => {
+                  setMoreOpen(false);
+                  store.openReplay();
+                }}
+              >
+                <Ic name="play" size={12} /> Replay Session
+              </button>
+              {files[0] && sameProject && !task.worktree ? (
+                <button
+                  data-testid="task-room-edit-file"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    openFileInEditor(files[0]!);
+                  }}
+                >
+                  <Ic name="pencil" size={12} /> Edit first changed file
+                </button>
+              ) : null}
+              {canArchiveTask(task) ? (
+                <ConfirmDangerButton
+                  label="Archive…"
+                  confirmLabel="Confirm — archive"
+                  testid="task-archive"
+                  quiet
+                  onConfirm={() => void store.archiveTask(task.id)}
+                />
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <div className={`tr-body ${peeking || previewing ? 'peeking' : ''}`}>
+      <div
+        className={`tr-body session-canvas-body ${app.sessionToolExpanded ? 'tool-expanded' : ''}`}
+      >
         <div className="tr-main">
           {task.external ? (
             /* ADR-0017: the conversation with an external agent IS its terminal —
@@ -219,282 +254,19 @@ export function TaskRoomView(): React.JSX.Element {
               <RoomTimeline task={task} />
             </>
           )}
-          {/* ADR-0016 (direction B): the completion report is STATE — a review
-              bar docked above the composer while the decision is pending. */}
-          {task.state === 'REVIEW_READY' && !answered ? <ReviewBar task={task} /> : null}
           {running && !task.external ? (
             <ActivityStrip taskId={task.id} taskText={`${task.title}\n${task.goalMd}`} />
           ) : null}
           {task.external ? null : <RoomComposer key={task.id} task={task} running={running} />}
         </div>
-
-        {peeking ? (
-          <FilePeek
-            taskId={task.id}
-            worktree={task.worktree !== null}
-            editableInWorkspace={sameProject && task.worktree === null}
-            onOpenInEditor={openFileInEditor}
-          />
-        ) : null}
-        {previewing ? <RoomPreviewRail task={task} /> : null}
-        {peeking || previewing ? (
-          <button
-            className="tr-rail-tab"
-            data-testid="peek-rail-restore"
-            title={
-              previewing
-                ? 'Close the preview and show the task rail'
-                : 'Close the peek and show the task rail'
-            }
-            onClick={previewing ? app.closePreviewRail : app.closePeek}
-          >
-            Changes{files.length > 0 ? ` · ${files.length}` : ''}
-          </button>
-        ) : null}
-
-        <aside className="tr-rail">
-          {task.worktree?.missing ? (
-            <div className="tr-note warn" data-testid="task-room-worktree-missing">
-              The isolated worktree folder for this task no longer exists on disk (it was removed
-              outside the app). Recorded changes and the timeline stay available; resuming the agent
-              or merging files is not possible — archive or roll back to close out.
-            </div>
-          ) : null}
-          {running ? (
-            <>
-              <h4 className="tr-rail-h">
-                This task <span className="tr-livechip">LIVE</span>
-              </h4>
-              <LiveBoard
-                taskId={task.id}
-                variant="rail"
-                // ADR-0014: in-room tiles open the resident peek, not the modal lens.
-                onOpenLens={(path) => app.openPeek(task.id, path, 'diff')}
-              />
-            </>
-          ) : null}
-
-          <h4 className="tr-rail-h">
-            Changes
-            {files.length > 0 ? ` · ${files.length} file${files.length === 1 ? '' : 's'}` : ''}
-          </h4>
-          {files.length === 0 ? (
-            <div className="tr-none">Nothing touched yet.</div>
-          ) : (
-            files.slice(-12).map((path) => (
-              <button
-                key={path}
-                className="tr-frow"
-                data-testid={`task-room-file-${path}`}
-                title={`Peek at what changed in ${path} — the conversation stays put`}
-                onClick={(e) => {
-                  // PIVOT-035: plain click peeks; ⌘/alt-click is the explicit
-                  // Editor jump (not offered for worktree tasks — the main tree
-                  // does not contain those changes).
-                  if ((e.metaKey || e.altKey || e.ctrlKey) && !task.worktree) {
-                    void editor.openFile(path);
-                    openInEditor();
-                  } else {
-                    app.openPeek(task.id, path, 'diff');
-                  }
-                }}
-              >
-                <Ic name="file" size={11} />
-                <span className="tr-fpath">{path}</span>
-                {task.external
-                  ? (() => {
-                      const f = externalFiles.find((x) => x.path === path);
-                      return f ? (
-                        <span className="tr-fstat">
-                          <span className="tr-fadd">+{f.additions}</span>{' '}
-                          <span className="tr-fdel">−{f.deletions}</span>
-                        </span>
-                      ) : null;
-                    })()
-                  : null}
-                <span
-                  className="tr-freplay"
-                  role="button"
-                  tabIndex={0}
-                  data-testid={`task-room-file-replay-${path}`}
-                  title="Replay this change — seek straight to the moment it happened"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    store.openReplay({ taskId: task.id, anchor: { type: 'path', path } });
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      store.openReplay({ taskId: task.id, anchor: { type: 'path', path } });
-                    }
-                  }}
-                >
-                  <Ic name="play" size={10} />
-                </span>
-              </button>
-            ))
-          )}
-
-          <h4 className="tr-rail-h">Verification</h4>
-          {verifications.length === 0 ? (
-            <div className="tr-none">No verification runs yet.</div>
-          ) : (
-            verifications.map((v) => (
-              <div key={v.label} className="tr-vrow">
-                <span className="tr-fpath">{v.label}</span>
-                <span className={`tr-vstate ${v.state === 'passed' ? 'ok' : 'bad'}`}>
-                  {v.state === 'passed' ? '✓ passed' : v.state}
-                </span>
-              </div>
-            ))
-          )}
-
-          <h4 className="tr-rail-h">Your decision</h4>
-          <div className="tr-decision">
-            {task.state === 'REVIEW_READY' && answered ? (
-              <>
-                <div className="tr-note" data-testid="task-room-answered">
-                  {task.external
-                    ? `The ${task.external.cli} session ended with no tracked file changes.`
-                    : 'The agent answered — nothing changed on disk, so there is nothing to review.'}
-                </div>
-                {externalCanResume ? (
-                  <button
-                    className="btn primary tr-wide"
-                    data-testid="task-resume"
-                    disabled={externalResuming}
-                    title={`Continue the previous ${task.external!.cli} conversation in its terminal`}
-                    onClick={() => void store.resumeTask(task.id)}
-                  >
-                    {externalResuming
-                      ? 'Resuming…'
-                      : `Resume ${task.external!.cli === 'claude' ? 'Claude' : 'Codex'} session`}
-                  </button>
-                ) : null}
-                <button
-                  className="btn tr-wide"
-                  data-testid="task-done"
-                  title="Close out this task"
-                  onClick={() => void store.acceptTask()}
-                >
-                  Done
-                </button>
-              </>
-            ) : task.state === 'REVIEW_READY' ? (
-              <>
-                {externalCanResume ? (
-                  <button
-                    className="btn primary tr-wide"
-                    data-testid="task-resume"
-                    disabled={externalResuming}
-                    title={`Continue the previous ${task.external!.cli} conversation in its terminal`}
-                    onClick={() => void store.resumeTask(task.id)}
-                  >
-                    {externalResuming
-                      ? 'Resuming…'
-                      : `Resume ${task.external!.cli === 'claude' ? 'Claude' : 'Codex'} session`}
-                  </button>
-                ) : null}
-                <button
-                  className={`btn ${externalCanResume ? '' : 'primary'} tr-wide`}
-                  data-testid="review-open"
-                  onClick={() => void store.openReview()}
-                >
-                  Review changes
-                </button>
-                <div className="tr-note">
-                  {task.worktree
-                    ? 'This task ran in its own worktree. Accepting merges its changes back into the project.'
-                    : 'Walk through each diff, then accept. A snapshot is kept — you can restore any time.'}
-                </div>
-                <hr />
-                <ConfirmDangerButton
-                  label={task.worktree ? 'Discard worktree…' : 'Roll back everything…'}
-                  confirmLabel={task.worktree ? 'Confirm — discard' : 'Confirm — restore all files'}
-                  testid="task-rollback"
-                  quiet
-                  title={
-                    task.worktree
-                      ? 'Throw away the isolated worktree; the project was never touched'
-                      : 'Restore every touched file to its pre-task state'
-                  }
-                  onConfirm={() => void store.rollbackTask()}
-                />
-              </>
-            ) : task.state === 'ACCEPTED' && !task.worktree ? (
-              <>
-                <div className="tr-note" data-testid="task-room-accepted">
-                  {task.mode === 'full'
-                    ? 'Completed & applied automatically (Full auto). Snapshots are kept — you can restore the pre-task state.'
-                    : 'Accepted. Snapshots are kept — you can still restore the pre-task state.'}
-                </div>
-                <ConfirmDangerButton
-                  label="Roll back…"
-                  confirmLabel="Confirm — restore all files"
-                  testid="task-rollback"
-                  quiet
-                  title="Restore every touched file to its pre-task state (drift-checked)"
-                  onConfirm={() => void store.rollbackTask()}
-                />
-              </>
-            ) : task.state === 'INTERRUPTED' || task.state === 'FAILED' ? (
-              <>
-                <button
-                  className="btn primary tr-wide"
-                  data-testid="task-resume"
-                  disabled={externalResuming}
-                  title={
-                    externalCanResume
-                      ? `Continue the previous ${task.external!.cli} conversation in its terminal`
-                      : 'Start a new run for this task'
-                  }
-                  onClick={() => void store.resumeTask(task.id)}
-                >
-                  {externalResuming
-                    ? 'Resuming…'
-                    : externalCanResume
-                      ? `Resume ${task.external!.cli === 'claude' ? 'Claude' : 'Codex'} session`
-                      : 'Resume'}
-                </button>
-                <button
-                  className="btn tr-wide"
-                  data-testid="review-open"
-                  title="Inspect what changed before deciding"
-                  onClick={() => void store.openReview()}
-                >
-                  Review changes
-                </button>
-                <hr />
-                <ConfirmDangerButton
-                  label="Roll back…"
-                  confirmLabel="Confirm — roll back"
-                  testid="task-rollback"
-                  quiet
-                  title="Restore every touched file to its pre-task state"
-                  onConfirm={() => void store.rollbackTask()}
-                />
-              </>
-            ) : task.state === 'AWAITING_PLAN_APPROVAL' ? (
-              <div className="tr-note">
-                A plan is waiting for you in the timeline. Approve it, edit it — or type below to
-                request changes.
-              </div>
-            ) : running && task.external ? (
-              <div className="tr-note" data-testid="task-room-external-running">
-                The session is live — talk to {task.external.cli} in its terminal. When it ends, the
-                changes land here for review.
-              </div>
-            ) : running ? (
-              <div className="tr-note">
-                The agent is working. You'll be asked here when a plan, permission or review needs
-                you.
-              </div>
-            ) : (
-              <div className="tr-note">{presentedMeta(task).label}.</div>
-            )}
-          </div>
-        </aside>
+        <SessionToolCanvas
+          task={task}
+          files={files}
+          fileStats={fileStats}
+          verifications={verifications}
+          editableInWorkspace={sameProject && task.worktree === null}
+          onOpenFile={openFileInEditor}
+        />
       </div>
     </div>
   );
@@ -503,198 +275,6 @@ export function TaskRoomView(): React.JSX.Element {
 function actionLine(kind: string, label: string): string {
   void kind;
   return label.length > 90 ? `${label.slice(0, 87)}…` : label;
-}
-
-/**
- * Review bar (ADR-0016, direction B): the completion report presented as
- * state, docked above the composer while the task is REVIEW_READY. Headline
- * evidence + the primary Review action inline; agent summary and rollback in
- * the overflow. Disappears the moment the state moves on — like the plan gate.
- * Data source is the recorded `report.final` event (never the agent's word).
- */
-function ReviewBar({
-  task,
-}: {
-  task: {
-    id: string;
-    goalMd: string;
-    worktree: { branch: string } | null;
-    verification: Array<{ label: string }>;
-  };
-}): React.JSX.Element | null {
-  const store = useTaskStore();
-  const copy = roomCopyFor(task.goalMd);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [summaryOpen, setSummaryOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: MouseEvent): void => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [menuOpen]);
-
-  // Latest recorded report for this task (loading → bar renders actions only).
-  const report = useMemo(() => {
-    for (let i = store.timeline.length - 1; i >= 0; i--) {
-      const event = store.timeline[i]!;
-      if (event.type === 'report.final') return event.payload as Record<string, unknown>;
-    }
-    return null;
-  }, [store.timeline]);
-
-  const changed = report?.changed as
-    { files: number; additions: number; deletions: number } | undefined;
-  const verification = report?.verification as
-    | {
-        runs: Array<{ label: string; state: string; stale?: boolean; superseded?: boolean }>;
-        passed: number;
-        failed: number;
-      }
-    | undefined;
-  const unverified = report?.unverified === true;
-  const risks = (report?.unresolvedRisks ?? []) as string[];
-  const agentSummary = typeof report?.agentSummary === 'string' ? report.agentSummary : null;
-  const superseded = verification?.runs.filter((r) => r.superseded).length ?? 0;
-  const stale = verification?.runs.some((r) => r.stale) === true;
-  const latestRuns = useMemo(() => {
-    const byLabel = new Map<string, { label: string; state: string }>();
-    for (const event of store.timeline) {
-      if (event.type !== 'verification.completed') continue;
-      const run = (event.payload as { run?: { label?: unknown; state?: unknown } }).run;
-      if (run && typeof run.label === 'string') {
-        byLabel.set(run.label, { label: run.label, state: String(run.state ?? '') });
-      }
-    }
-    return [...byLabel.values()];
-  }, [store.timeline]);
-  const effectiveVerification =
-    verification && verification.runs.length > 0
-      ? verification
-      : latestRuns.length > 0
-        ? {
-            runs: latestRuns,
-            passed: latestRuns.filter((run) => run.state === 'passed').length,
-            failed: latestRuns.filter((run) => run.state !== 'passed').length,
-          }
-        : verification;
-  const effectivelyUnverified = unverified && latestRuns.length === 0;
-
-  return (
-    <div className="tr-reviewbar" data-testid="review-bar">
-      <div className="tr-rb-main">
-        <span className="tr-rb-dot" aria-hidden />
-        <b>{copy.reviewReady}</b>
-        {changed && changed.files > 0 ? (
-          <span className="tr-rb-meta" data-testid="report-changed">
-            {changed.files} file{changed.files === 1 ? '' : 's'}{' '}
-            <span className="mono">
-              <i className="plus">+{changed.additions}</i>{' '}
-              <i className="minus">−{changed.deletions}</i>
-            </span>
-          </span>
-        ) : null}
-        {effectiveVerification && effectiveVerification.runs.length > 0 ? (
-          <span className="tr-rb-meta" data-testid="report-verification">
-            {copy.checks}: {effectiveVerification.passed} {copy.passed}
-            {effectiveVerification.failed > 0
-              ? `, ${effectiveVerification.failed} ${copy.failed}`
-              : ''}
-            {superseded > 0 ? ` · ${superseded} superseded${stale ? ' (stale)' : ''}` : ''}
-          </span>
-        ) : null}
-        <span className="tr-rb-sp" />
-        <button
-          className="btn primary"
-          data-testid="review-bar-open"
-          onClick={() => void store.openReview()}
-        >
-          {copy.reviewChanges}
-        </button>
-        <button
-          className="btn"
-          data-testid="review-bar-accept"
-          onClick={() => void store.acceptTask()}
-        >
-          {copy.accept}
-        </button>
-        <div className="tr-rb-morewrap" ref={menuRef}>
-          <button
-            className="tr-rb-more"
-            data-testid="review-bar-more"
-            title={`${copy.agentSummary} · ${task.worktree ? copy.discardWorktree : copy.rollbackAll}`}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(!menuOpen)}
-          >
-            ⋯
-          </button>
-          {menuOpen ? (
-            <div className="tr-rb-menu" data-testid="review-bar-menu" role="menu">
-              {agentSummary ? (
-                <button
-                  className="tr-rb-menurow"
-                  data-testid="review-bar-summary-toggle"
-                  onClick={() => {
-                    setSummaryOpen(!summaryOpen);
-                    setMenuOpen(false);
-                  }}
-                >
-                  {summaryOpen ? copy.hideAgentSummary : copy.agentSummary}
-                </button>
-              ) : null}
-              <div className="tr-rb-menucap">{copy.evidenceNote}</div>
-              <hr />
-              <ConfirmDangerButton
-                label={task.worktree ? copy.discardWorktree : copy.rollbackAll}
-                confirmLabel={task.worktree ? 'Confirm — discard' : 'Confirm — roll back all'}
-                testid="report-rollback"
-                quiet
-                title={
-                  task.worktree
-                    ? 'Throw away the isolated worktree; the project was never touched'
-                    : 'Restore every touched file to its pre-task state'
-                }
-                onConfirm={() => void store.rollbackTask()}
-              />
-            </div>
-          ) : null}
-        </div>
-      </div>
-      {effectivelyUnverified ? (
-        <div className="tr-rb-warn" data-testid="report-unverified">
-          <span>
-            {task.verification.length > 0
-              ? copy.configuredChecksNotRun(task.verification.length)
-              : copy.noVerification}
-          </span>
-          {task.verification.length > 0 ? (
-            <button
-              className="btn"
-              data-testid="review-bar-run-verification"
-              onClick={() => void store.runVerification()}
-            >
-              {copy.runChecks}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {risks.length > 0 ? (
-        <div className="tr-rb-warn">
-          {copy.risks}: {risks.join('; ')}
-        </div>
-      ) : null}
-      {summaryOpen && agentSummary ? (
-        <div className="tr-rb-summary" data-testid="review-bar-summary">
-          <div className="tr-rb-menucap">{copy.agentSummary}</div>
-          <Markdown text={agentSummary} />
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 /**
@@ -774,7 +354,7 @@ function WorktreeChip({
       <button
         className={`tr-proj tr-wtbtn ${missing ? 'warn' : ''}`}
         data-testid="task-room-worktree"
-        title="This task runs in an isolated worktree — changes reach the project only when you accept"
+        title="This Session runs in an isolated worktree — changes reach the project only when you accept"
         onClick={() => setOpen(!open)}
       >
         <Ic name="branch" size={11} />
@@ -795,9 +375,15 @@ function WorktreeChip({
             onClick={() => {
               setOpen(false);
               void import('./TerminalPanel.js').then(({ useTerminalStore }) => {
-                void useTerminalStore.getState().create({ taskId: task.id, title: wt.branch });
+                void useTerminalStore.getState().create({
+                  taskId: task.id,
+                  context: { kind: 'task', taskId: task.id },
+                  title: wt.branch,
+                  reveal: false,
+                });
               });
-              app.setSurface('workspace');
+              app.setSessionTool('terminal');
+              app.setSessionToolExpanded(true);
             }}
           >
             <Ic name="play" size={11} /> Open in terminal
@@ -1044,9 +630,11 @@ function RoomComposer({
     ? 'Request changes to the plan — the agent will revise it…'
     : running
       ? 'Reply — steer the agent or add context…'
-      : closed
-        ? 'Follow up — starts a new task in this project…'
-        : 'Reply — starts a new run…';
+      : task.state === 'REVIEW_READY'
+        ? 'Request changes or add review context…'
+        : closed
+          ? 'Follow up — starts a new Session in this project…'
+          : 'Reply or add context…';
 
   // "/" in the empty reply → enabled-skills picker (ADR-0015); works for
   // steers, new runs and follow-ups alike (expansion happens product-side).

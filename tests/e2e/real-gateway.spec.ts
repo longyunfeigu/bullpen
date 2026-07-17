@@ -20,7 +20,7 @@ test('real gateway: configure key+baseUrl, fetch models, run a real ask task', a
   });
   try {
     // 1) Configure the provider with key + base URL in Settings → Models.
-    await page.getByTestId('activity-settings').click();
+    await page.getByTestId('home-settings').click();
     await page.getByText('Models', { exact: true }).click();
     await page.getByTestId('provider-key-input').fill(KEY);
     await page.getByTestId('provider-baseurl-input').fill(BASEURL);
@@ -87,7 +87,7 @@ test('real gateway: LiteLLM preset over the OpenAI-compatible surface (PIVOT-033
   });
   try {
     // Configure the SAME gateway as an OpenAI-compatible LiteLLM provider.
-    await page.getByTestId('activity-settings').click();
+    await page.getByTestId('home-settings').click();
     await page.getByText('Models', { exact: true }).click();
     await page.getByTestId('provider-select').selectOption('litellm');
     await page.getByTestId('provider-key-input').fill(KEY);

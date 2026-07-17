@@ -46,12 +46,13 @@ test.describe('M10 — crash recovery, reliability, diagnostics', () => {
     try {
       const { page } = first;
       // Charter a multi-write task in edit mode: every write asks.
-      await page.getByTestId('new-task-btn').click();
-      await page.getByTestId('task-title').fill('Crash victim');
-      await page.getByTestId('task-goal').fill('[scenario:edit-multifile] cross-file change');
-      await page.getByTestId('mode-edit').check();
-      await expect(page.getByTestId('task-model')).toHaveValue(/mock/);
-      await page.getByTestId('task-create-start').click();
+      await page.getByTestId('surface-home').click();
+      await expect(page.getByTestId('home-model')).toContainText(/mock/i);
+      await page.getByTestId('home-mode-edit').click();
+      await page
+        .getByTestId('home-intent')
+        .fill('[scenario:edit-multifile] Crash victim cross-file change');
+      await page.getByTestId('home-submit').click();
 
       await expect(page.getByTestId('plan-card')).toBeVisible({ timeout: 20000 });
       await page.getByTestId('plan-approve').click();
@@ -184,7 +185,7 @@ test.describe('M10 — crash recovery, reliability, diagnostics', () => {
     });
     try {
       // Store a secret and run a task so the bundle has something to redact.
-      await page.getByTestId('activity-settings').click();
+      await page.getByTestId('home-settings').click();
       await page.getByText('Models', { exact: true }).click();
       await page.getByTestId('provider-key-input').fill('sk-supersecret-e2e-000111222');
       await page.getByTestId('provider-key-save').click();
@@ -202,9 +203,8 @@ test.describe('M10 — crash recovery, reliability, diagnostics', () => {
         timeout: 30000,
       });
 
-      // Export from Diagnostics (command palette route) — the palette chip
-      // lives in the Editor's title bar (ADR-0008).
-      await page.getByTestId('task-room-open-editor').click();
+      // Export from Diagnostics (command palette route) — the palette is part
+      // of the persistent Session shell, not an Editor-only title bar.
       await page.getByTestId('palette-chip').click();
       await page.getByPlaceholder('Type a command…').fill('diagnostics');
       await page.keyboard.press('Enter');

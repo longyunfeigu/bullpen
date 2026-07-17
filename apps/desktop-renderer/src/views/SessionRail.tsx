@@ -6,7 +6,7 @@ import { useAppStore } from '../store/appStore.js';
 import { useExternalStore } from '../store/externalStore.js';
 import { RUNNING_TASK_STATES, useTaskStore } from '../store/taskStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
-import { useTerminalStore, type TerminalLaunch } from './TerminalPanel.js';
+import { useTerminalStore } from './TerminalPanel.js';
 import { HomeProjectTree } from './HomeProjectTree.js';
 import { Ic, ProviderMark } from './home-icons.js';
 import { canArchiveTask, isAnswered, presentedMeta } from './labels.js';
@@ -24,7 +24,7 @@ type SessionEntry =
       projectName: string;
     };
 
-/** ADR-0023 direction D: the rail's three panel views behind the activity bar. */
+/** The rail's three contextual views inside the single navigation surface. */
 type RailView = 'sessions' | 'inbox' | 'projects';
 
 interface RailGroup {
@@ -212,124 +212,6 @@ function TerminalSessionRow({
   );
 }
 
-function NewSessionDialog({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const workspace = useWorkspaceStore((state) => state.workspace);
-  const app = useAppStore();
-  const [kind, setKind] = useState<'pi' | 'claude' | 'codex'>('pi');
-  const [creating, setCreating] = useState(false);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const create = async (): Promise<void> => {
-    if (kind === 'pi') {
-      app.closeTaskRoom();
-      app.setSurface('home');
-      app.focusComposer();
-      onClose();
-      return;
-    }
-    setCreating(true);
-    try {
-      const id = await useTerminalStore.getState().create({
-        launch: kind as TerminalLaunch,
-        context: workspace ? { kind: 'focused' } : { kind: 'scratch' },
-        title: kind === 'claude' ? 'Claude Code' : 'Codex',
-        reveal: false,
-      });
-      if (id) {
-        app.openTerminalSession(id);
-        onClose();
-      }
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  return (
-    <div
-      className="sr-modal-backdrop"
-      data-testid="session-create-dialog"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <section
-        className="sr-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sr-modal-title"
-      >
-        <header>
-          <div>
-            <h2 id="sr-modal-title">New Session</h2>
-            <p>
-              Choose how this working session should execute. Files, process state and review stay
-              attached to it.
-            </p>
-          </div>
-          <button className="modal-close" aria-label="Close" onClick={onClose}>
-            <Ic name="x" size={14} />
-          </button>
-        </header>
-        <div className="sr-kind-grid">
-          {(
-            [
-              ['pi', 'Pi Session', 'Managed multi-run task with plans, tools, review and steer.'],
-              [
-                'claude',
-                'Claude Code',
-                'A preserved external PTY with Claude’s native interactive surface.',
-              ],
-              [
-                'codex',
-                'Codex',
-                'A preserved external PTY for implementation or independent review.',
-              ],
-            ] as const
-          ).map(([value, title, detail]) => (
-            <button
-              key={value}
-              className={kind === value ? 'selected' : ''}
-              data-testid={`session-kind-${value}`}
-              onClick={() => setKind(value)}
-            >
-              <ProviderMark provider={value} size={22} />
-              <span>
-                <strong>{title}</strong>
-                <small>{detail}</small>
-              </span>
-            </button>
-          ))}
-        </div>
-        <div className="sr-context">
-          <span>Working context</span>
-          <strong>{workspace?.displayName ?? 'Scratch session'}</strong>
-          <small>{workspace?.path ?? 'A temporary host-resolved directory'}</small>
-        </div>
-        <footer>
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="btn primary"
-            data-testid="session-create-submit"
-            disabled={creating}
-            onClick={() => void create()}
-          >
-            {creating
-              ? 'Creating…'
-              : `Create ${kind === 'pi' ? 'Pi Session' : kind === 'claude' ? 'Claude Session' : 'Codex Session'}`}
-          </button>
-        </footer>
-      </section>
-    </div>
-  );
-}
-
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(
@@ -338,11 +220,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * Session Rail, direction D (ADR-0023): a slim activity bar (Sessions / Inbox /
- * Projects / Search, with Editor and Settings at the bottom) drives one context
- * panel. Sessions are grouped by project with a collapsed History group for
- * settled work; the amber "Needs you" row and the Inbox destination are the
- * same attention queue reached two ways.
+ * The one global Session Rail. Sessions are grouped by project with a collapsed
+ * History group for settled work; Needs You and Projects are contextual panel
+ * states, not parallel navigation shells.
  */
 export function SessionRail(): React.JSX.Element {
   const app = useAppStore();
@@ -353,7 +233,6 @@ export function SessionRail(): React.JSX.Element {
   const inbox = taskStore.tasks.filter((task) => !task.archived && needsAttention(task));
   const [recent, setRecent] = useState<RecentWorkspaceDto[]>([]);
   const [treeOpen, setTreeOpen] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [view, setView] = useState<RailView>('sessions');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(loadCollapsed);
 
@@ -496,13 +375,33 @@ export function SessionRail(): React.JSX.Element {
   const sessionsPanel = (
     <>
       <div className="sr-head">
-        <strong>Sessions</strong>
-        <span className="sr-shortcuts">⌘[ ⌘]</span>
+        <div className="sr-head-title">
+          <strong>Sessions</strong>
+          <span className="sr-shortcuts">⌘[ ⌘]</span>
+        </div>
+        <div className="sr-head-actions">
+          <button
+            data-testid="rail-search"
+            title="Search projects, Sessions and files · ⌘K"
+            aria-label="Search"
+            onClick={() => app.setLauncherOpen(true)}
+          >
+            <Ic name="search" size={13} />
+          </button>
+          <button
+            data-testid="home-settings"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => app.openSettings()}
+          >
+            <Ic name="sliders" size={13} />
+          </button>
+        </div>
         <div className="sr-new-wrap">
           <button
             className="sr-new"
             data-testid="home-new-task"
-            title="Start from the task composer"
+            title="Start from the shared Session Composer"
             onClick={() => {
               app.closeTaskRoom();
               app.setSurface('home');
@@ -510,15 +409,6 @@ export function SessionRail(): React.JSX.Element {
             }}
           >
             <Ic name="plus" size={13} /> New Session
-          </button>
-          <button
-            className="sr-new-menu"
-            data-testid="session-new-menu"
-            aria-label="Choose session type"
-            title="Choose Pi, Claude or Codex"
-            onClick={() => setDialogOpen(true)}
-          >
-            <Ic name="chevron" size={12} />
           </button>
         </div>
       </div>
@@ -611,6 +501,13 @@ export function SessionRail(): React.JSX.Element {
   const inboxPanel = (
     <>
       <div className="sr-head sr-head-plain">
+        <button
+          className="sr-head-back"
+          aria-label="Back to Sessions"
+          onClick={() => setView('sessions')}
+        >
+          <Ic name="chevron" size={12} />
+        </button>
         <strong>Needs you</strong>
         <span className="sr-shortcuts">{inbox.length} waiting</span>
       </div>
@@ -627,8 +524,7 @@ export function SessionRail(): React.JSX.Element {
     </>
   );
 
-  /** Quick-start a Pi session in a project: it becomes the working context and
-   * the composer is focused — one step to the point where intent can be typed. */
+  /** Bind the selected project to the shared Composer and focus intent. */
   const quickStartPi = (project: RecentWorkspaceDto): void => {
     if (workspaceStore.workspace?.path !== project.path) {
       app.setHomePick(true);
@@ -640,27 +536,16 @@ export function SessionRail(): React.JSX.Element {
     setView('sessions');
   };
 
-  /** One-click external PTY session bound to the hovered project — the global
-   * working context is intentionally untouched (ADR-0023 amendment). */
-  const quickSpawn = async (
-    launch: 'claude' | 'codex',
-    project: RecentWorkspaceDto,
-  ): Promise<void> => {
-    const id = await useTerminalStore.getState().create({
-      launch,
-      context: { kind: 'recent', projectPath: project.path },
-      title: launch === 'claude' ? 'Claude Code' : 'Codex',
-      reveal: false,
-    });
-    if (id) {
-      app.openTerminalSession(id);
-      setView('sessions');
-    }
-  };
-
   const projectsPanel = (
     <>
       <div className="sr-head sr-head-plain">
+        <button
+          className="sr-head-back"
+          aria-label="Back to Sessions"
+          onClick={() => setView('sessions')}
+        >
+          <Ic name="chevron" size={12} />
+        </button>
         <strong>Projects</strong>
         <span className="sr-shortcuts">working context</span>
       </div>
@@ -691,36 +576,14 @@ export function SessionRail(): React.JSX.Element {
                     <Ic name="chevron" size={12} className={treeOpen ? 'sr-chevron-open' : ''} />
                   ) : null}
                 </button>
-                <span
-                  className="sr-project-qs"
-                  role="group"
-                  aria-label={`Start a session in ${project.displayName}`}
+                <button
+                  className="sr-project-use"
+                  data-testid={`project-spawn-pi-${project.path}`}
+                  title={`Use ${project.displayName} in the shared Composer`}
+                  onClick={() => quickStartPi(project)}
                 >
-                  <button
-                    className="sr-qs-btn"
-                    data-testid={`project-spawn-pi-${project.path}`}
-                    title={`Start a Pi session in ${project.displayName} — focuses the composer`}
-                    onClick={() => quickStartPi(project)}
-                  >
-                    <ProviderMark provider="pi" size={15} />
-                  </button>
-                  <button
-                    className="sr-qs-btn"
-                    data-testid={`project-spawn-claude-${project.path}`}
-                    title={`New Claude Code session in ${project.displayName}`}
-                    onClick={() => void quickSpawn('claude', project)}
-                  >
-                    <ProviderMark provider="claude" size={15} />
-                  </button>
-                  <button
-                    className="sr-qs-btn"
-                    data-testid={`project-spawn-codex-${project.path}`}
-                    title={`New Codex session in ${project.displayName}`}
-                    onClick={() => void quickSpawn('codex', project)}
-                  >
-                    <ProviderMark provider="codex" size={15} />
-                  </button>
-                </span>
+                  Use
+                </button>
               </div>
               {active && treeOpen ? <HomeProjectTree /> : null}
             </React.Fragment>
@@ -748,73 +611,11 @@ export function SessionRail(): React.JSX.Element {
 
   return (
     <>
-      <aside className="sr-rail" data-testid="home-sidebar" aria-label="Sessions">
-        <nav className="sr-activity" aria-label="Primary destinations">
-          <span className="sr-activity-brand" aria-hidden>
-            <Ic name="flag" size={14} />
-          </span>
-          <button
-            className={`sr-activity-item ${view === 'sessions' ? 'active' : ''}`}
-            data-testid="rail-view-sessions"
-            title="Sessions"
-            aria-label="Sessions"
-            onClick={() => setView('sessions')}
-          >
-            <Ic name="terminal" size={16} />
-          </button>
-          <button
-            className={`sr-activity-item ${view === 'inbox' ? 'active' : ''}`}
-            data-testid="home-reviews"
-            title="Inbox — sessions waiting on you"
-            aria-label="Inbox"
-            onClick={() => setView('inbox')}
-          >
-            <Ic name="inbox" size={16} />
-            {inbox.length > 0 ? <span className="sr-mini-badge">{inbox.length}</span> : null}
-          </button>
-          <button
-            className={`sr-activity-item ${view === 'projects' ? 'active' : ''}`}
-            data-testid="rail-view-projects"
-            title="Projects"
-            aria-label="Projects"
-            onClick={() => setView('projects')}
-          >
-            <Ic name="folder" size={16} />
-          </button>
-          <button
-            className="sr-activity-item"
-            data-testid="rail-search"
-            title="Search projects, sessions and files · ⌘K"
-            aria-label="Search"
-            onClick={() => app.setLauncherOpen(true)}
-          >
-            <Ic name="search" size={16} />
-          </button>
-          <span className="sr-activity-spacer" />
-          <button
-            className={`sr-activity-item ${app.surface === 'workspace' ? 'active' : ''}`}
-            data-testid="home-open-ide"
-            title="Editor · ⌘E — the Session Rail stays visible"
-            aria-label="Editor"
-            onClick={() => app.setSurface('workspace')}
-          >
-            <Ic name="layout" size={16} />
-          </button>
-          <button
-            className="sr-activity-item"
-            data-testid="home-settings"
-            title="Settings"
-            aria-label="Settings"
-            onClick={() => app.openSettings()}
-          >
-            <Ic name="sliders" size={16} />
-          </button>
-        </nav>
+      <aside className="sr-rail sr-single" data-testid="home-sidebar" aria-label="Sessions">
         <section className="sr-panel">
           {view === 'inbox' ? inboxPanel : view === 'projects' ? projectsPanel : sessionsPanel}
         </section>
       </aside>
-      {dialogOpen ? <NewSessionDialog onClose={() => setDialogOpen(false)} /> : null}
     </>
   );
 }

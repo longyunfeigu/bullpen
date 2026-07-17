@@ -44,7 +44,7 @@ test('real gateway: conversation-first room — real write task, worklog evidenc
   });
   try {
     // 1) Real provider: key + base URL through Settings → Models.
-    await page.getByTestId('activity-settings').click();
+    await page.getByTestId('home-settings').click();
     await page.getByText('Models', { exact: true }).click();
     await page.getByTestId('provider-key-input').fill(KEY);
     await page.getByTestId('provider-baseurl-input').fill(BASEURL);

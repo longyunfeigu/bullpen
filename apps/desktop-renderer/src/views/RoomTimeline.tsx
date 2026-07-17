@@ -147,7 +147,10 @@ function recordedMessageParts(text: string): {
   acceptance: string[] | null;
   hasPriorTaskContext: boolean;
 } {
-  let message = text.trim();
+  // Scenario directives are a mock-runner control channel, not user-facing
+  // Session content. Keep them in recorded evidence but never leak them into
+  // the collaboration transcript.
+  let message = text.trim().replace(/^\[scenario:[^\]]+\]\s*/i, '');
   let acceptance: string[] | null = null;
   const noAcceptance = /\n\n\(No acceptance criteria were provided\.\)\s*$/u;
   if (noAcceptance.test(message)) {

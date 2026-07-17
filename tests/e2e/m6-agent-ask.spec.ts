@@ -7,14 +7,15 @@ async function createAskTask(
   goal: string,
   title = 'Ask task',
 ) {
-  await page.getByTestId('new-task-btn').click();
-  await expect(page.getByTestId('new-task-dialog')).toBeVisible();
-  await page.getByTestId('task-title').fill(title);
-  await page.getByTestId('task-goal').fill(goal);
-  await page.getByTestId('mode-ask').check();
+  await page.getByTestId('surface-home').click();
+  await expect(page.getByTestId('home-view')).toBeVisible();
+  await page.getByTestId('home-advanced-toggle').click();
+  await page.getByTestId('home-adv-title').fill(title);
+  await page.getByTestId('home-intent').fill(goal);
+  await page.getByTestId('home-mode-ask').click();
   // mock model auto-selected under PI_IDE_FORCE_MOCK
-  await expect(page.getByTestId('task-model')).toHaveValue(/mock/);
-  await page.getByTestId('task-create-start').click();
+  await expect(page.getByTestId('home-model')).toContainText(/mock/i);
+  await page.getByTestId('home-submit').click();
 }
 
 test.describe('M6 read-only agent with deterministic runtime', () => {
@@ -41,7 +42,8 @@ test.describe('M6 read-only agent with deterministic runtime', () => {
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 20000,
       });
-      await expect(page.getByTestId('tl-report')).toBeVisible();
+      await expect(page.getByTestId('review-bar')).toBeVisible();
+      await expect(page.getByTestId('task-room-answered')).toBeVisible();
       // Usage remains recorded but is summarized once instead of interrupting
       // each turn in the conversation.
       const details = page.getByTestId('tl-run-details');
@@ -137,8 +139,8 @@ test.describe('M6 read-only agent with deterministic runtime', () => {
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
     });
     try {
-      await second.page.getByTestId('activity-tasks').click();
-      const item = second.page.locator('[data-testid^="task-item-"]').first();
+      await second.page.getByTestId('surface-home').click();
+      const item = second.page.locator('[data-testid^="home-task-"]').first();
       await expect(item).toBeVisible({ timeout: 15000 });
       await expect(item).toContainText('History task');
       await item.click();

@@ -72,18 +72,20 @@ test('rail provider marks — light/dark + dialog', async () => {
 
     // External Claude + Codex terminal sessions (brand marks).
     for (const kind of ['claude', 'codex'] as const) {
-      await page.getByTestId('session-new-menu').click();
-      await expect(page.getByTestId('session-create-dialog')).toBeVisible();
-      await page.getByTestId(`session-kind-${kind}`).click();
+      await page.getByTestId('home-new-task').click();
+      await page.getByTestId('home-agent').click();
+      await expect(page.getByTestId('home-agent-menu')).toBeVisible();
       if (kind === 'codex') {
-        // Dialog with all three marks visible.
+        // Shared Agent Picker with all three marks visible.
         await page.waitForTimeout(200);
-        await page.getByTestId('session-create-dialog').screenshot({
+        await page.getByTestId('home-agent-menu').screenshot({
           path: `${OUT}/rail-icons-3-dialog.png`,
         });
       }
-      await page.getByTestId('session-create-submit').click();
-      await expect(page.getByTestId('session-create-dialog')).toBeHidden();
+      await page.getByTestId(`home-agent-${kind}`).click();
+      await page.getByTestId('home-intent').fill(`Inspect the project with ${kind}`);
+      await page.getByTestId('home-submit').click();
+      await expect(page.getByTestId('session-terminal-view')).toBeVisible();
       await page.waitForTimeout(600);
     }
 
@@ -91,23 +93,23 @@ test('rail provider marks — light/dark + dialog', async () => {
     await page.getByTestId('home-sidebar').screenshot({ path: `${OUT}/rail-icons-1-light.png` });
 
     // Projects panel — hover-revealed π/Claude/Codex starters.
-    await page.getByTestId('rail-view-projects').click();
+    await page.getByTestId('rail-context').click();
     await page.locator('[data-testid^="home-recent-"]').first().hover();
     await page.waitForTimeout(300);
     await page.getByTestId('home-sidebar').screenshot({ path: `${OUT}/rail-icons-5-projects.png` });
-    await page.getByTestId('rail-view-sessions').click();
+    await page.getByLabel('Back to Sessions').click();
 
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.waitForTimeout(500);
     await page.getByTestId('home-sidebar').screenshot({ path: `${OUT}/rail-icons-2-dark.png` });
 
-    await page.getByTestId('rail-view-projects').click();
+    await page.getByTestId('rail-context').click();
     await page.locator('[data-testid^="home-recent-"]').first().hover();
     await page.waitForTimeout(300);
     await page
       .getByTestId('home-sidebar')
       .screenshot({ path: `${OUT}/rail-icons-6-projects-dark.png` });
-    await page.getByTestId('rail-view-sessions').click();
+    await page.getByLabel('Back to Sessions').click();
     await page.emulateMedia({ colorScheme: 'light' });
 
     // Terminal session view header uses the same mark.

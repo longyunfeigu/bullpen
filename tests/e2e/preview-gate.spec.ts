@@ -79,7 +79,7 @@ test.describe('Preview gate (ADR-0022)', () => {
       const main = await startServer(fixture, 'MAIN tree');
       mainServer = main.child;
 
-      await page.getByTestId('review-open').first().click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
 
       // The Preview tab appears (a live port was detected) — open it.
@@ -153,7 +153,7 @@ test.describe('Preview gate (ADR-0022)', () => {
         .toString()
         .trim();
 
-      await page.getByTestId('review-open').first().click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
       page.once('dialog', (d) => void d.accept());
       await page.getByTestId('review-accept-all').click();
@@ -200,29 +200,36 @@ test.describe('Preview gate (ADR-0022)', () => {
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
     });
     try {
-      await page.getByTestId('new-task-btn').click();
-      await expect(page.getByTestId('new-task-dialog')).toBeVisible();
-      await page.getByTestId('task-title').fill('Verify checks tab');
-      await page.getByTestId('task-goal').fill('[scenario:verify-fail-fix] make the check pass');
-      await page.getByTestId('task-verification-custom').fill('node check-agent.mjs');
-      await page.getByTestId('mode-auto').check();
-      await expect(page.getByTestId('task-model')).toHaveValue(/mock/);
-      await page.getByTestId('task-create-start').click();
+      await page.getByTestId('surface-home').click();
+      await expect(page.getByTestId('home-model')).toContainText(/mock/i, { timeout: 15000 });
+      await page.getByTestId('home-mode-auto').click();
+      await page.getByTestId('home-advanced-toggle').click();
+      await page.getByTestId('home-verif-custom').fill('node check-agent.mjs');
+      await page.getByTestId('home-verif-custom').press('Enter');
+      await page.getByTestId('home-intent').fill('[scenario:verify-fail-fix] make the check pass');
+      await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
       });
 
-      await page.getByTestId('review-open').first().click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
       await page.getByTestId('review-tab-checks').click();
-      await expect(page.getByTestId('checks-pane')).toBeVisible();
+      const review = page.getByTestId('review-view');
+      await expect(review.getByTestId('checks-pane')).toBeVisible();
 
       // Two runs of the same label: the old failure is dimmed-but-present
       // (VER-005), the latest is green.
-      await expect(page.locator('[data-testid^="check-row-"]')).toHaveCount(2, { timeout: 15000 });
-      await expect(page.locator('[data-testid^="check-superseded-"]')).toHaveCount(1);
-      await expect(page.locator('[data-testid^="check-row-"][data-state="passed"]')).toHaveCount(1);
-      await expect(page.locator('[data-testid^="check-row-"][data-state="failed"]')).toHaveCount(1);
+      await expect(review.locator('[data-testid^="check-row-"]')).toHaveCount(2, {
+        timeout: 15000,
+      });
+      await expect(review.locator('[data-testid^="check-superseded-"]')).toHaveCount(1);
+      await expect(review.locator('[data-testid^="check-row-"][data-state="passed"]')).toHaveCount(
+        1,
+      );
+      await expect(review.locator('[data-testid^="check-row-"][data-state="failed"]')).toHaveCount(
+        1,
+      );
     } finally {
       await app.close();
     }
@@ -243,7 +250,7 @@ test.describe('Preview gate (ADR-0022)', () => {
         timeout: 30000,
       });
 
-      await page.getByTestId('review-open').first().click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
       await expect(page.getByTestId('review-tab-changes')).toBeVisible();
       await expect(page.getByTestId('review-tab-checks')).toBeVisible();
@@ -296,7 +303,7 @@ test.describe('Preview gate (ADR-0022)', () => {
         timeout: 30000,
       });
 
-      await page.getByTestId('review-open').first().click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
       // Webish (dev script) → the tab exists even with no live port.
       await page.getByTestId('review-tab-preview').click({ timeout: 15000 });

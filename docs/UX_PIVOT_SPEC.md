@@ -125,14 +125,14 @@ New acceptance:
 | PIVOT-034 | In-room file peek: activating a file reference in a Task Room (changes rail, live board tile, timeline evidence path, Home tree, ⌘K file result) opens a resident split panel — Changes/File dual mode, pinned tabs, read-only, contents via the task's own mount (`task.peekFile`, worktree-honest, live-following while the agent writes; binary/missing/truncated render honest notes). Esc or close restores the rail; the timeline and composer stay interactive throughout. Opening another task's room resets the peek. |
 | PIVOT-035 | Editor demoted to explicit intent: peek header "Open in editor" (hidden for worktree tasks), ⌘/alt-click on file references, sidebar Editor row, ⌘E, and the room header button are the only Editor entries from the Home surface. No plain file click switches surfaces. Launcher-context file opens (no room) still go to the Editor. |
 | PIVOT-036 | L2 continuity: room → Editor → room round-trips preserve the task selection, the reply draft and the timeline scroll position (per task, session-scoped), and the peek state. |
-| PIVOT-037 | Shell unification (staged, not this round): the Editor becomes a content-area state of the persistent shell; surfaces disappear; transitions morph around the conversation column. Recorded as the end-state skeleton in ADR-0014. |
+| PIVOT-037 | Shell unification (implemented 2026-07-17): surfaces disappear at runtime. The persistent Session Rail is the only global navigation; the conversation stays mounted while Summary, Diff/File, Preview, Terminal and Review occupy one contextual tool canvas with balanced and expanded states. Before a Session exists, Files, Search, Changes, Problems and the editor are Project Tool content states in that same shell. Legacy `workspace` commands are compatibility aliases into the active Session/Project context and never mount a second Activity Bar/Sidebar/Agent Panel shell. |
 
 ## Shell v6 — grouped activity rail (ADR-0023, direction D)
 
-Mockup: `docs/design/sidebar-vnext-hybrid.html` (direction D in
-`sidebar-vnext-gallery.html`, product-owner approved). The Session Rail becomes
-an activity bar (Sessions / Inbox / Projects / Search + Editor / Settings) plus
-one context panel.
+Mockup ancestry: `docs/design/sidebar-vnext-hybrid.html` (direction D in
+`sidebar-vnext-gallery.html`). PIVOT-037r removes the nested activity bar: the
+Session Rail itself is the one global navigation surface, with Inbox and
+Projects as contextual panel states.
 
 Revisions to earlier acceptance (authoritative where they conflict):
 
@@ -147,15 +147,16 @@ New acceptance:
 | ID | Requirement |
 | --- | --- |
 | PIVOT-038 | Sessions group by project with collapsible headers carrying "N need you" badges and counts; rows inside a group omit the project name; settled sessions (ACCEPTED/ROLLED_BACK/CANCELLED) fold into a default-collapsed cross-project History group; attention states never move to History; the open room's group auto-expands so the selected row is never hidden. |
-| PIVOT-039 | The sessions panel pins an amber "Needs you · N" row whenever sessions await the user, and ends with a resident working-context row naming the focused project with a one-click route to the Projects panel. The activity bar's Search opens the ⌘K launcher; Editor (⌘E) and Settings sit at its bottom. |
+| PIVOT-039 | The sessions panel pins an amber "Needs you · N" row whenever sessions await the user, and ends with a resident working-context row naming the focused project with a one-click route to the Projects panel. Search and Settings live in the rail header. Files/Editor are contextual Project Tools before dispatch and Session File states after dispatch (⌘E expands the contextual editor), never global navigation. |
 
 ## Notes
 
-- Fast path vs full form: the Home input is the primary path; the Workspace
-  surface keeps its New-Task dialog until PIVOT-012 lands, after which the
-  composer's Advanced mode is the canonical full form.
+- Fast path vs full form: the shared Composer is the only creation path.
+  Charter, Claude and Codex are execution backends in its Agent Picker;
+  Advanced mode is the canonical managed-Session full form.
 - Phase 2 (unchanged, from ADR-0004): meta-agent drafts acceptance criteria and
   verification commands from the intent for one-tap confirmation; task budgets
   (steps/tokens/time); auto-iterate-until-verification-green loop mode.
-- "Workspace" naming: user-visible copy says **project** (folder) and
-  **Editor** (workbench surface); engine identifiers keep `workspace`.
+- "Workspace" naming: user-visible copy says **project** (folder), **Session**
+  (the collaboration object), and **File/Diff** (tool states); engine and
+  compatibility identifiers may keep `workspace` and `task`.

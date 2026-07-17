@@ -28,9 +28,7 @@ test.describe('M3 workspace and editor', () => {
     // Open a second file and split the editor.
     await page.getByTestId('tree-item-src/util.ts').click();
     await expect(page.getByTestId('tab-src/util.ts')).toBeVisible();
-    await page.getByTestId('palette-chip').click();
-    await page.keyboard.type('Split Editor');
-    await page.keyboard.press('Enter');
+    await page.getByTestId('project-editor-split').click();
     await expect(page.getByTestId('monaco-pane-1')).toBeVisible();
 
     await page.waitForTimeout(800); // allow tabs/layout persistence to flush
@@ -111,27 +109,26 @@ test.describe('M3 workspace and editor', () => {
     try {
       await page.getByTestId('tree-item-src').click();
       await page.getByTestId('tree-item-src/index.ts').click();
-      const editor = page.locator('.monaco-editor').first();
-      await expect(editor).toContainText('add(2, 3)');
+      await expect(page.locator('.monaco-editor').first()).toContainText('add(2, 3)');
 
-      await page.getByTestId('new-task-btn').click();
-      await page.getByTestId('task-title').fill('Keep the open editor synchronized');
-      await page.getByTestId('task-goal').fill('[scenario:edit-basic] update the call');
-      await page.getByTestId('mode-auto').check();
-      await page.getByTestId('task-create-start').click();
+      await page.getByTestId('project-tool-new-session').click();
+      await page.getByTestId('home-mode-auto').click();
+      await page.getByTestId('home-intent').fill('[scenario:edit-basic] update the call');
+      await page.getByTestId('home-submit').click();
 
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
       });
-      await expect(page.getByTestId('agent-task-title')).toContainText(
-        'Keep the open editor synchronized',
-      );
+      await page.getByTestId('task-room-file-src/index.ts').click();
+      await page.getByTestId('peek-mode-edit').click();
+      const editor = page.locator('.tr-peek-editor .monaco-editor').first();
       await expect(editor).toContainText('add(3, 4)', { timeout: 15000 });
       await expect(editor).not.toContainText('add(2, 3)');
       await expect(page.getByTestId('conflict-bar')).toHaveCount(0);
       await expect(page.getByTestId('status-dirty')).toHaveCount(0);
 
-      await page.getByTestId('review-open').click();
+      await page.getByTestId('session-tool-review').click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-diff')).toBeVisible();
       await expect(page.locator('[data-testid="review-diff"] .monaco-diff-editor')).toBeVisible({
         timeout: 15000,

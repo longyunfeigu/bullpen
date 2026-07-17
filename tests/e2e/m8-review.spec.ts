@@ -12,13 +12,13 @@ async function createTask(
   mode: 'ask' | 'edit' | 'auto',
   title: string,
 ) {
-  await page.getByTestId('new-task-btn').click();
-  await expect(page.getByTestId('new-task-dialog')).toBeVisible();
-  await page.getByTestId('task-title').fill(title);
-  await page.getByTestId('task-goal').fill(goal);
-  await page.getByTestId(`mode-${mode}`).check();
-  await expect(page.getByTestId('task-model')).toHaveValue(/mock/);
-  await page.getByTestId('task-create-start').click();
+  await page.getByTestId('surface-home').click();
+  await page.getByTestId('home-advanced-toggle').click();
+  await page.getByTestId('home-adv-title').fill(title);
+  await page.getByTestId('home-intent').fill(goal);
+  await page.getByTestId(`home-mode-${mode}`).click();
+  await expect(page.getByTestId('home-model')).toContainText(/mock/i);
+  await page.getByTestId('home-submit').click();
 }
 
 test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)', () => {
@@ -68,7 +68,7 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
       expect(existsSync(join(fixture, 'src/created-by-agent.ts'))).toBe(true);
 
       // Review shows the change set; accepting moves the task to ACCEPTED (§6.1).
-      await page.getByTestId('review-open').click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible();
       await expect(page.getByTestId('review-file-src/index.ts')).toBeVisible();
       await expect(page.getByTestId('review-file-src/util.ts')).toBeVisible();
@@ -181,7 +181,7 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
         timeout: 30000,
       });
 
-      await page.getByTestId('review-open').click();
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible();
       await expect(page.getByTestId('review-file-src/mathlib.ts')).toBeVisible();
 

@@ -186,7 +186,10 @@ function reportCommandEnd(terminalId: string, block: TermBlock, durationMs: numb
     // Focused (or notifications off): ring the row bell unless the user is
     // already looking at this exact terminal.
     const state = useTerminalStore.getState();
-    const looking = state.active === terminalId && useAppStore.getState().surface === 'workspace';
+    const app = useAppStore.getState();
+    const looking =
+      state.active === terminalId &&
+      (app.sessionTerminalId !== null || app.sessionTool === 'terminal');
     const item = state.items.find((t) => t.id === terminalId);
     if (item && !looking) {
       item.blocks.bell = true;
@@ -1404,7 +1407,6 @@ export function TerminalPanel(): React.JSX.Element {
   // ADR-0017 rev.2「意图升格」: a terminal the user moved to the side panel is
   // not in the dock — its xterm belongs to the panel until 归位.
   const promoted = useExternalStore((s) => s.promoted);
-  const surface = useAppStore((s) => s.surface);
   const quickConsoleOpen = useQuickConsoleStore((s) => s.open);
   const dockItems = store.items.filter((t) => !t.hidden && t.id !== promoted?.terminalId);
   const activeDock = dockItems.find((t) => t.id === store.active) ?? null;
@@ -1423,15 +1425,14 @@ export function TerminalPanel(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promoted?.terminalId, store.active]);
 
-  // Mount the active terminal into the host div. The Editor surface must be
-  // in front — the room / the side panel own their instances otherwise.
+  // This component is only mounted while the Terminal Session tool is visible;
+  // the room and promoted side slot own their instances at other times.
   useEffect(() => {
     const host = hostRef.current;
-    if (!host || !activeDock || surface !== 'workspace' || (activeDock.quick && quickConsoleOpen))
-      return;
+    if (!host || !activeDock || (activeDock.quick && quickConsoleOpen)) return;
     mountTerminal(host, activeDock);
     return observeTerminalFit(host, activeDock);
-  }, [activeDock, quickConsoleOpen, surface]);
+  }, [activeDock, quickConsoleOpen]);
 
   return (
     <div className="terminal-panel-layout" data-testid="terminal-panel">

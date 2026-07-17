@@ -25,7 +25,7 @@ function createIdleAgentBins(): string {
 }
 
 test.describe('Session Rail Workbench', () => {
-  test('keeps Sessions present across Pi, in-room editing and the full workspace', async () => {
+  test('keeps Sessions present across Agent choice and in-room editing', async () => {
     const fixture = realpathSync(createGitFixture());
     const { app, page } = await launchApp({
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
@@ -40,18 +40,14 @@ test.describe('Session Rail Workbench', () => {
     try {
       await expect(page.getByTestId('home-sidebar')).toBeVisible();
 
-      // New Session returns directly to the Codex-style task composer; choosing
-      // a different native execution surface remains one secondary action away.
+      // One Composer exposes every Agent backend without separate entry points.
       await page.getByTestId('home-new-task').click();
       await expect(page.getByTestId('home-view')).toBeVisible();
-      await page.getByTestId('session-new-menu').click();
-      await expect(page.getByTestId('session-create-dialog')).toBeVisible();
-      await page.getByTestId('session-kind-claude').click();
-      await expect(page.getByTestId('session-create-submit')).toContainText('Claude Session');
-      await page.getByTestId('session-kind-codex').click();
-      await expect(page.getByTestId('session-create-submit')).toContainText('Codex Session');
-      await page.getByTestId('session-kind-pi').click();
-      await page.getByTestId('session-create-submit').click();
+      await page.getByTestId('home-agent').click();
+      await expect(page.getByTestId('home-agent-menu')).toBeVisible();
+      await expect(page.getByTestId('home-agent-claude')).toBeVisible();
+      await expect(page.getByTestId('home-agent-codex')).toBeVisible();
+      await page.getByTestId('home-agent-pi').click();
 
       await expect(page.getByTestId('home-view')).toBeVisible();
       await page.getByTestId('home-mode-auto').click();
@@ -62,17 +58,15 @@ test.describe('Session Rail Workbench', () => {
       });
 
       // The real Monaco document model opens beside the continuous Pi run.
+      await page.getByTestId('session-more').click();
       await page.getByTestId('task-room-edit-file').click();
       await expect(page.getByTestId('peek-mode-edit')).toHaveAttribute('aria-checked', 'true');
       await expect(page.getByTestId('file-peek').getByTestId('editor-groups')).toBeVisible();
       await expect(page.getByTestId('home-sidebar')).toBeVisible();
 
-      // The expert workspace is another view in the same Session shell, not a
-      // second global entry; the selected Session remains visible and resumable.
-      await page.getByTestId('task-room-open-editor').click();
-      await expect(page.getByTestId('editor-area')).toBeVisible();
+      // Editing is a state of the Session-owned File tool, not another shell.
+      await expect(page.getByTestId('file-peek').getByTestId('editor-groups')).toBeVisible();
       await expect(page.getByTestId('home-sidebar')).toContainText('session-first edit');
-      await page.getByTestId('surface-home').click();
       await expect(page.getByTestId('task-room')).toBeVisible();
       await expect(page.getByTestId('file-peek')).toBeVisible();
 
@@ -121,7 +115,7 @@ test.describe('Session Rail Workbench', () => {
       await expect(page.getByTestId('task-room')).toBeVisible();
 
       // Collapse hides the rows but keeps the badge; expand restores them.
-      await page.getByTestId('rail-view-sessions').click();
+      await page.getByLabel('Back to Sessions').click();
       await group.click();
       await expect(page.locator('[data-testid^="home-task-"]')).toHaveCount(0);
       await expect(group).toContainText('1 need you');
@@ -138,11 +132,9 @@ test.describe('Session Rail Workbench', () => {
     }
   });
 
-  // ADR-0023 amendment: hovering a Projects-panel row reveals π/Claude/Codex
-  // starters — one click starts a session bound to that project, without
-  // touching the global working context (Claude/Codex) or with the composer
-  // focused (π). Session rows never repeat the CLI name as their title.
-  test('starts project-bound sessions from the Projects panel starters', async () => {
+  // Projects choose working context; the one shared Composer then chooses the
+  // Agent backend. These are not separate product entry points.
+  test('binds a project, then starts a native Agent from the shared Composer', async () => {
     const fixture = realpathSync(createGitFixture());
     const bin = createIdleAgentBins();
     const { app, page } = await launchApp({
@@ -160,20 +152,21 @@ test.describe('Session Rail Workbench', () => {
       // rail — wait until the working context is bound before driving panel
       // state, or the Projects view resets underneath the test.
       await expect(page.getByTestId('rail-context')).toContainText(name);
-      await page.getByTestId('rail-view-projects').click();
+      await page.getByTestId('rail-context').click();
       await expect(page.getByTestId('rail-projects-panel')).toBeVisible();
 
-      // The starter chip is hover-revealed (opacity, so the buttons keep
-      // their geometry); the row keeps its full hit area.
+      // One explicit Use action binds the project to the shared Composer.
       const row = page.getByTestId(`home-recent-${fixture}`);
       await expect(row).toBeVisible();
-      const chip = page.locator('.sr-project-wrap').filter({ has: row }).locator('.sr-project-qs');
-      await expect(chip).toHaveCSS('opacity', '0');
-      await row.hover();
-      await expect(chip).toHaveCSS('opacity', '1');
+      await page.getByTestId(`project-spawn-pi-${fixture}`).click();
+      await expect(page.getByTestId('home-intent')).toBeFocused();
 
-      // One click: a Claude PTY session opens, cwd-bound to the project.
-      await page.getByTestId(`project-spawn-claude-${fixture}`).click();
+      // Claude is an execution backend in that Composer. The resulting PTY
+      // remains a Session in the same rail and is cwd-bound to the project.
+      await page.getByTestId('home-agent').click();
+      await page.getByTestId('home-agent-claude').click();
+      await page.getByTestId('home-intent').fill('Inspect the project architecture');
+      await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('session-terminal-view')).toBeVisible();
       await expect(page.getByTestId('session-terminal-view')).toContainText(fixture);
 
@@ -188,14 +181,6 @@ test.describe('Session Rail Workbench', () => {
       await expect(railRow).toBeVisible();
       await expect(railRow).toContainText(/New session|external session/i);
       await expect(railRow).not.toContainText('Claude Code');
-
-      // π starter: the project becomes the working context and the composer
-      // is focused, ready for intent.
-      await page.getByTestId('rail-view-projects').click();
-      await page.getByTestId(`home-recent-${fixture}`).hover();
-      await page.getByTestId(`project-spawn-pi-${fixture}`).click();
-      await expect(page.getByTestId('home-view')).toBeVisible();
-      await expect(page.getByTestId('home-intent')).toBeFocused();
     } finally {
       await app.close();
     }

@@ -67,7 +67,7 @@ test.describe('M4 search, intelligence, terminal', () => {
     }
   });
 
-  test('opening a terminal from Home reveals the Editor dock', async () => {
+  test('opening a terminal from Home keeps it in the unified Session shell', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     try {
@@ -76,17 +76,20 @@ test.describe('M4 search, intelligence, terminal', () => {
 
       await page.keyboard.press(`${mod}+Shift+p`);
       const command = page.getByRole('textbox', { name: 'Command' });
-      await command.fill('New Terminal');
-      await page.getByRole('option', { name: /New Terminal/ }).click();
+      await command.fill('Open Terminal Session');
+      await page.getByRole('option', { name: /Open Terminal Session/ }).click();
 
-      await expect(page.getByTestId('home-shell')).toHaveCount(0);
+      await expect(page.getByTestId('home-shell')).toBeVisible();
+      await expect(page.getByTestId('session-terminal-view')).toBeVisible();
       await expect(page.getByTestId('terminal-panel')).toBeVisible();
       await expect(page.locator('.xterm')).toBeVisible({ timeout: 15000 });
 
-      await page.getByTestId('surface-home').click();
-      await page.keyboard.press(`${mod}+j`);
-      await expect(page.getByTestId('home-shell')).toHaveCount(0);
-      await expect(page.getByTestId('bottom-panel')).toBeVisible();
+      await page
+        .getByTestId('session-terminal-view')
+        .getByRole('button', { name: /Sessions/ })
+        .click();
+      await page.keyboard.press('Control+`');
+      await expect(page.getByTestId('session-terminal-view')).toBeVisible();
     } finally {
       await app.close();
     }
@@ -132,15 +135,33 @@ test.describe('M4 search, intelligence, terminal', () => {
         };
         void w;
       });
-      // Position cursor at add( call: line 2 column 20 approximately via go-to-line
+      // Position the cursor exactly on the `add` call. Monaco's Go to Line
+      // accepts line:column, which is more deterministic than synthesizing 19
+      // ArrowRight events after the Problems panel has resized the editor.
       await page.keyboard.press('Control+g');
-      await page.keyboard.type('2');
+      await page.keyboard.type('2:19');
       await page.keyboard.press('Enter');
-      // Move to the identifier `add`
-      await page.keyboard.press('Home');
-      for (let i = 0; i < 19; i++) await page.keyboard.press('ArrowRight');
-      await page.keyboard.press('F12');
-      await expect(page.getByTestId('tab-src/util.ts')).toBeVisible({ timeout: 15000 });
+      // The TypeScript worker may still be finishing its project graph after a
+      // long serial Electron run. Retry the real F12 interaction at the same
+      // cursor instead of replacing it with a direct file-open shortcut.
+      const utilTab = page.getByTestId('tab-src/util.ts');
+      let definitionOpened = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await page.keyboard.press('F12');
+        definitionOpened = await utilTab
+          .waitFor({ state: 'visible', timeout: 5000 })
+          .then(() => true)
+          .catch(() => false);
+        if (definitionOpened) break;
+        // Reassert the exact target in case a failed definition action moved
+        // focus into a notification or peek widget.
+        await page.locator('.monaco-editor').first().click();
+        await page.keyboard.press('Control+g');
+        await page.keyboard.type('2:19');
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(1200);
+      }
+      expect(definitionOpened).toBe(true);
       // F12 navigation swaps the editor model asynchronously; wait until util.ts is
       // actually rendered (its `sub` helper is unique to this file) so keystrokes
       // land in the util.ts model, not the previous one.
@@ -157,10 +178,8 @@ test.describe('M4 search, intelligence, terminal', () => {
       await page.locator('.monaco-editor').first().click();
       await page.waitForTimeout(300);
       await page.keyboard.press('Control+g');
-      await page.keyboard.type('1');
+      await page.keyboard.type('1:18');
       await page.keyboard.press('Enter');
-      await page.keyboard.press('Home');
-      for (let i = 0; i < 17; i++) await page.keyboard.press('ArrowRight');
       await page.keyboard.press('F2');
       await expect(page.getByTestId('rename-input-dialog')).toBeVisible({ timeout: 15000 });
       await page.getByTestId('rename-input').fill('addNumbers');

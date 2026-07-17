@@ -89,7 +89,7 @@ test('preview gate visual walk', async () => {
     });
 
     // 1 — gate opens on Changes with the new tab strip.
-    await page.getByTestId('review-open').first().click();
+    await page.getByTestId('review-bar-open').click();
     await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
     await page.waitForTimeout(800);
     await page.screenshot({ path: `${OUT}/pg-1-gate-changes.png` });
@@ -140,7 +140,7 @@ test('preview gate visual walk', async () => {
     });
 
     // 7 — Checks tab (light), then dark spot-checks while the gate is open.
-    await page.getByTestId('review-open').first().click();
+    await page.getByTestId('review-bar-open').click();
     await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
     await page.getByTestId('review-tab-checks').click();
     await expect(page.getByTestId('checks-pane')).toBeVisible();

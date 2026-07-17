@@ -391,7 +391,7 @@ export function ReviewView(): React.JSX.Element | null {
           ) : files.length === 0 ? (
             <div className="empty-state" data-testid="review-empty">
               <div className="es-title">No file changes</div>
-              <div>This task has no remaining net changes to review.</div>
+              <div>This Session has no remaining net changes to review.</div>
             </div>
           ) : (
             files.map((file) => {
@@ -453,12 +453,12 @@ export function ReviewView(): React.JSX.Element | null {
                       <button
                         className="rv-hbtn bad"
                         data-testid={`file-reject-${file.path}`}
-                        title="Reject the file — restore its pre-task state"
+                        title="Reject the file — restore its pre-Session state"
                         onClick={(e) => {
                           e.stopPropagation();
                           if (
                             window.confirm(
-                              `Reject all changes to ${file.path}? The file is restored to its pre-task state.`,
+                              `Reject all changes to ${file.path}? The file is restored to its pre-Session state.`,
                             )
                           ) {
                             void store.reviewDecision({
@@ -510,11 +510,11 @@ export function ReviewView(): React.JSX.Element | null {
           testid="review-rollback"
           quiet
           disabled={!canDecide}
-          title="Restore every touched file to its pre-task state"
+          title="Restore every touched file to its pre-Session state"
           onConfirm={() => void store.rollbackTask()}
         />
         <span className="rv-footnote">
-          Baseline (left) is the pre-task snapshot; current file (right) is what accept keeps.
+          Baseline (left) is the pre-Session snapshot; current file (right) is what accept keeps.
         </span>
       </div>
 

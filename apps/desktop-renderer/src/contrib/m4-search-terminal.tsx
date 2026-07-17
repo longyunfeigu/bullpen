@@ -127,20 +127,22 @@ export function registerM4(): void {
     },
     {
       id: 'terminal.new',
-      title: 'New Terminal',
+      title: 'Open Terminal Session',
       category: 'Terminal',
       keybinding: 'ctrl+backquote',
       run: () => {
         const terminals = useTerminalStore.getState();
         const visible = terminals.items.filter((item) => !item.hidden);
         if (visible.length === 0) {
-          void terminals.create();
+          void terminals.create().then((id) => {
+            if (id) useAppStore.getState().openTerminalSession(id);
+          });
           return;
         }
-        if (!terminals.active) {
-          useTerminalStore.setState({ active: visible.at(-1)?.id ?? null });
-        }
-        useAppStore.getState().showBottomTab('terminal');
+        const terminalId = terminals.active ?? visible.at(-1)?.id;
+        if (!terminalId) return;
+        terminals.setActive(terminalId);
+        useAppStore.getState().openTerminalSession(terminalId);
       },
     },
     {

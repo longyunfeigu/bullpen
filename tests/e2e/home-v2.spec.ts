@@ -96,8 +96,10 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
       await expect(userCard).toContainText('Constraints:');
       await expect(userCard).toContainText('Do not change public API signatures');
       await expect(userCard).toContainText('@src/index.ts');
-      await expect(userCard).toContainText('Acceptance criteria:');
-      await expect(userCard).toContainText('429 after 5 failed attempts');
+      const taskContext = page.getByTestId('tl-task-context');
+      await expect(taskContext).toContainText('Acceptance checks · 2');
+      await taskContext.locator('summary').click();
+      await expect(taskContext).toContainText('429 after 5 failed attempts');
     } finally {
       await app.close();
     }
@@ -140,16 +142,18 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
       // Review-ready tasks surface in Needs you and behind the Inbox badge.
       await page.getByTestId('task-room-back').click();
       await expect(page.getByTestId('home-mc-needs')).toContainText('Review');
-      await expect(page.getByTestId('home-reviews')).toContainText('1');
-      // ADR-0023 (PIVOT-013r2): Inbox opens the triage panel; each row routes
-      // to its task's room — review is one click from there.
-      await page.getByTestId('home-reviews').click();
+      await expect(page.getByTestId('rail-needs-you')).toContainText('1');
+      await page.getByTestId('rail-needs-you').click();
       await page
         .locator('[data-testid="rail-inbox-panel"] [data-testid^="home-task-"]')
         .first()
         .click();
       await expect(page.getByTestId('task-room')).toBeVisible();
-      await page.getByTestId('review-open').first().click();
+      await expect(page.getByTestId('session-tool-review')).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
     } finally {
       await app.close();
@@ -172,20 +176,15 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
       });
-      await expect(page.getByTestId('report-unverified')).toContainText(
-        '1 configured check has not run',
-      );
-      await page.getByTestId('review-bar-run-verification').click();
+      await expect(page.getByTestId('checks-unverified')).toContainText('No verification has run');
+      await page.getByTestId('checks-run').click();
       await expect(page.getByTestId('tl-verification-passed')).toBeVisible({ timeout: 30000 });
-      await expect(page.getByTestId('report-unverified')).toHaveCount(0);
-      await expect(page.getByTestId('report-verification')).toContainText('1 passed');
-
-      await page.getByTestId('task-room-open-editor').click();
-      await page.keyboard.press(process.platform === 'darwin' ? 'Meta+j' : 'Control+j');
-      await page.getByRole('tab', { name: 'Tests' }).click();
-      await expect(page.getByTestId('tests-verification-panel')).toContainText('npm test');
-      await expect(page.getByTestId('tests-verification-panel')).toContainText('passed');
-      await expect(page.getByTestId('tests-run-verification')).toContainText('Re-run all checks');
+      await expect(page.getByTestId('checks-unverified')).toHaveCount(0);
+      await expect(page.getByTestId('checks-pane')).toContainText('npm test');
+      await expect(page.getByTestId('checks-pane')).toContainText('passed');
+      await expect(page.getByTestId('checks-run')).toContainText('Run verification');
+      await expect(page.getByTestId('home-sidebar')).toBeVisible();
+      await expect(page.getByTestId('task-room')).toBeVisible();
     } finally {
       await app.close();
     }

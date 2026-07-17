@@ -32,10 +32,8 @@ test.describe('Room ending — review bar (ADR-0016, direction B)', () => {
       // The bar carries the recorded evidence: changed stats + the honest
       // unverified flag (edit-basic runs no verification commands).
       await expect(page.getByTestId('review-bar')).toBeVisible();
-      await expect(page.getByTestId('report-changed')).toContainText('file');
-      await expect(page.getByTestId('report-unverified')).toContainText(
-        'no verification commands were run',
-      );
+      await expect(page.getByTestId('review-bar')).toContainText('1 file changed');
+      await expect(page.getByTestId('checks-unverified')).toContainText('No verification has run');
 
       // Primary action: straight into the review surface, then back.
       await page.getByTestId('review-bar-open').click();
@@ -43,10 +41,9 @@ test.describe('Room ending — review bar (ADR-0016, direction B)', () => {
       await page.getByTestId('review-close').click();
       await expect(page.getByTestId('review-bar')).toBeVisible();
 
-      // Rollback lives in the overflow, still double-confirmed.
-      await page.getByTestId('review-bar-more').click();
-      await page.getByTestId('report-rollback').click();
-      await page.getByTestId('report-rollback-confirm').click();
+      // Rollback lives in the one Action Dock, still double-confirmed.
+      await page.getByTestId('task-rollback').click();
+      await page.getByTestId('task-rollback-confirm').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'ROLLED_BACK', {
         timeout: 15000,
       });

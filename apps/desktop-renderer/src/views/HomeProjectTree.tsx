@@ -51,7 +51,7 @@ export function HomeProjectTree(): React.JSX.Element {
     }
     void editor.openFile(path);
     app.closeTaskRoom();
-    app.setSurface('workspace');
+    app.setProjectTool('files');
   };
 
   const renderDir = (dir: string, depth: number): React.ReactNode => {

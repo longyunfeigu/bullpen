@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { rpcResult } from '../bridge.js';
+import { useAppStore } from '../store/appStore.js';
 import { useEditorStore } from '../store/editorStore.js';
 
 interface QuickOpenStore {
@@ -65,6 +66,13 @@ export function QuickOpen(): React.JSX.Element | null {
     setOpen(false);
     noteRecentFile(item.path);
     void useEditorStore.getState().openFile(item.path);
+    const app = useAppStore.getState();
+    if (app.taskRoomTaskId) {
+      app.openPeek(app.taskRoomTaskId, item.path, 'edit');
+      app.setSessionToolExpanded(true);
+    } else {
+      app.setProjectTool('files');
+    }
   };
 
   return (

@@ -3,10 +3,18 @@ import { realpathSync } from 'node:fs';
 import { launchApp } from './helpers/launch';
 import { createTsSmallFixture } from './helpers/fixtures';
 
-test.describe('Dual-form shell pivot (ADR-0004, PIVOT-001..010)', () => {
-  test('Home is the default entry, branding is Charter, surfaces switch both ways', async () => {
-    const { app, page } = await launchApp({ home: 'keep' });
+test.describe('Unified Session shell pivot (ADR-0004, PIVOT-001..010)', () => {
+  test('Home is the default entry, branding is Charter, project tools stay in the same shell', async () => {
+    const fixture = createTsSmallFixture();
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixture },
+      home: 'keep',
+    });
     try {
+      // Opening a known project restores its last project-tool context. The
+      // back affordance returns to the single Session launcher in this shell.
+      await expect(page.getByTestId('project-tool-view')).toBeVisible();
+      await page.getByTestId('project-tool-back').click();
       // PIVOT-001/008: Home first, Charter branding, no directory read yet.
       await expect(page.getByTestId('home-view')).toBeVisible();
       await expect(page.getByTestId('home-intent')).toBeVisible();
@@ -14,12 +22,17 @@ test.describe('Dual-form shell pivot (ADR-0004, PIVOT-001..010)', () => {
       await expect(page.getByTestId('home-view')).toContainText('What should we build?');
       await expect(page.getByTestId('home-view')).not.toContainText('Pi IDE');
 
-      // PIVOT-006/022: into the Editor via the sidebar row and back.
-      await page.getByTestId('home-open-ide').click();
+      // Project files are a content state in the same persistent shell: there
+      // is no second Activity Bar, Sidebar, or Agent Panel.
+      await page.getByTestId('rail-context').click();
+      await page.getByTestId(`home-recent-${realpathSync(fixture)}`).click();
+      await page.getByTestId('home-tree-src').click();
+      await page.getByTestId('home-tree-src/index.ts').click();
       await expect(page.getByTestId('home-view')).toHaveCount(0);
-      await expect(page.getByTestId('workbench')).toBeVisible();
-      await expect(page.locator('.tb-title')).toHaveText('Charter');
-      await page.getByTestId('surface-home').click();
+      await expect(page.getByTestId('project-tool-view')).toBeVisible();
+      await expect(page.getByTestId('home-sidebar')).toBeVisible();
+      await expect(page.getByTestId('agent-panel')).toHaveCount(0);
+      await page.getByTestId('project-tool-back').click();
       await expect(page.getByTestId('home-view')).toBeVisible();
     } finally {
       await app.close();
@@ -48,7 +61,7 @@ test.describe('Dual-form shell pivot (ADR-0004, PIVOT-001..010)', () => {
 
       // PIVOT-002: choose the project from recents; Home stays up (mid-charter).
       // ADR-0023: recents live in the rail's Projects panel.
-      await page.getByTestId('rail-view-projects').click();
+      await page.getByTestId('rail-context').click();
       await page.getByTestId(`home-recent-${fixture}`).click();
       await expect(page.getByTestId('home-project')).toContainText(fixture.split('/').pop()!);
       await expect(page.getByTestId('home-view')).toBeVisible();
@@ -83,7 +96,7 @@ test.describe('Dual-form shell pivot (ADR-0004, PIVOT-001..010)', () => {
     const { app, page } = await launchApp({});
     try {
       page.on('dialog', (dialog) => void dialog.accept());
-      await page.getByTestId('activity-settings').click();
+      await page.getByTestId('home-settings').click();
       await expect(page.getByTestId('overlay-settings')).toBeVisible();
       await page.getByText('Models', { exact: true }).click();
 

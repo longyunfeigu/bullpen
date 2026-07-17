@@ -46,7 +46,7 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
     }
   });
 
-  test('PIVOT-016/017: writes glow in the tree; replay walks the recorded actions', async () => {
+  test('PIVOT-016/017: writes surface in the Session ledger; replay walks the recorded actions', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
@@ -58,8 +58,9 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
       await page.getByTestId('home-intent').fill('[scenario:edit-basic] glow and replay');
       await page.getByTestId('home-submit').click();
 
-      // Presence glow: the touched directory pulses right after the write (PIVOT-016).
-      await expect(page.getByTestId('tree-item-src')).toHaveClass(/glow-pulse/, {
+      // The default supervision layer stays actionable: touched files appear in
+      // the Session evidence ledger without opening a second Explorer shell.
+      await expect(page.getByTestId('task-room-file-src/index.ts')).toBeVisible({
         timeout: 15000,
       });
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
@@ -68,6 +69,7 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
 
       // Replay V3 (ADR-0017 am.8): result-first opening frame, no autoplay,
       // no A–E peer navigation, no numeric confidence.
+      await page.getByTestId('session-more').click();
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
       await expect(page.getByTestId('replay-contract')).toBeVisible();

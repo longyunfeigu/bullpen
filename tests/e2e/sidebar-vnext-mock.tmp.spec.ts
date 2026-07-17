@@ -8,6 +8,7 @@ const directions = [
 ] as const;
 
 test('sidebar vnext mock directions render and interact in Electron', async () => {
+  test.skip(true, 'superseded by the implemented unified Session Canvas');
   const { app, page } = await launchApp({ home: 'keep' });
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
