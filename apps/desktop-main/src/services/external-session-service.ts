@@ -11,7 +11,7 @@ import {
 import { broadcast } from '../broadcast.js';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { TaskService } from './task-service.js';
-import { ExternalStructuredReplayParser } from './external-replay-parser.js';
+import { cleanTerminalText, ExternalStructuredReplayParser } from './external-replay-parser.js';
 import { discoverCliSessionId, isSafeCliSessionId } from './cli-session-locator.js';
 
 /** Paths never attributed to an external session (product/tooling noise). */
@@ -20,6 +20,7 @@ const IGNORED_BASENAMES = ['.DS_Store'];
 const IGNORED_PREFIXES = ['.pi-ide-chg.'];
 const MAX_TERMINAL_REPLAY_BYTES = 2 * 1024 * 1024;
 const TERMINAL_EVENT_CHARS = 12_000;
+const OBSERVED_REPLY_QUIET_MS = 1_800;
 
 function countPatchLines(patch: string | null): { additions: number; deletions: number } {
   let additions = 0;
@@ -76,6 +77,12 @@ interface LiveSession {
   terminalBuffer: string;
   terminalBytes: number;
   terminalTruncated: boolean;
+  /** Presence-only heuristic for interactive TUIs without structured turns. */
+  presenceTimer: ReturnType<typeof setTimeout> | null;
+  presenceAwaitingReply: boolean;
+  presenceSawOutput: boolean;
+  /** Whether this live invocation, rather than an earlier resumed turn, exposed structured data. */
+  structuredStream: boolean;
   captureGrade: 'structured' | 'observed';
   parser: ExternalStructuredReplayParser;
   lastFiles: ExternalSessionSnapshot['files'];
@@ -120,6 +127,7 @@ export class ExternalSessionService {
   private readonly pendingResumes = new Map<string, PendingResume>();
   private readonly unsubscribeManager: () => void;
   private readonly unsubscribeData: () => void;
+  private readonly unsubscribeInput: () => void;
 
   constructor(
     private readonly terminals: TerminalManager,
@@ -132,6 +140,9 @@ export class ExternalSessionService {
       else void this.onAgentExit(id);
     });
     this.unsubscribeData = terminals.onDataEvent(({ id, data }) => this.onTerminalData(id, data));
+    this.unsubscribeInput = terminals.onInputEvent(({ id, data }) =>
+      this.onTerminalInput(id, data),
+    );
     // App-quit strandings: close them out into review on startup.
     tasks.recoverExternalTasks();
     // Best-effort: give ended sessions that predate session-id capture (or
@@ -185,20 +196,24 @@ export class ExternalSessionService {
       session.sessionId = session.parser.sessionId;
       this.tasks.setExternalSessionId(session.taskId, session.sessionId);
     }
-    if (parsed.structured && session.captureGrade !== 'structured') {
-      session.captureGrade = 'structured';
-      this.tasks.updateExternalCaptureGrade(session.taskId, 'structured');
-      this.tasks.recordEvent(session.taskId, 'external.observation', {
-        cli: session.cli,
-        captureGrade: 'structured',
-        kind: 'state',
-        label: `${session.cli} structured event stream detected`,
-        detail:
-          'Tool calls, results and provider lifecycle events can now be replayed semantically.',
-        status: 'ok',
-        evidenceKinds: ['tool', 'result'],
-      });
-      void this.publish(session, 'active');
+    if (parsed.structured && !session.structuredStream) {
+      session.structuredStream = true;
+      this.clearObservedPresence(session);
+      if (session.captureGrade !== 'structured') {
+        session.captureGrade = 'structured';
+        this.tasks.updateExternalCaptureGrade(session.taskId, 'structured');
+        this.tasks.recordEvent(session.taskId, 'external.observation', {
+          cli: session.cli,
+          captureGrade: 'structured',
+          kind: 'state',
+          label: `${session.cli} structured event stream detected`,
+          detail:
+            'Tool calls, results and provider lifecycle events can now be replayed semantically.',
+          status: 'ok',
+          evidenceKinds: ['tool', 'result'],
+        });
+        void this.publish(session, 'active');
+      }
     }
     for (const observation of parsed.observations) {
       this.tasks.recordEvent(session.taskId, 'external.observation', {
@@ -219,7 +234,62 @@ export class ExternalSessionService {
       }
     }
 
+    this.noteObservedOutput(session, data);
+
     this.bufferTerminalText(session, parsed.terminalText);
+  }
+
+  /**
+   * A submitted input is the only safe edge on which to arm the observed TUI
+   * fallback. Startup redraws and background terminal noise therefore never
+   * masquerade as completed agent output.
+   */
+  private onTerminalInput(terminalId: string, data: string): void {
+    const session = this.byTerminal.get(terminalId);
+    if (!session || session.ended || session.structuredStream) return;
+    if (!/[\r\n]/.test(data)) return;
+    if (session.presenceTimer) clearTimeout(session.presenceTimer);
+    session.presenceTimer = null;
+    session.presenceAwaitingReply = true;
+    session.presenceSawOutput = false;
+  }
+
+  private noteObservedOutput(session: LiveSession, data: string): void {
+    if (
+      session.structuredStream ||
+      !session.presenceAwaitingReply ||
+      !cleanTerminalText(data).replace(/\s/g, '')
+    ) {
+      return;
+    }
+    session.presenceSawOutput = true;
+    if (session.presenceTimer) clearTimeout(session.presenceTimer);
+    session.presenceTimer = setTimeout(() => {
+      session.presenceTimer = null;
+      if (
+        session.ended ||
+        session.structuredStream ||
+        !session.presenceAwaitingReply ||
+        !session.presenceSawOutput
+      ) {
+        return;
+      }
+      session.presenceAwaitingReply = false;
+      session.presenceSawOutput = false;
+      broadcast('external.activitySettled', {
+        terminalId: session.terminalId,
+        taskId: session.taskId,
+        quietMs: OBSERVED_REPLY_QUIET_MS,
+      });
+    }, OBSERVED_REPLY_QUIET_MS);
+    session.presenceTimer.unref?.();
+  }
+
+  private clearObservedPresence(session: LiveSession): void {
+    if (session.presenceTimer) clearTimeout(session.presenceTimer);
+    session.presenceTimer = null;
+    session.presenceAwaitingReply = false;
+    session.presenceSawOutput = false;
   }
 
   private bufferTerminalText(session: LiveSession, cleaned: string): void {
@@ -390,6 +460,10 @@ export class ExternalSessionService {
       terminalBuffer: '',
       terminalBytes: 0,
       terminalTruncated: false,
+      presenceTimer: null,
+      presenceAwaitingReply: false,
+      presenceSawOutput: false,
+      structuredStream: false,
       captureGrade: 'observed',
       parser: new ExternalStructuredReplayParser(),
       lastFiles: [],
@@ -514,6 +588,7 @@ export class ExternalSessionService {
     session.ended = true;
     if (session.terminalFlushTimer) clearTimeout(session.terminalFlushTimer);
     session.terminalFlushTimer = null;
+    this.clearObservedPresence(session);
     this.flushTerminal(session);
     if (session.recomputeTimer) clearTimeout(session.recomputeTimer);
     session.recomputeTimer = null;
@@ -625,6 +700,10 @@ export class ExternalSessionService {
       terminalBuffer: '',
       terminalBytes: 0,
       terminalTruncated: false,
+      presenceTimer: null,
+      presenceAwaitingReply: false,
+      presenceSawOutput: false,
+      structuredStream: false,
       captureGrade: external.captureGrade === 'structured' ? 'structured' : 'observed',
       parser: new ExternalStructuredReplayParser(),
       lastFiles: changeSet.files.map((file) => ({
@@ -722,6 +801,7 @@ export class ExternalSessionService {
   dispose(): void {
     this.unsubscribeManager();
     this.unsubscribeData();
+    this.unsubscribeInput();
     for (const pending of this.pendingResumes.values()) {
       clearTimeout(pending.timer);
       pending.reject(

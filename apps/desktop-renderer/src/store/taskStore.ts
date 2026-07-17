@@ -183,6 +183,11 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     set({ initialized: true });
 
     onEvent('task.event', ({ taskId, event }) => {
+      // Presence is global: a background Session must visibly react when its
+      // agent finishes a reply, even when another Session owns the right pane.
+      if (event.type === 'agent.message') {
+        useAppStore.getState().signalSessionReply(taskId, `agent-message:${event.id}`);
+      }
       if (taskId !== get().activeTaskId) return;
       const timeline = get().timeline;
       // Ephemeral events have sequence 0; persisted ones are monotonic.
@@ -235,7 +240,10 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
           : [task, ...tasks],
       });
       useAppStore.getState().signalSessionCompletion(task);
-      if (state === 'REVIEW_READY' || state === 'FAILED' || state === 'INTERRUPTED') {
+      if (
+        taskId === get().activeTaskId &&
+        (state === 'REVIEW_READY' || state === 'FAILED' || state === 'INTERRUPTED')
+      ) {
         set({ streaming: null, streamingThinking: null });
       }
     });
@@ -275,13 +283,25 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       streaming: null,
       streamingThinking: null,
       loadingTimeline: true,
+      changeSet: null,
+      loadingChangeSet: false,
+      reviewOpen: false,
     });
     const res = await rpcResult('task.get', { taskId, eventsAfter: 0 });
     if (res.ok) {
-      set({ timeline: res.data.timeline, loadingTimeline: false });
       const tasks = get().tasks;
-      if (!tasks.some((t) => t.id === taskId)) set({ tasks: [res.data.task, ...tasks] });
-    } else {
+      const nextTasks = tasks.some((task) => task.id === taskId)
+        ? tasks.map((task) => (task.id === taskId ? res.data.task : task))
+        : [res.data.task, ...tasks];
+      // The user may have selected a different Session while this request was
+      // in flight. Keep the task catalog fresh, but never project stale
+      // timeline data into the newly selected right pane.
+      if (get().activeTaskId !== taskId) {
+        set({ tasks: nextTasks });
+        return;
+      }
+      set({ tasks: nextTasks, timeline: res.data.timeline, loadingTimeline: false });
+    } else if (get().activeTaskId === taskId) {
       set({ loadingTimeline: false });
     }
   },
@@ -505,6 +525,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     if (!taskId) return;
     set({ loadingChangeSet: true });
     const res = await rpcResult('task.changeSet', { taskId });
+    if (get().activeTaskId !== taskId) return;
     if (res.ok) set({ changeSet: res.data.changeSet, loadingChangeSet: false });
     else {
       set({ loadingChangeSet: false });
@@ -532,6 +553,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         .getState()
         .pushToast('info', 'The file changed while reviewing — the view was refreshed.');
     }
+    if (get().activeTaskId !== taskId) return;
     set({ changeSet: res.data.changeSet });
   },
 

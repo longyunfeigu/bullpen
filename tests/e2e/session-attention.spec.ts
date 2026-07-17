@@ -41,8 +41,31 @@ test.describe('Session completion attention', () => {
       const row = page.getByTestId(`home-task-${taskId!}`);
       await expect(row).toHaveAttribute('data-state', 'REVIEW_READY');
       await expect(row).toHaveAttribute('data-completion', 'review');
+      await expect(row).toHaveAttribute('data-reply', 'true');
+      await expect(row).toHaveClass(/reply-shake/);
+      await expect(row.locator('.sr-provider')).toHaveClass(/session-wave/);
       await expect(row).toContainText('Review');
       await page.screenshot({ path: '/tmp/charter-session-completion-desktop.png' });
+
+      await row.evaluate((element) => {
+        const animation = element
+          .getAnimations()
+          .find(
+            (candidate) =>
+              candidate instanceof CSSAnimation &&
+              candidate.animationName === 'srSessionReplyShake',
+          );
+        if (animation) {
+          animation.pause();
+          animation.currentTime = 286;
+        }
+      });
+      await page.setViewportSize({ width: 820, height: 720 });
+      const rowBox = await row.boundingBox();
+      expect(rowBox).not.toBeNull();
+      expect(rowBox!.x).toBeGreaterThanOrEqual(0);
+      expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(820);
+      await page.screenshot({ path: '/tmp/charter-session-reply-shake-narrow.png' });
 
       await notice.getByRole('button', { name: /Open Session/i }).click();
       await expect(page.getByTestId('task-room')).toBeVisible();
@@ -50,7 +73,6 @@ test.describe('Session completion attention', () => {
       await expect(page.getByTestId('rail-view-sessions')).toHaveClass(/active/);
       await expect(row).toHaveClass(/selected/);
 
-      await page.setViewportSize({ width: 820, height: 720 });
       await expect(page.getByTestId('task-room')).toBeVisible();
       await page.screenshot({ path: '/tmp/charter-session-completion-narrow.png' });
       expect(pageErrors).toEqual([]);

@@ -160,6 +160,7 @@ function SessionTaskRow({
   const activity = useActivityStore((state) => state.perTask[task.id]);
   const glowTasks = useGlowTasks();
   const completion = app.sessionCompletionSignals.find((signal) => signal.taskId === task.id);
+  const reply = app.sessionReplySignals.find((signal) => signal.taskId === task.id);
   const selected = app.taskRoomTaskId === task.id;
   const provider = providerForTask(task);
   const displayTitle = sessionDisplayTitle(task);
@@ -178,15 +179,21 @@ function SessionTaskRow({
   return (
     <div className="sr-row-wrap">
       <button
-        className={`sr-session ${selected ? 'selected' : ''} ${glowTasks.has(task.id) ? 'glow-pulse' : ''} ${completion ? `completion-ripple completion-${completion.tone}` : ''}`}
+        className={`sr-session ${selected ? 'selected' : ''} ${glowTasks.has(task.id) ? 'glow-pulse' : ''} ${completion ? `completion-ripple completion-${completion.tone}` : ''} ${reply ? 'reply-shake' : ''}`}
         data-testid={`home-task-${task.id}`}
         data-session-key={`task:${task.id}`}
         data-state={task.state}
         data-completion={completion?.tone}
+        data-reply={reply ? 'true' : undefined}
         title={`${providerLabel(provider)} · ${displayTitle} — ${meta.label}`}
         onClick={open}
       >
-        <ProviderMark provider={provider} />
+        <ProviderMark
+          provider={provider}
+          className={
+            completion || reply ? `session-wave ${completion ? 'completion' : 'reply'}` : ''
+          }
+        />
         <span className="sr-session-copy">
           <span className="sr-session-title">
             <span className={`sr-live-dot ${live ? 'live' : ''}`} />

@@ -210,4 +210,20 @@ describe('TerminalManager.pollOnce detection gating (ADR-0017 amendment)', () =>
     expect(readProcessTable).toHaveBeenCalledTimes(2);
     expect(events).toEqual([]); // vim is busy but not an agent
   });
+
+  it('fans out exact PTY input bytes for observed agent presence', () => {
+    const { m } = setup(
+      () => 'sh',
+      () => [],
+    );
+    const info = m.create({ cwd: tmpdir(), shellPath: '/bin/sh' });
+    const inputs: Array<{ id: string; data: string }> = [];
+    const unsubscribe = m.onInputEvent((event) => inputs.push(event));
+
+    m.write(info.id, 'hello observed agent\r');
+    unsubscribe();
+    m.write(info.id, 'not observed\r');
+
+    expect(inputs).toEqual([{ id: info.id, data: 'hello observed agent\r' }]);
+  });
 });

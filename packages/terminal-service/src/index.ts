@@ -260,6 +260,7 @@ export function hasChildProcesses(pid: number): boolean {
 export class TerminalManager {
   private readonly sessions = new Map<string, Session>();
   private readonly dataListeners = new Set<(info: { id: string; data: string }) => void>();
+  private readonly inputListeners = new Set<(info: { id: string; data: string }) => void>();
   private readonly agentListeners = new Set<
     (info: { id: string; agent: string | null; cwd: string }) => void
   >();
@@ -308,6 +309,16 @@ export class TerminalManager {
   onDataEvent(listener: (info: { id: string; data: string }) => void): () => void {
     this.dataListeners.add(listener);
     return () => this.dataListeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to bytes sent into a PTY. External interactive agents use the
+   * Enter edge to arm observed-grade reply presence without interpreting or
+   * persisting the user's input here.
+   */
+  onInputEvent(listener: (info: { id: string; data: string }) => void): () => void {
+    this.inputListeners.add(listener);
+    return () => this.inputListeners.delete(listener);
   }
 
   private emitData(id: string, data: string): void {
@@ -399,7 +410,10 @@ export class TerminalManager {
   }
 
   write(id: string, data: string): void {
-    this.sessions.get(id)?.pty.write(data);
+    const session = this.sessions.get(id);
+    if (!session) return;
+    for (const listener of this.inputListeners) listener({ id, data });
+    session.pty.write(data);
   }
 
   /** Retarget an idle persistent PTY without replacing its scrollback/session. */

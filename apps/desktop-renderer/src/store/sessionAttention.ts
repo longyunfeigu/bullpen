@@ -8,6 +8,13 @@ export interface SessionCompletionInfo {
   tone: SessionNoticeTone;
 }
 
+function compactSessionIdentity(value: string): string {
+  const raw = value.trim();
+  const normalized = raw.replace(/^(?:session|sess|terminal|term)[\s:_-]+/i, '') || raw;
+  if (normalized.length <= 18) return normalized;
+  return `${normalized.slice(0, 9)}…${normalized.slice(-6)}`;
+}
+
 /** Keep notification and rail titles identical, including fixture/provider cleanup. */
 export function sessionDisplayTitle(task: TaskDto): string {
   const withoutFixtureDirective = task.title.replace(/^\[scenario:[^\]]+\]\s*/i, '');
@@ -18,7 +25,10 @@ export function sessionDisplayTitle(task: TaskDto): string {
   if (!/^(?:external|new) session$/i.test(withoutRepeatedProvider)) {
     return withoutRepeatedProvider || 'Session';
   }
-  if (task.external) return 'New session';
+  if (task.external) {
+    const identity = task.external.sessionId?.trim() || task.external.terminalId;
+    return `Session ${compactSessionIdentity(identity)}`;
+  }
   const goalLine = task.goalMd
     .replace(/^\[scenario:[^\]]+\]\s*/i, '')
     .split('\n')

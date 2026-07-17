@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
@@ -14,6 +14,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launchApp } from './helpers/launch';
 import { createGitFixture } from './helpers/fixtures';
+
+async function switchReplayDepth(page: Page, depth: 'recap' | 'explore' | 'verify') {
+  await page.getByTestId('replay-menu-toggle').click();
+  await page.getByTestId(`replay-depth-${depth}`).click();
+}
 
 /**
  * ADR-0017 — external CLI agent sessions. A fake agent CLI (a node script, so
@@ -47,6 +52,16 @@ function createFakeAgentBin(fixture: string): string {
   return bin;
 }
 
+function pinFixtureCliPath(bin: string): void {
+  // The embedded zsh intentionally sources the user's login files. A machine
+  // with a real Claude/Codex install may prepend its own bin directory there,
+  // so give these deterministic CLI tests an isolated user ZDOTDIR.
+  writeFileSync(
+    join(bin, '.zshenv'),
+    `export PATH=${JSON.stringify(`${bin}:${process.env.PATH ?? ''}`)}\n`,
+  );
+}
+
 function createResumableClaudeBin(initialDurationMs = 3500): string {
   const bin = mkdtempSync(join(tmpdir(), 'pi-ide-resume-bin-'));
   writeFileSync(
@@ -61,6 +76,7 @@ function createResumableClaudeBin(initialDurationMs = 3500): string {
     ].join('\n'),
   );
   chmodSync(join(bin, 'claude'), 0o755);
+  pinFixtureCliPath(bin);
   return bin;
 }
 
@@ -80,6 +96,7 @@ function createParallelAgentBin(): string {
     );
     chmodSync(join(bin, cli), 0o755);
   }
+  pinFixtureCliPath(bin);
   return bin;
 }
 
@@ -105,6 +122,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
         PI_IDE_OPEN_WORKSPACE: charter,
         PI_IDE_EXTERNAL_CLIS: 'claude,codex',
         PATH: `${bin}:${process.env.PATH ?? ''}`,
+        ZDOTDIR: bin,
       },
     });
     const captureVisuals = process.env.PI_IDE_CAPTURE_TERMINAL_VNEXT === '1';
@@ -124,7 +142,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(page.getByTestId('terminal-panel')).toContainText('codex-shell-ready', {
         timeout: 15000,
       });
-      await page.keyboard.type('codex');
+      await page.keyboard.type(join(bin, 'codex'));
       await page.keyboard.press('Enter');
       await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText('Codex', {
         timeout: 15000,
@@ -167,7 +185,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(page.getByTestId('terminal-panel')).toContainText('claude-shell-ready', {
         timeout: 15000,
       });
-      await page.keyboard.type('claude');
+      await page.keyboard.type(join(bin, 'claude'));
       await page.keyboard.press('Enter');
       await expect(page.locator('[data-testid^="terminal-agent-"]')).toHaveCount(2, {
         timeout: 15000,
@@ -349,6 +367,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
         PI_IDE_OPEN_WORKSPACE: fixture,
         PI_IDE_EXTERNAL_CLIS: 'claude',
         PATH: `${bin}:${process.env.PATH ?? ''}`,
+        ZDOTDIR: bin,
       },
     });
     try {
@@ -360,7 +379,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(page.getByTestId('terminal-panel')).toContainText('ready-marker', {
         timeout: 15000,
       });
-      await page.keyboard.type('claude');
+      await page.keyboard.type(join(bin, 'claude'));
       await page.keyboard.press('Enter');
 
       await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText('Claude Code', {
@@ -433,6 +452,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       PI_IDE_OPEN_WORKSPACE: fixture,
       PI_IDE_EXTERNAL_CLIS: 'claude',
       PATH: `${bin}:${process.env.PATH ?? ''}`,
+      ZDOTDIR: bin,
     };
     const first = await launchApp({ env });
     let second: Awaited<ReturnType<typeof launchApp>> | null = null;
@@ -445,7 +465,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(first.page.getByTestId('terminal-panel')).toContainText('restart-ready', {
         timeout: 15000,
       });
-      await first.page.keyboard.type('claude');
+      await first.page.keyboard.type(join(bin, 'claude'));
       await first.page.keyboard.press('Enter');
       await expect(first.page.locator('[data-testid^="terminal-agent-"]')).toContainText(
         'Claude Code',
@@ -702,7 +722,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       }
       // Explore finds the observed terminal output by content; the boundary
       // note states that a plain TUI cannot be semantically confirmed.
-      await page.getByTestId('replay-depth-explore').click();
+      await switchReplayDepth(page, 'explore');
       await page.getByTestId('replay-search').fill('promoted-echo-ok');
       await page.getByTestId('replay-event-list').locator('button').first().click();
       await expect(page.getByTestId('replay-step')).toContainText('promoted-echo-ok');
@@ -711,10 +731,10 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       if (process.env.CHARTER_CAPTURE_EXTERNAL_REPLAY === '1') {
         await page.waitForTimeout(150);
         await page.screenshot({ path: '/tmp/replay-prod-external-explore.png' });
-        await page.getByTestId('replay-depth-verify').click();
+        await switchReplayDepth(page, 'verify');
         await page.waitForTimeout(150);
         await page.screenshot({ path: '/tmp/replay-prod-external-verify.png' });
-        await page.getByTestId('replay-depth-explore').click();
+        await switchReplayDepth(page, 'explore');
       }
       await page.getByTestId('replay-close').click();
 

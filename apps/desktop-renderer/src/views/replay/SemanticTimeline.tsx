@@ -1,17 +1,12 @@
 import React, { useMemo } from 'react';
-import type { ReplayFactDto, ReplayProjection } from '@pi-ide/ipc-contracts';
+import type { ReplayChapterDto, ReplayFactDto, ReplayProjection } from '@pi-ide/ipc-contracts';
 import { Ic } from '../home-icons.js';
 import type { ReplayController } from './replay-controller.js';
-import { KIND_ICON, LANE_LABEL, formatReplayTime } from './replay-model.js';
+import { CHAPTER_LABEL, formatReplayTime } from './replay-model.js';
 
-const LANES = ['intent', 'actions', 'artifacts', 'risk'] as const;
-/** Marker cap keeps 10k-event sessions scrubbable; mandatory facts always render. */
-const MAX_MARKERS = 480;
+const MAX_VISIBLE_MOMENTS = 9;
 
-/**
- * The semantic timeline (persistent at every depth): four lanes, story/real
- * time, a coverage band for the exact interval, and the transport controls.
- */
+/** A single semantic axis: transport, meaningful moments and capture coverage. */
 export function SemanticTimeline({
   controller,
   projection,
@@ -21,35 +16,20 @@ export function SemanticTimeline({
 }): React.JSX.Element {
   const { facts, session } = projection;
   const { timeMode, playheadMs, durationMs, currentIndex } = controller;
-
-  const positionOf = (fact: ReplayFactDto) =>
-    durationMs > 0
-      ? ((timeMode === 'story' ? fact.storyStartMs : fact.actualStartMs) / durationMs) * 100
-      : 0;
-
-  const markers = useMemo(() => {
-    if (facts.length <= MAX_MARKERS) return facts.map((fact, index) => ({ fact, index }));
-    const chosen: Array<{ fact: ReplayFactDto; index: number }> = [];
-    const stride = Math.ceil(facts.length / (MAX_MARKERS / 2));
-    const seenGroups = new Set<string>();
-    facts.forEach((fact, index) => {
-      if (fact.mandatory) {
-        chosen.push({ fact, index });
-        return;
-      }
-      if (fact.groupKey) {
-        const key = `${fact.groupKey}:${fact.storyStartMs}`;
-        if (seenGroups.has(key)) return;
-        seenGroups.add(key);
-        chosen.push({ fact, index });
-        return;
-      }
-      if (index % stride === 0) chosen.push({ fact, index });
-    });
-    return chosen;
-  }, [facts]);
-
+  const moments = useMemo(
+    () => visibleMoments(session.chapters, facts, controller.currentFact),
+    [session.chapters, facts, controller.currentFact],
+  );
   const coverageTotal = timeMode === 'story' ? session.storyDurationMs : session.actualDurationMs;
+  const rawPercent =
+    durationMs > 0 ? Math.min(100, Math.max(0, (playheadMs / durationMs) * 100)) : 0;
+  // The markers form a semantic chapter axis, not a histogram. Equal spacing
+  // keeps short real-time sessions legible while each label still exposes its
+  // recorded wall-clock time. The selected chapter owns the visual playhead.
+  const momentPositions = useMemo(() => semanticPositions(moments.length), [moments.length]);
+  const selectedMoment = moments.findIndex(({ fact }) => fact.id === controller.currentFact?.id);
+  const percent =
+    selectedMoment >= 0 ? (momentPositions[selectedMoment] ?? rawPercent) : rawPercent;
 
   return (
     <footer className="rp-timeline" data-testid="replay-timeline">
@@ -59,48 +39,48 @@ export function SemanticTimeline({
           data-testid="replay-prev"
           disabled={currentIndex === 0}
           onClick={() => controller.stepBy(-1)}
-          aria-label="Previous event"
+          aria-label="上一个事件"
         >
-          <Ic name="chevron" size={14} className="rp-flip" />
+          <Ic name="chevron" size={15} className="rp-previous-icon" />
         </button>
         <button className="rp-play" data-testid="replay-play" onClick={controller.togglePlay}>
-          <Ic name={controller.playing ? 'pause' : 'play'} size={14} />
-          {controller.playing ? 'Pause' : 'Replay'}
+          <Ic name={controller.playing ? 'pause' : 'play'} size={16} />
+          <span className="rp-sr-only">{controller.playing ? 'Pause' : 'Replay'}</span>
         </button>
         <button
           className="rp-skip"
           data-testid="replay-next"
           disabled={currentIndex >= facts.length - 1}
           onClick={() => controller.stepBy(1)}
-          aria-label="Next event"
+          aria-label="下一个事件"
         >
-          <Ic name="chevron" size={14} />
+          <Ic name="chevron" size={15} className="rp-next-icon" />
         </button>
-        <time aria-live="off">
+        <time>
           {formatReplayTime(playheadMs)} / {formatReplayTime(durationMs)}
         </time>
-        <div
-          className="rp-time-mode"
-          data-testid="replay-time-mode"
-          role="group"
-          aria-label="Time projection"
+        <select
+          value={controller.speed}
+          onChange={(event) => controller.setSpeed(Number(event.target.value))}
+          aria-label="播放速度"
         >
-          <Ic name="clock" size={12} />
-          <button
-            className={timeMode === 'story' ? 'active' : ''}
-            data-testid="replay-time-story"
-            onClick={() => controller.setTimeMode('story')}
-          >
-            故事时间
-          </button>
-          <button
-            className={timeMode === 'actual' ? 'active' : ''}
-            data-testid="replay-time-actual"
-            onClick={() => controller.setTimeMode('actual')}
-          >
-            真实时间
-          </button>
-        </div>
+          {[1, 2, 4, 8, 16].map((value) => (
+            <option key={value} value={value}>
+              {value}×
+            </option>
+          ))}
+        </select>
+        <button
+          className={`rp-idle-toggle ${timeMode === 'story' ? 'active' : ''}`}
+          data-testid="replay-skip-idle"
+          onClick={() => controller.setTimeMode(timeMode === 'story' ? 'actual' : 'story')}
+          aria-pressed={timeMode === 'story'}
+        >
+          跳过等待
+          <i aria-hidden>
+            <b />
+          </i>
+        </button>
         {controller.live ? (
           <button
             className={`rp-live-follow ${controller.liveFollow ? 'active' : ''}`}
@@ -114,46 +94,33 @@ export function SemanticTimeline({
         <span className="rp-count" data-testid="replay-count">
           step {currentIndex + 1} / {facts.length}
         </span>
-        <select
-          value={controller.speed}
-          onChange={(event) => controller.setSpeed(Number(event.target.value))}
-          aria-label="Playback speed"
-        >
-          {[1, 2, 4, 8, 16].map((value) => (
-            <option key={value} value={value}>
-              {value}×
-            </option>
-          ))}
-        </select>
       </div>
-      <div className="rp-lanes-wrap">
-        <div className="rp-lanes">
-          {LANES.map((lane) => (
-            <div className="rp-lane" key={lane}>
-              <span>{LANE_LABEL[lane]}</span>
-              <div className="rp-lane-track">
-                {markers
-                  .filter(({ fact }) => fact.lane === lane)
-                  .map(({ fact, index }) => (
-                    <button
-                      key={fact.id}
-                      className={`rp-marker rp-marker-${fact.level} ${index === currentIndex ? 'active' : ''} ${fact.mandatory ? 'mandatory' : ''}`}
-                      style={{ left: `${positionOf(fact)}%` }}
-                      onClick={() => controller.selectIndex(index)}
-                      title={`${formatReplayTime(timeMode === 'story' ? fact.storyStartMs : fact.actualStartMs)} · ${fact.action}`}
-                      aria-label={fact.action}
-                    >
-                      <Ic name={KIND_ICON[fact.kind] ?? 'info'} size={9} />
-                    </button>
-                  ))}
-              </div>
-            </div>
-          ))}
-          <div
-            className="rp-playhead"
-            style={{ left: `${durationMs > 0 ? (playheadMs / durationMs) * 100 : 0}%` }}
-            aria-hidden
-          />
+
+      <div className="rp-semantic-axis">
+        <div className="rp-axis-line" aria-hidden />
+        {moments.map(({ chapter, fact }, index) => {
+          const left = momentPositions[index] ?? 50;
+          const active = fact.id === controller.currentFact?.id;
+          return (
+            <button
+              key={chapter.id}
+              className={`rp-semantic-moment ${active ? 'active' : ''} status-${fact.status}`}
+              style={{ left: `${left}%` }}
+              onClick={() => controller.selectFact(fact.id)}
+              title={fact.action}
+            >
+              <span>
+                <strong>{CHAPTER_LABEL[chapter.category]}</strong>
+                <small>{clockTime(fact.startedAt)}</small>
+              </span>
+              <i aria-hidden>
+                <Ic name={momentIcon(fact)} size={10} />
+              </i>
+            </button>
+          );
+        })}
+        <div className="rp-axis-playhead" style={{ left: `${percent}%` }} aria-hidden>
+          <i />
         </div>
         <input
           className="rp-range"
@@ -164,29 +131,78 @@ export function SemanticTimeline({
           step={Math.max(1, Math.floor(durationMs / 5000))}
           value={Math.min(playheadMs, durationMs)}
           onChange={(event) => controller.seek(Number(event.target.value))}
-          aria-label="Replay timeline"
+          aria-label="回放时间轴"
         />
-        <div
-          className="rp-coverage-band"
-          data-testid="replay-coverage"
-          aria-label="Capture coverage by interval"
-        >
+      </div>
+
+      <div className="rp-axis-footer">
+        <time>00:00</time>
+        <div className="rp-coverage-band" data-testid="replay-coverage" aria-label="逐段证据覆盖">
           {session.coverage.map((segment, index) => {
             const start = timeMode === 'story' ? segment.storyStartMs : segment.actualStartMs;
             const end = timeMode === 'story' ? segment.storyEndMs : segment.actualEndMs;
             const width = coverageTotal > 0 ? ((end - start) / coverageTotal) * 100 : 0;
-            if (width <= 0) return null;
-            return (
+            return width > 0 ? (
               <i
                 key={`${segment.level}-${index}`}
                 className={`rp-cov-${segment.level}`}
                 style={{ width: `${width}%` }}
-                title={`${segment.level}`}
+                title={segment.level}
               />
-            );
+            ) : null;
           })}
         </div>
+        <span>
+          <Ic name="clock" size={12} />
+          {timeMode === 'story' ? '已压缩等待与重复读取' : '正在显示真实时间'}
+        </span>
+        <time>{formatReplayTime(durationMs)}</time>
       </div>
     </footer>
   );
+}
+
+function visibleMoments(
+  chapters: ReplayChapterDto[],
+  facts: ReplayFactDto[],
+  current: ReplayFactDto | null,
+): Array<{ chapter: ReplayChapterDto; fact: ReplayFactDto }> {
+  const candidates = chapters
+    .map((chapter) => ({ chapter, fact: facts.find((fact) => fact.id === chapter.factId) }))
+    .filter((entry): entry is { chapter: ReplayChapterDto; fact: ReplayFactDto } =>
+      Boolean(entry.fact),
+    );
+  if (candidates.length <= MAX_VISIBLE_MOMENTS) return candidates;
+
+  const chosen = new Map<string, { chapter: ReplayChapterDto; fact: ReplayFactDto }>();
+  const stride = (candidates.length - 1) / (MAX_VISIBLE_MOMENTS - 1);
+  for (let index = 0; index < MAX_VISIBLE_MOMENTS; index += 1) {
+    const entry = candidates[Math.round(index * stride)];
+    if (entry) chosen.set(entry.chapter.id, entry);
+  }
+  const active = candidates.find((entry) => entry.fact.id === current?.id);
+  if (active) chosen.set(active.chapter.id, active);
+  return [...chosen.values()].sort((a, b) => a.chapter.storyStartMs - b.chapter.storyStartMs);
+}
+
+function semanticPositions(count: number): number[] {
+  if (count <= 0) return [];
+  if (count === 1) return [50];
+  return Array.from({ length: count }, (_, index) => 4 + (index * 92) / (count - 1));
+}
+
+function momentIcon(fact: ReplayFactDto): string {
+  if (fact.status === 'error' || fact.status === 'denied') return 'alert';
+  if (fact.kind === 'verification') return fact.status === 'ok' ? 'check' : 'alert';
+  if (fact.actor.kind === 'user') return 'user';
+  if (fact.actor.kind === 'agent') return 'bot';
+  if (fact.kind === 'write') return 'pencil';
+  return 'circle';
+}
+
+function clockTime(iso: string): string {
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime())
+    ? '00:00'
+    : parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }

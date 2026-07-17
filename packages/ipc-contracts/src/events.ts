@@ -101,6 +101,18 @@ export const EVENT_CHANNELS = {
       status: z.enum(['ok', 'error']),
     }),
   ),
+  /** Presence-only fallback for an observed external TUI: after user input,
+   * visible PTY output became quiet. This is deliberately not a semantic turn
+   * or Replay evidence boundary. */
+  'external.activitySettled': ev(
+    'external.activitySettled',
+    1,
+    z.object({
+      terminalId: z.string(),
+      taskId: z.string(),
+      quietMs: z.number().int().positive(),
+    }),
+  ),
   /** ADR-0022 am.2: a console message from a loopback preview frame (any level;
    * the renderer's policy decides what reaches the agent). Zero-injection:
    * captured via the window's own console-message event, filtered by origin. */

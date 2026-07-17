@@ -69,7 +69,12 @@ export function ExternalTerminalColumn({ task }: { task: TaskDto }): React.JSX.E
   }, [item]);
 
   return (
-    <div className="tr-extcol" data-testid="external-terminal-column">
+    <div
+      className="tr-extcol"
+      data-testid="external-terminal-column"
+      data-task-id={task.id}
+      data-terminal-id={external.terminalId}
+    >
       <div className="tr-exthead">
         <span className={`tr-extdot ${live ? 'live' : ''}`} />
         <span className="tr-extname">✳ {external.cli}</span>

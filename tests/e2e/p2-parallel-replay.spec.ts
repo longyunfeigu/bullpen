@@ -1,6 +1,11 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { launchApp } from './helpers/launch';
 import { createTsSmallFixture } from './helpers/fixtures';
+
+async function switchReplayDepth(page: Page, depth: 'recap' | 'explore' | 'verify') {
+  await page.getByTestId('replay-menu-toggle').click();
+  await page.getByTestId(`replay-depth-${depth}`).click();
+}
 
 /** P2 (ADR-0006, PIVOT-016..018): parallel runs, persistent Sessions, replay, ⌘K. */
 test.describe('P2 — parallel runs, session replay, quick launcher', () => {
@@ -91,20 +96,20 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
       await expect(page.getByTestId('replay-files')).toContainText('src/index.ts');
 
       // Depth switching keeps the same selected fact (one controller).
-      await page.getByTestId('replay-depth-explore').click();
+      await switchReplayDepth(page, 'explore');
       await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
-      await page.getByTestId('replay-depth-verify').click();
+      await switchReplayDepth(page, 'verify');
       await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
-      await page.getByTestId('replay-depth-recap').click();
+      await switchReplayDepth(page, 'recap');
 
       if (process.env.CHARTER_CAPTURE_REPLAY === '1') {
         await page.screenshot({ path: '/tmp/replay-prod-recap.png' });
         for (const depth of ['explore', 'verify'] as const) {
-          await page.getByTestId(`replay-depth-${depth}`).click();
+          await switchReplayDepth(page, depth);
           await page.waitForTimeout(120);
           await page.screenshot({ path: `/tmp/replay-prod-${depth}.png` });
         }
-        await page.getByTestId('replay-depth-recap').click();
+        await switchReplayDepth(page, 'recap');
         await app.evaluate(({ BrowserWindow }) => {
           BrowserWindow.getAllWindows()[0]?.setSize(1024, 768);
         });

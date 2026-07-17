@@ -29,13 +29,9 @@ import { ExternalTerminalColumn, useExternalFiles } from './ExternalRoom.js';
 import { roomCopyFor } from './roomCopy.js';
 import { SessionToolCanvas, type SessionFileStat } from './SessionToolCanvas.js';
 import { CodeContextAttachments } from './CodeContextAttachments.js';
+import { sessionDisplayTitle } from '../store/sessionAttention.js';
 
 const EMPTY_TERMINAL_REFS: TerminalOutputRef[] = [];
-
-function sessionTitle(title: string): string {
-  const withoutFixtureDirective = title.replace(/^\[scenario:[^\]]+\]\s*/i, '').trim();
-  return withoutFixtureDirective || 'Untitled Session';
-}
 
 function sessionAgentLabel(task: {
   external?: { cli: string } | null;
@@ -149,7 +145,7 @@ export function TaskRoomView(): React.JSX.Element {
   };
 
   return (
-    <div className="tr-root" data-testid="task-room">
+    <div className="tr-root" data-testid="task-room" data-task-id={task.id}>
       <div className="tr-head session-identity-head">
         <div className="tr-head-drag" />
         <button className="tr-back" data-testid="task-room-back" onClick={app.closeTaskRoom}>
@@ -158,8 +154,8 @@ export function TaskRoomView(): React.JSX.Element {
         </button>
         <div className="session-identity">
           <div className="session-identity-title">
-            <span className="tr-title" title={sessionTitle(task.title)}>
-              {sessionTitle(task.title)}
+            <span className="tr-title" title={sessionDisplayTitle(task)}>
+              {sessionDisplayTitle(task)}
             </span>
             <StateBadge
               state={task.state}
@@ -252,7 +248,7 @@ export function TaskRoomView(): React.JSX.Element {
             /* ADR-0017: the conversation with an external agent IS its terminal —
                it takes the timeline+composer's place; everything else is the
                same room (rail, peek, review bar). */
-            <ExternalTerminalColumn task={task} />
+            <ExternalTerminalColumn key={task.id} task={task} />
           ) : (
             <>
               {/* Mockup A (ADR-0014): mode/model/effort live in the composer foot. */}
@@ -265,6 +261,7 @@ export function TaskRoomView(): React.JSX.Element {
           {task.external ? null : <RoomComposer key={task.id} task={task} running={running} />}
         </div>
         <SessionToolCanvas
+          key={task.id}
           task={task}
           files={files}
           fileStats={fileStats}

@@ -320,6 +320,22 @@ export const useExternalStore = create<ExternalStore>((set, get) => ({
       });
     });
 
+    // Structured Claude/Codex streams expose a real reply/turn boundary.
+    // Reflect it on the exact Session row instead of animating whichever room
+    // happens to be selected at the time.
+    onEvent('external.turn', ({ terminalId, taskId }) => {
+      seq += 1;
+      useAppStore.getState().signalSessionReply(taskId, `external-turn:${terminalId}:${seq}`);
+    });
+
+    // Interactive Claude/Codex TUIs do not expose structured result events.
+    // The host therefore emits a presence-only output-settled edge after a
+    // submitted prompt; it must never be promoted into semantic Replay data.
+    onEvent('external.activitySettled', ({ terminalId, taskId }) => {
+      seq += 1;
+      useAppStore.getState().signalSessionReply(taskId, `external-settled:${terminalId}:${seq}`);
+    });
+
     // Focused-workspace changes intentionally do not clear terminal/session
     // placement. Each PTY now owns its own host-resolved project context.
 

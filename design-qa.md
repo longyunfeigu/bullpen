@@ -1,3 +1,236 @@
+# Session Reply Diagonal Shake — Design QA
+
+## Comparison target
+
+- Source visual truth:
+  `/var/folders/23/z96fd00x791_2j0k757hsnjw0000gn/T/codex-clipboard-EDvBBf.png`.
+  The red annotation identifies the complete selected Session card as the
+  motion surface; the user's accompanying direction specifies a short diagonal
+  shake after the agent finishes output.
+- Real installed-Claude Electron implementation:
+  `/tmp/live-e2e/claude-observed-reply-shake.png` at 1600 × 900 CSS pixels.
+- Deterministic observed-TUI full and focused evidence:
+  `/tmp/charter-observed-claude-reply-shake.png` and
+  `/tmp/charter-observed-claude-reply-card.png` at 1440 × 900 CSS pixels.
+- Narrow evidence:
+  `/tmp/charter-session-reply-shake-narrow.png` at 820 × 720 CSS pixels.
+- State: selected Claude Session after user-submitted input, visible PTY output,
+  and 1.8 seconds of stable output silence. The vendor proof uses the installed
+  Claude Code 2.1.212 `/help` flow without a model request; the deterministic
+  proof uses a non-structured long-lived TUI fixture.
+
+The source, focused implementation, and narrow implementation were opened
+together in one comparison input. The Electron assertion also reads the live
+transform matrix at the first peak: rotation magnitude exceeds 0.02 and the
+vertical translation exceeds 0.5 CSS pixels, proving this is not the previous
+horizontal-only nudge.
+
+## Findings
+
+No actionable P0, P1, or P2 findings remain.
+
+- Fonts and typography: the animation moves the Session card as one rigid
+  surface. Provider mark, live dot, title, status, detail text, and timestamp
+  retain their existing sizes, baselines, weight, truncation, and
+  antialiasing; no internal element drifts independently.
+- Spacing and layout rhythm: the card pivots around 18% of its width, reaches a
+  visible 2.4-degree diagonal first peak, then alternates through four smaller
+  rebounds before settling at its exact original geometry in 2.2 seconds.
+  Transform animation does not reflow the rail or move adjacent Sessions.
+- Colors and visual tokens: the selected background, border, inset accent, and
+  semantic completion color continue to come from the active shell skin. Two
+  whole-card outline waves now accompany the provider wave, making the event
+  readable without a new palette or hard-coded card surface.
+- Image quality and asset fidelity: no new image asset is required. The
+  existing provider mark remains sharp while the browser compositor transforms
+  the complete card; no placeholder, emoji, custom SVG, or CSS-art icon was
+  added.
+- Copy and content: Session identity, terminal-output summary, timestamp, and
+  completion state are unchanged. Only the completion presence behavior was
+  modified.
+- Responsiveness and accessibility: at 820 × 720 the first diagonal peak stays
+  inside the viewport and does not cover or clip the next Session. Under
+  `prefers-reduced-motion`, the shake and water-wave animations are disabled and
+  the existing static completion halo remains.
+
+## Comparison history
+
+1. Initial completion-presence pass — blocked by P1 trigger and motion mismatch.
+   - Finding: only the provider emitted rings and the card translated
+     horizontally by at most two pixels, so the completion lacked the requested
+     whole-card diagonal recoil. More importantly, a real interactive Claude
+     TUI is observed-grade and emits no structured `result`, so it never entered
+     the animation state at all.
+   - Fix: arm a presence-only edge when the user submits PTY input, require
+     visible output, and fire after a stable quiet period. This edge is not
+     written as semantic Replay evidence. The card now uses a 2.2-second damped
+     rotation/x/y sequence plus two whole-card outline waves.
+2. Real vendor-Claude pass — no remaining P0/P1/P2 mismatch.
+   - Evidence: installed Claude Code 2.1.212 rendered `/help` in the real
+     embedded PTY and the corresponding Session visibly tilted and rippled.
+     No model request was made.
+3. Desktop peak-motion pass — no remaining P0/P1/P2 mismatch.
+   - Evidence: the focused Electron capture visibly tilts the selected card;
+     the real transform-matrix assertion verifies both rotation and vertical
+     movement at the same frame.
+4. Narrow pass — no clipping or neighboring-row collision.
+   - Evidence: the 820 × 720 production capture and bounding-box assertions.
+
+## Primary interactions tested
+
+- Launch the installed Claude Code TUI, submit local `/help`, and verify the
+  observed reply-presence path without spending model tokens.
+- Launch two independent deterministic embedded Claude PTYs and bind each to
+  its own Session.
+- Submit through the current Session Composer, wait for its non-structured PTY
+  output to settle, and verify startup output alone never triggers presence.
+- Select one Claude Session and wait for its structured result boundary.
+- Verify only the corresponding card receives the reply state, whole-card
+  shake, and provider water-wave.
+- Preserve the correct right-side Session identity during the completion event
+  and subsequent cross-Session switches.
+- Complete a managed Pi Session and verify the same whole-card completion
+  behavior at desktop and narrow viewports.
+- Assert no renderer page errors, console errors, framework overlay, blank
+  surface, horizontal clipping, or stale right-pane identity.
+
+final result: passed
+
+---
+
+# Semantic Session Replay — Design QA
+
+## Comparison target
+
+- Source visual truth:
+  `docs/design/replay-first-principles/concepts/03-semantic-session-playback-concept.png`
+  (1586 × 992).
+- Production Electron implementation:
+  `/tmp/charter-replay-semantic/pi-studio.png`.
+- Four-skin production captures:
+  `/tmp/charter-replay-semantic/pi-studio.png`,
+  `/tmp/charter-replay-semantic/pi-terminal.png`,
+  `/tmp/charter-replay-semantic/pi-archive.png`, and
+  `/tmp/charter-replay-semantic/pi-index.png`.
+- Focused native-agent/code state:
+  `/tmp/charter-replay-semantic/claude-recap.png`.
+- Responsive state: `/tmp/charter-replay-semantic/pi-narrow-1024.png` at
+  1024 × 768 CSS pixels.
+- Capture method: the repository's production-mode Playwright Electron harness,
+  isolated user-data directories, and real BrowserWindow surfaces. The desktop
+  BrowserWindow targeted 1600 × 969; the local macOS work area constrained the
+  renderer to 1600 × 889 CSS pixels. The fixed reference and implementation
+  were normalized to a common 1600px width without distorting either image.
+
+## Visual evidence
+
+- Full source/implementation comparison in one image:
+  `/tmp/charter-replay-semantic/design-qa-full-comparison.png`.
+- Focused semantic-story/artifact comparison in one image:
+  `/tmp/charter-replay-semantic/design-qa-body-comparison.png`.
+- Focused TypeScript artifact comparison in one image:
+  `/tmp/charter-replay-semantic/design-qa-code-comparison.png`.
+- Focused transport/timeline comparison in one image:
+  `/tmp/charter-replay-semantic/design-qa-timeline-comparison.png`.
+
+The reference and current Electron capture were opened together for the final
+comparison. Dynamic task text, timestamps, file size, provider identity, and
+evidence level are session data and were not treated as visual drift.
+
+## Findings
+
+No actionable P0, P1, or P2 findings remain.
+
+- Fonts and typography: the existing Charter serif display face, UI font, and
+  monospace artifact stack are retained. Header identity, semantic event labels,
+  result facts, artifact metadata, and timeline chapters preserve the reference's
+  hierarchy and truncate long observed output rather than changing track width.
+- Spacing and layout rhythm: the stable page is header → session contract →
+  37/63 semantic story/artifact canvas → one bottom playback timeline. The
+  compact contract is an intentional production addition that keeps original
+  goal, outcome, verification, and evidence coverage visible at every depth.
+  It does not introduce a second navigation or playback surface.
+- Colors and tokens: Replay does not own a hard-coded page background. Studio,
+  Terminal, Archive, and Index resolve the Replay root/artifact area from
+  `--bg-editor`, the story rail from `--bg-sidebar`, the timeline from
+  `--bg-panel`, and header/contract/cards from the corresponding shared shell
+  tokens. The automated test compares computed surface colors to the resolved
+  root variables in all four skins. Selection follows each skin's accent, so
+  Studio uses its existing near-black selection rather than inventing a Replay-
+  only blue.
+- Image and asset fidelity: the screen contains no photographic or generated
+  imagery. Existing icon-library glyphs and provider marks for Pi, Claude, and
+  Codex are reused; no placeholder, emoji, CSS drawing, or custom inline SVG was
+  introduced.
+- Copy and evidence honesty: the source's private-reasoning wording is presented
+  as “显示上下文/收起上下文”. Replay only expands recorded events and never
+  claims access to hidden model reasoning. Structured records, observed external
+  activity, and trust boundaries remain visibly distinct. Mock scenario fixture
+  directives are removed at the Replay presentation boundary while the stored
+  source record remains unchanged.
+- States and interactions: previous/play/pause/next, speed, idle compression,
+  semantic chapter selection, result jump, view/depth menu, result/change
+  summary, evidence sheet, context expansion, Recap/Explore/Verify navigation,
+  search, receipt, and close/back paths all work in the real renderer. A selected
+  story row stays centered and there is exactly one active semantic node.
+- Responsiveness and accessibility: at 1024 × 768 both semantic regions, page
+  identity, transport, and timeline remain reachable with no global horizontal
+  overflow. Buttons keep accessible names/pressed state, the depth menu remains
+  above the evidence sheet, and the final runs reported no renderer page errors,
+  console errors, Vite overlay, or blank surface.
+
+Residual P3: the selected managed Pi fixture changes a one-line text file, while
+the concept shows a longer TypeScript retry diff. The file/document renderer is
+data-dependent; the focused Claude comparison demonstrates the same production
+surface with a real observed TypeScript before/after artifact. The reference is
+also taller than the available desktop work area, so the full comparison keeps
+both complete images at a common width instead of cropping the timeline.
+
+## Comparison history
+
+1. Initial layer pass — blocked by P2 menu/evidence stacking.
+   - Fix: raised the Replay source/depth menu above the evidence detail sheet.
+2. Short-session pass — blocked by P2 timeline marker collisions.
+   - Fix: semantic chapters use evenly distributed visual positions while their
+     labels retain measured wall-clock times and the coverage band retains real
+     intervals.
+3. Selection pass — blocked by P2 off-screen active context.
+   - Fix: selected semantic rows center within the story scroller, including
+     result jump and narrow layouts.
+4. Electron screenshot pass — blocked by a transient compositor frame and a P2
+   fixture directive visible in the original-goal contract.
+   - Fix: wait for the post-navigation frame before capture and sanitize only
+     the user-facing goal projection.
+5. Final same-input comparison — no remaining P0/P1/P2 drift. The preserved
+   production contract and skin-owned selection accent are deliberate product
+   system decisions, not unimplemented reference regions.
+
+## End-to-end validation
+
+- Pi Agent: a complete managed task on the real Electron surface, all four
+  skins, semantic selection/evidence, context expansion, playback controls,
+  Explore and Verify depths, result jump, and 1024px responsive layout.
+- Claude Code and Codex: each traverses a genuine embedded PTY process, native
+  session detection, workspace watcher, file accounting, review handoff,
+  observed/structured evidence boundary, Recap evidence, and Explore search.
+  Deterministic fixture executables keep this proof repeatable and do not fake
+  the PTY/accounting/Replay path.
+- Installed vendor CLI smoke: Claude Code 2.1.212 and codex-cli 0.144.5 were each
+  launched in their real interactive TUI through Electron. Claude also exited
+  back into the actual Replay surface. These smoke tests deliberately avoided a
+  billed model request.
+- Pi gateway credentials were not configured in this environment, so no live
+  network-model claim is made; the managed Pi proof uses the repository's real
+  adapter/task/ledger/Replay pipeline with its deterministic runtime.
+- Verification totals: production build passed; repository check passed;
+  59 unit-test files / 477 tests passed; the combined parallel Replay,
+  semantic-provider, and Replay V3 Electron run passed 10/10; external CLI
+  accounting/Replay passed; real Claude and Codex interactive smoke tests passed.
+
+final result: passed
+
+---
+
 # Unified Session Canvas — Design QA
 
 ## Comparison target

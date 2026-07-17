@@ -74,9 +74,9 @@ export function HomeShell(): React.JSX.Element {
     <div className="hm-root" data-testid="home-shell">
       <div className="hm-content">
         {sessionTerminalId ? (
-          <SessionTerminalView terminalId={sessionTerminalId} />
+          <SessionTerminalView key={sessionTerminalId} terminalId={sessionTerminalId} />
         ) : taskRoomTaskId ? (
-          <TaskRoomView />
+          <TaskRoomView key={taskRoomTaskId} />
         ) : projectTool ? (
           <ProjectToolView tool={projectTool} />
         ) : (

@@ -8,6 +8,10 @@ const VERIFICATION_LABEL = {
   unverified: '未验证',
 } as const;
 
+function displayGoal(goal: string): string {
+  return goal.replace(/^\[scenario:[^\]]+\]\s*/i, '').trim() || '未记录原始目标';
+}
+
 /**
  * The session contract (persistent at every depth): original goal, outcome,
  * verification state and the measured coverage band.
@@ -18,7 +22,9 @@ export function SessionContract({ session }: { session: ReplaySessionDto }): Rea
     <section className="rp-contract" data-testid="replay-contract" aria-label="Session contract">
       <div className="rp-contract-goal">
         <span>原始目标</span>
-        <strong className={session.goalRecorded ? '' : 'rp-goal-missing'}>{session.goal}</strong>
+        <strong className={session.goalRecorded ? '' : 'rp-goal-missing'}>
+          {displayGoal(session.goal)}
+        </strong>
       </div>
       <div className="rp-contract-fact">
         <span>结果</span>

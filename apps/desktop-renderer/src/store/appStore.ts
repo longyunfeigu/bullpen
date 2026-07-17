@@ -50,6 +50,12 @@ export interface SessionCompletionSignal {
   tone: SessionNoticeTone;
 }
 
+export interface SessionReplySignal {
+  id: string;
+  edgeKey: string;
+  taskId: string;
+}
+
 export interface SessionNotice extends SessionCompletionSignal {
   title: string;
   projectName: string;
@@ -71,6 +77,8 @@ interface AppStore {
   toasts: Toast[];
   /** Short-lived run-completion edges that animate the matching Session row. */
   sessionCompletionSignals: SessionCompletionSignal[];
+  /** Short-lived completed agent replies that add live presence to the matching row. */
+  sessionReplySignals: SessionReplySignal[];
   /** Clickable, auto-expiring in-app completion notifications. */
   sessionNotices: SessionNotice[];
   /** A notification click asks the rail to reveal this exact Session. */
@@ -144,6 +152,7 @@ interface AppStore {
   refreshSettings(): Promise<void>;
   pushToast(kind: Toast['kind'], message: string): void;
   dismissToast(id: string): void;
+  signalSessionReply(taskId: string, edgeKey: string): void;
   signalSessionCompletion(task: TaskDto): void;
   dismissSessionNotice(id: string): void;
   revealTaskSession(taskId: string): void;
@@ -189,6 +198,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   settingsSection: 'general',
   toasts: [],
   sessionCompletionSignals: [],
+  sessionReplySignals: [],
   sessionNotices: [],
   sessionReveal: null,
   surface: 'home',
@@ -477,6 +487,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
   dismissToast(id) {
     set({ toasts: get().toasts.filter((t) => t.id !== id) });
+  },
+  signalSessionReply(taskId, edgeKey) {
+    if (get().sessionReplySignals.some((signal) => signal.edgeKey === edgeKey)) return;
+    const id = newId('session-reply');
+    set({
+      sessionReplySignals: [...get().sessionReplySignals, { id, edgeKey, taskId }].slice(-32),
+    });
+    setTimeout(() => {
+      set({
+        sessionReplySignals: get().sessionReplySignals.filter((candidate) => candidate.id !== id),
+      });
+    }, 4_200);
   },
   signalSessionCompletion(task) {
     const info = sessionCompletionInfo(task);

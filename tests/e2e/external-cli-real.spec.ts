@@ -63,7 +63,7 @@ test.describe('ADR-0017 rev.2 real external CLIs (manual, gated)', () => {
 
       // Detection despite the version-named binary (kernel comm = "2.1.209").
       // rev.2: decoration only — session bar + badge, NO panel, dock intact.
-      await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText('claude', {
+      await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText(/claude/i, {
         timeout: 30000,
       });
       await expect(page.getByTestId('terminal-session-bar')).toBeVisible();
@@ -76,6 +76,57 @@ test.describe('ADR-0017 rev.2 real external CLIs (manual, gated)', () => {
         timeout: 30000,
       });
       await page.screenshot({ path: join(SHOTS, 'claude-interactive-detected.png') });
+
+      // Real interactive Claude emits no JSON turn.completed edge. A local
+      // slash command exercises the production observed-input/output/quiet
+      // presence path without making a billed model request.
+      await expect
+        .poll(async () => {
+          return page.evaluate(async () => {
+            const bridge = (
+              window as never as {
+                product: {
+                  rpc: Record<string, (p: unknown) => Promise<{ ok: boolean; data?: any }>>;
+                };
+              }
+            ).product;
+            const tasks = await bridge.rpc['task.list']!({
+              filter: 'all',
+              includeArchived: false,
+              scope: 'all',
+            });
+            return (
+              tasks.data?.tasks?.find(
+                (task: { external?: { cli?: string } }) => task.external?.cli === 'claude',
+              )?.id ?? null
+            );
+          });
+        })
+        .not.toBeNull();
+      const taskId = await page.evaluate(async () => {
+        const bridge = (
+          window as never as {
+            product: { rpc: Record<string, (p: unknown) => Promise<{ ok: boolean; data?: any }>> };
+          }
+        ).product;
+        const tasks = await bridge.rpc['task.list']!({
+          filter: 'all',
+          includeArchived: false,
+          scope: 'all',
+        });
+        return tasks.data.tasks.find(
+          (task: { external?: { cli?: string } }) => task.external?.cli === 'claude',
+        ).id as string;
+      });
+      const row = page.getByTestId(`home-task-${taskId}`);
+      await page.getByTestId('terminal-host').click();
+      await page.keyboard.type('/help');
+      await page.keyboard.press('Enter');
+      await expect(row).toHaveAttribute('data-reply', 'true', { timeout: 15000 });
+      await expect(row).toHaveClass(/reply-shake/);
+      await expect(row).toHaveCSS('animation-duration', '2.2s');
+      await page.screenshot({ path: join(SHOTS, 'claude-observed-reply-shake.png') });
+      await page.keyboard.press('Escape');
 
       // User-invoked promotion: the LIVE TUI moves to the side panel and keeps
       // rendering; keystrokes land in its composer (visible echo).
@@ -105,6 +156,21 @@ test.describe('ADR-0017 rev.2 real external CLIs (manual, gated)', () => {
       await expect(page.getByTestId('bottom-panel')).toBeVisible();
       await expect(page.getByTestId('session-bar-ended')).toBeVisible();
       await page.screenshot({ path: join(SHOTS, 'claude-interactive-returned.png') });
+
+      // The vendor CLI's real observed session is also consumable by the same
+      // semantic Replay surface used by deterministic CI coverage.
+      await page.getByTestId('session-bar-review').click();
+      await expect(page.getByTestId('task-room')).toBeVisible();
+      await page.getByTestId('session-more').click();
+      await page.getByTestId('replay-open').click();
+      await expect(page.getByTestId('replay-view')).toBeVisible();
+      await expect(page.getByTestId('replay-source')).toContainText('Claude Terminal');
+      await expect(page.getByTestId('replay-source')).toContainText('观察记录');
+      await expect(page.getByTestId('replay-story-list')).toBeVisible();
+      await expect(page.getByTestId('replay-timeline')).toBeVisible();
+      await page.waitForTimeout(180);
+      await page.screenshot({ path: join(SHOTS, 'claude-interactive-replay.png') });
+      await page.getByTestId('replay-close').click();
     } finally {
       const video = page.video();
       await app.close();
@@ -131,7 +197,7 @@ test.describe('ADR-0017 rev.2 real external CLIs (manual, gated)', () => {
       await page.keyboard.press('Enter');
 
       // rev.2: the session decorates in place; nothing moves on detection.
-      await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText('claude', {
+      await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText(/claude/i, {
         timeout: 30000,
       });
       await expect(page.getByTestId('terminal-session-bar')).toBeVisible();
@@ -186,7 +252,7 @@ test.describe('ADR-0017 rev.2 real external CLIs (manual, gated)', () => {
 
       // The user's zsh function (nvm lazy-load + proxy) wraps the real CLI;
       // detection must see through whatever shim shape it resolves to.
-      await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText('codex', {
+      await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText(/codex/i, {
         timeout: 45000,
       });
       await expect(page.getByTestId('terminal-session-bar')).toBeVisible();

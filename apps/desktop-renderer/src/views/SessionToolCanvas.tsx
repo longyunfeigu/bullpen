@@ -87,6 +87,7 @@ export function SessionToolCanvas(props: {
     <aside
       className={`session-tool-canvas ${expanded ? 'expanded' : ''}`}
       data-testid="session-tool-canvas"
+      data-task-id={task.id}
       data-active-tool={tool}
       aria-label="Session tools"
     >
@@ -684,6 +685,8 @@ function SessionReviewSummary(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.task.id]);
 
+  const changeSet = store.changeSet?.taskId === props.task.id ? store.changeSet : null;
+
   const report = useMemo(() => {
     for (let index = store.timeline.length - 1; index >= 0; index -= 1) {
       const event = store.timeline[index]!;
@@ -697,10 +700,10 @@ function SessionReviewSummary(props: {
     ? report.unresolvedRisks.filter((risk): risk is string => typeof risk === 'string')
     : [];
   const additions =
-    store.changeSet?.totalAdditions ??
+    changeSet?.totalAdditions ??
     Object.values(props.fileStats).reduce((sum, stat) => sum + stat.additions, 0);
   const deletions =
-    store.changeSet?.totalDeletions ??
+    changeSet?.totalDeletions ??
     Object.values(props.fileStats).reduce((sum, stat) => sum + stat.deletions, 0);
 
   return (
@@ -1018,8 +1021,15 @@ function SessionTerminalTool({ task }: { task: TaskDto }): React.JSX.Element {
   const terminalStore = useTerminalStore();
   const hostRef = useRef<HTMLDivElement>(null);
   const [creating, setCreating] = useState(false);
+  // An external Agent's PTY is the room's conversation surface, not the
+  // command shell behind this tool tab. Never re-parent that xterm out of the
+  // center column; this canvas owns only an independent Session shell.
   const item = terminalStore.items.find(
-    (candidate) => !candidate.hidden && candidate.contextTaskId === task.id,
+    (candidate) =>
+      !candidate.hidden &&
+      candidate.launch === 'shell' &&
+      candidate.contextTaskId === task.id &&
+      candidate.id !== task.external?.terminalId,
   );
 
   useEffect(() => {
@@ -1039,7 +1049,8 @@ function SessionTerminalTool({ task }: { task: TaskDto }): React.JSX.Element {
     await terminalStore.create({
       taskId: task.id,
       context: { kind: 'task', taskId: task.id },
-      title: task.worktree?.branch ?? task.title,
+      launch: 'shell',
+      title: task.worktree?.branch ?? (task.external ? `${task.projectName} shell` : task.title),
       reveal: false,
     });
     setCreating(false);
@@ -1064,7 +1075,11 @@ function SessionTerminalTool({ task }: { task: TaskDto }): React.JSX.Element {
   }
 
   return (
-    <section className="session-terminal-tool" data-testid="session-terminal-tool">
+    <section
+      className="session-terminal-tool"
+      data-testid="session-terminal-tool"
+      data-terminal-id={item.id}
+    >
       <header>
         <span>
           <Ic name="terminal" size={13} /> {item.title}

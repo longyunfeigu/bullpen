@@ -91,6 +91,14 @@ function ReplayShell({ request }: { request: ReplayRequest }): React.JSX.Element
         source={source}
         depth={controller.depth}
         onDepth={controller.setDepth}
+        onJumpResult={() => {
+          const result = [...(projection?.facts ?? [])]
+            .reverse()
+            .find((fact) => fact.kind === 'report');
+          const fallback = projection?.facts.at(-1);
+          if (result ?? fallback) controller.selectFact((result ?? fallback)!.id);
+          controller.setDepth('recap');
+        }}
         onClose={store.closeReplay}
       />
       {projection ? <SessionContract session={projection.session} /> : null}

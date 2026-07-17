@@ -1,7 +1,12 @@
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { launchApp } from './helpers/launch';
 import { createTsSmallFixture } from './helpers/fixtures';
+
+async function switchReplayDepth(page: Page, depth: 'recap' | 'explore' | 'verify') {
+  await page.getByTestId('replay-menu-toggle').click();
+  await page.getByTestId(`replay-depth-${depth}`).click();
+}
 
 /**
  * Replay V3 (ADR-0017 am.8): one story, three depths.
@@ -76,18 +81,20 @@ test.describe('Replay V3 — one story, three depths', () => {
 
       // 4) Depth changes keep the selected fact and playhead (one controller).
       const timeBefore = await page.getByTestId('replay-count').textContent();
-      await page.getByTestId('replay-depth-explore').click();
+      await switchReplayDepth(page, 'explore');
       await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
       expect(await page.getByTestId('replay-count').textContent()).toBe(timeBefore);
-      await page.getByTestId('replay-depth-verify').click();
+      await switchReplayDepth(page, 'verify');
       await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
       await expect(page.getByTestId('replay-receipt')).toBeVisible();
-      await page.getByTestId('replay-depth-recap').click();
+      await switchReplayDepth(page, 'recap');
 
       // 5) Story/Real switch keeps the same fact.
-      await page.getByTestId('replay-time-actual').click();
+      await page.getByTestId('replay-skip-idle').click();
+      await expect(page.getByTestId('replay-skip-idle')).toHaveAttribute('aria-pressed', 'false');
       await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
-      await page.getByTestId('replay-time-story').click();
+      await page.getByTestId('replay-skip-idle').click();
+      await expect(page.getByTestId('replay-skip-idle')).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
 
       // 6) Transport: play/pause, speed, scrubbing.
@@ -133,7 +140,7 @@ test.describe('Replay V3 — one story, three depths', () => {
         expect(overflow, `${width}px width must not overflow horizontally`).toBeLessThanOrEqual(1);
         await expect(page.getByTestId('replay-play')).toBeVisible();
       }
-      await page.getByTestId('replay-depth-verify').click();
+      await switchReplayDepth(page, 'verify');
       await page.getByTestId('replay-receipt').scrollIntoViewIfNeeded();
       await expect(page.getByTestId('replay-receipt')).toBeVisible();
 
@@ -198,7 +205,7 @@ test.describe('Replay V3 — one story, three depths', () => {
       await expect(page.getByTestId('replay-step')).toContainText('Verification failed');
 
       // The passed run is the only thing allowed to claim Verified.
-      await page.getByTestId('replay-depth-explore').click();
+      await switchReplayDepth(page, 'explore');
       await page.getByTestId('replay-search').fill('Verification passed');
       await page.getByTestId('replay-event-list').locator('button').first().click();
       await expect(page.getByTestId('replay-fact-level')).toContainText('已验证');
@@ -322,7 +329,7 @@ test.describe('Replay V3 — one story, three depths', () => {
       await expect(page.getByTestId('replay-count')).toContainText('/ 10', { timeout: 30000 });
 
       // Search narrows 10k facts to the seeded needles without freezing.
-      await page.getByTestId('replay-depth-explore').click();
+      await switchReplayDepth(page, 'explore');
       const searchStarted = Date.now();
       await page.getByTestId('replay-search').fill('needle-5000');
       await expect(page.getByTestId('replay-event-list').locator('button')).toHaveCount(1, {
@@ -379,7 +386,7 @@ test.describe('Replay V3 — one story, three depths', () => {
       await expect(page.getByTestId('replay-view')).toBeVisible();
 
       // Explore → approvals question filter → the decided approval.
-      await page.getByTestId('replay-depth-explore').click();
+      await switchReplayDepth(page, 'explore');
       await page.getByTestId('replay-filters').getByText('哪些需要审批？').click();
       await page
         .getByTestId('replay-event-list')

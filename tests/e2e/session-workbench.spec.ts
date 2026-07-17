@@ -21,6 +21,12 @@ function createIdleAgentBins(): string {
     );
     chmodSync(join(bin, cli), 0o755);
   }
+  // Keep the embedded login shell from restoring a machine-installed Claude
+  // ahead of the deterministic fixtures through the user's zsh startup files.
+  writeFileSync(
+    join(bin, '.zshenv'),
+    `export PATH=${JSON.stringify(`${bin}:${process.env.PATH ?? ''}`)}\n`,
+  );
   return bin;
 }
 
@@ -141,11 +147,18 @@ test.describe('Session Rail Workbench', () => {
         PI_IDE_OPEN_WORKSPACE: fixture,
         PI_IDE_FORCE_MOCK: '1',
         PATH: `${bin}:${process.env.PATH ?? ''}`,
+        ZDOTDIR: bin,
       },
       home: 'keep',
     });
     const name = fixture.split('/').pop()!;
+    const rendererErrors: string[] = [];
+    page.on('pageerror', (error) => rendererErrors.push(`pageerror: ${error.message}`));
+    page.on('console', (message) => {
+      if (message.type() === 'error') rendererErrors.push(`console: ${message.text()}`);
+    });
     try {
+      await page.setViewportSize({ width: 1440, height: 900 });
       await expect(page.getByTestId('home-sidebar')).toBeVisible();
       // The boot-time workspace open swaps the shell tree and remounts the
       // rail — wait until the working context is bound before driving panel
@@ -178,8 +191,48 @@ test.describe('Session Rail Workbench', () => {
         .filter({ has: page.locator('.sr-provider.claude') })
         .first();
       await expect(railRow).toBeVisible();
-      await expect(railRow).toContainText(/New session|external session/i);
+      await expect(railRow).toContainText(/Session [\w…-]+|external session/i);
       await expect(railRow).not.toContainText('Claude Code');
+
+      // The external Agent PTY is the conversation in the center column. The
+      // Terminal tool must create a separate command shell instead of moving
+      // that same xterm to the right and leaving an empty black host behind.
+      await railRow.click();
+      await expect(page.getByTestId('external-terminal-host')).toContainText('claude ready');
+      const externalTerminalId = await page
+        .getByTestId('external-terminal-column')
+        .getAttribute('data-terminal-id');
+      expect(externalTerminalId).not.toBeNull();
+
+      await page.getByTestId('session-tool-terminal').click();
+      await expect(page.getByTestId('session-terminal-create')).toBeVisible();
+      await expect(page.getByTestId('external-terminal-host')).toContainText('claude ready');
+
+      await page.getByTestId('session-terminal-create').click();
+      const shell = page.getByTestId('session-terminal-tool');
+      await expect(shell).toBeVisible();
+      await expect(shell).toHaveAttribute('data-terminal-id', /.+/);
+      expect(await shell.getAttribute('data-terminal-id')).not.toBe(externalTerminalId);
+      await expect(page.getByTestId('external-terminal-host').locator('.xterm')).toHaveCount(1);
+      await expect(shell.locator('.session-terminal-host .xterm')).toHaveCount(1);
+      await expect(page.getByTestId('external-terminal-host')).toContainText('claude ready');
+
+      await shell.locator('.session-terminal-host .xterm').click();
+      await page.keyboard.type("printf '\\163\\150\\145\\154\\154\\055\\157\\153\\n'");
+      await page.keyboard.press('Enter');
+      await expect(shell).toContainText('shell-ok');
+      await expect(page.getByTestId('external-terminal-host')).toContainText('claude ready');
+
+      if (process.env.CHARTER_CAPTURE_EXTERNAL_TERMINAL_ISOLATION === '1') {
+        await page.screenshot({ path: '/tmp/charter-external-terminal-isolation-1440.png' });
+        await page.setViewportSize({ width: 900, height: 900 });
+        await expect(page.getByTestId('external-terminal-host')).toContainText('claude ready');
+        await expect(shell).toContainText('shell-ok');
+        await page.waitForTimeout(250);
+        await page.screenshot({ path: '/tmp/charter-external-terminal-isolation-900.png' });
+      }
+
+      expect(rendererErrors).toEqual([]);
     } finally {
       await app.close();
     }

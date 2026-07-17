@@ -42,7 +42,7 @@ export function SessionTerminalView({ terminalId }: { terminalId: string }): Rea
 
   if (!item) {
     return (
-      <main className="stv-root" data-testid="session-terminal-view">
+      <main className="stv-root" data-testid="session-terminal-view" data-terminal-id={terminalId}>
         <div className="empty-state">
           <div className="es-title">This terminal session is no longer available.</div>
           <button className="btn" onClick={app.closeTaskRoom}>
@@ -55,7 +55,11 @@ export function SessionTerminalView({ terminalId }: { terminalId: string }): Rea
 
   if (item.launch === 'shell') {
     return (
-      <main className="stv-root stv-manager" data-testid="session-terminal-view">
+      <main
+        className="stv-root stv-manager"
+        data-testid="session-terminal-view"
+        data-terminal-id={terminalId}
+      >
         <header className="stv-header">
           <ProviderMark provider="shell" size={19} />
           <div className="stv-title">
@@ -94,7 +98,7 @@ export function SessionTerminalView({ terminalId }: { terminalId: string }): Rea
   }
 
   return (
-    <main className="stv-root" data-testid="session-terminal-view">
+    <main className="stv-root" data-testid="session-terminal-view" data-terminal-id={terminalId}>
       <header className="stv-header">
         <ProviderMark
           provider={item.launch === 'claude' || item.launch === 'codex' ? item.launch : 'shell'}
