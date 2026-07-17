@@ -3,7 +3,11 @@ import { GitService } from '@pi-ide/git-service';
 import type { TerminalManager } from '@pi-ide/terminal-service';
 import { openWorkspaceInfo, WorkspaceWatcher, type FsChange } from '@pi-ide/workspace-service';
 import type { ChangeSet } from '@pi-ide/change-service';
-import type { TaskWorktreeDto } from '@pi-ide/ipc-contracts';
+import {
+  formatPromptWithCodeContext,
+  type CodeContextRefDto,
+  type TaskWorktreeDto,
+} from '@pi-ide/ipc-contracts';
 import { broadcast } from '../broadcast.js';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { TaskService } from './task-service.js';
@@ -675,6 +679,44 @@ export class ExternalSessionService {
     this.terminals.write(terminalId, `${command}\r`);
     await detected;
     return { terminalId, cli: external.cli };
+  }
+
+  /**
+   * Product-owned continuation path for Claude/Codex. The renderer sends
+   * structured refs; the main process validates them through IPC, serializes
+   * the exact snapshots, writes the owning PTY, and records the same refs in
+   * the Session ledger.
+   */
+  sendMessage(
+    taskId: string,
+    text: string,
+    codeRefs: CodeContextRefDto[],
+  ): { delivered: boolean; terminalId: string } {
+    const task = this.tasks.getTask(taskId);
+    const external = task.external;
+    if (!external) {
+      throw new ProductFailure(
+        productError('TASK_NOT_EXTERNAL', {
+          userMessage: 'This Session is not backed by Claude or Codex.',
+        }),
+      );
+    }
+    const session = this.byTerminal.get(external.terminalId);
+    if (!session || session.taskId !== taskId || session.ended || external.status !== 'active') {
+      throw new ProductFailure(
+        productError('EXTERNAL_SESSION_ENDED', {
+          userMessage: `Resume the ${external.cli} Session before sending more context.`,
+        }),
+      );
+    }
+    const prompt = formatPromptWithCodeContext(text, codeRefs);
+    this.tasks.recordEvent(taskId, 'user.message', {
+      text,
+      kind: 'external',
+      ...(codeRefs.length > 0 ? { codeRefs } : {}),
+    });
+    this.terminals.write(external.terminalId, `\u001b[200~${prompt}\u001b[201~\r`);
+    return { delivered: true, terminalId: external.terminalId };
   }
 
   dispose(): void {

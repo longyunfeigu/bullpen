@@ -959,7 +959,7 @@ export function HomeView(): React.JSX.Element {
 export function registerHomeSurfaceListeners(): void {
   onEvent('app.focusTask', ({ taskId }) => {
     void useTaskStore.getState().openTask(taskId);
-    useAppStore.getState().openTaskRoom(taskId);
+    useAppStore.getState().revealTaskSession(taskId);
   });
   useActivityStore.getState().init();
 }

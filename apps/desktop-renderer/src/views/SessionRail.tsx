@@ -13,6 +13,7 @@ import { canArchiveTask, isAnswered, presentedMeta } from './labels.js';
 import { ArmedIconButton } from './ui.js';
 import { needsAttention } from './HomeSidebar.js';
 import { useGlowTasks } from './useGlow.js';
+import { sessionDisplayTitle } from '../store/sessionAttention.js';
 
 type SessionEntry =
   | { key: string; kind: 'task'; task: TaskDto }
@@ -46,6 +47,7 @@ const SETTLED_STATES = new Set(['ACCEPTED', 'ROLLED_BACK', 'CANCELLED']);
 const COLLAPSED_KEY = 'charter.rail.collapsed.v1';
 const VIEW_KEY = 'charter.rail.view.v1';
 const EXPANDED_PROJECT_KEY = 'charter.rail.expanded-project.v1';
+const SESSION_PAGE_SIZE = 20;
 
 function loadCollapsed(): Set<string> {
   try {
@@ -116,25 +118,6 @@ function providerLabel(provider: 'pi' | 'claude' | 'codex'): string {
   return 'Pi';
 }
 
-/** The brand mark carries the provider — the title stays bare (reference style). */
-function sessionTitle(task: TaskDto): string {
-  const withoutFixtureDirective = task.title.replace(/^\[scenario:[^\]]+\]\s*/i, '');
-  const withoutRepeatedProvider = withoutFixtureDirective.replace(
-    /^(?:claude(?: code)?|codex|pi)\s*[·:—-]\s*/i,
-    '',
-  );
-  if (!/^(?:external|new) session$/i.test(withoutRepeatedProvider)) {
-    return withoutRepeatedProvider || 'Session';
-  }
-  if (task.external) return 'New session';
-  const goalLine = task.goalMd
-    .replace(/^\[scenario:[^\]]+\]\s*/i, '')
-    .split('\n')
-    .map((line) => line.trim())
-    .find(Boolean);
-  return goalLine?.slice(0, 72) || `New ${providerLabel(providerForTask(task))} session`;
-}
-
 function timeAgo(value: string, now: number): string {
   const elapsed = Math.max(0, now - Date.parse(value));
   const minutes = Math.floor(elapsed / 60_000);
@@ -176,9 +159,10 @@ function SessionTaskRow({
   const taskStore = useTaskStore();
   const activity = useActivityStore((state) => state.perTask[task.id]);
   const glowTasks = useGlowTasks();
+  const completion = app.sessionCompletionSignals.find((signal) => signal.taskId === task.id);
   const selected = app.taskRoomTaskId === task.id;
   const provider = providerForTask(task);
-  const displayTitle = sessionTitle(task);
+  const displayTitle = sessionDisplayTitle(task);
   const running = RUNNING_TASK_STATES.has(task.state);
   const meta = presentedMeta(task);
   const action = running ? currentActionLine(activity) : null;
@@ -194,10 +178,11 @@ function SessionTaskRow({
   return (
     <div className="sr-row-wrap">
       <button
-        className={`sr-session ${selected ? 'selected' : ''} ${glowTasks.has(task.id) ? 'glow-pulse' : ''}`}
+        className={`sr-session ${selected ? 'selected' : ''} ${glowTasks.has(task.id) ? 'glow-pulse' : ''} ${completion ? `completion-ripple completion-${completion.tone}` : ''}`}
         data-testid={`home-task-${task.id}`}
         data-session-key={`task:${task.id}`}
         data-state={task.state}
+        data-completion={completion?.tone}
         title={`${providerLabel(provider)} · ${displayTitle} — ${meta.label}`}
         onClick={open}
       >
@@ -303,6 +288,7 @@ export function SessionRail(): React.JSX.Element {
   const [needsOnly, setNeedsOnly] = useState(false);
   const [projectQuery, setProjectQuery] = useState('');
   const [now, setNow] = useState(() => Date.now());
+  const [visibleCount, setVisibleCount] = useState(SESSION_PAGE_SIZE);
 
   const setView = (next: RailView): void => {
     saveRailView(next);
@@ -330,10 +316,9 @@ export function SessionRail(): React.JSX.Element {
     return () => window.clearInterval(timer);
   }, []);
 
-  const flatEntries = useMemo<SessionEntry[]>(() => {
+  const allEntries = useMemo<SessionEntry[]>(() => {
     const taskEntries: SessionEntry[] = taskStore.tasks
       .filter((task) => !task.archived)
-      .slice(0, 20)
       .map((task) => ({ key: `task:${task.id}`, kind: 'task', task }));
     const terminalEntries: SessionEntry[] = terminalStore.items
       .filter(
@@ -351,6 +336,31 @@ export function SessionRail(): React.JSX.Element {
       }));
     return [...terminalEntries.toReversed(), ...taskEntries];
   }, [taskStore.tasks, terminalStore.items, taskByTerminal]);
+
+  // Search and Needs You always inspect the complete set. The default rail is
+  // intentionally progressive so long histories stay lightweight.
+  const flatEntries = useMemo(
+    () => (query.trim() || needsOnly ? allEntries : allEntries.slice(0, Math.max(visibleCount, 1))),
+    [allEntries, needsOnly, query, visibleCount],
+  );
+
+  // Notification activation is stronger than the current rail filters: show
+  // Sessions, clear filters, and expand enough pages to include the target.
+  useEffect(() => {
+    const reveal = app.sessionReveal;
+    if (!reveal) return;
+    saveRailView('sessions');
+    setViewState('sessions');
+    setQuery('');
+    setNeedsOnly(false);
+    const index = allEntries.findIndex((entry) => entry.key === `task:${reveal.taskId}`);
+    if (index >= 0) {
+      setVisibleCount((count) =>
+        Math.max(count, Math.ceil((index + 1) / SESSION_PAGE_SIZE) * SESSION_PAGE_SIZE),
+      );
+      useAppStore.getState().clearSessionReveal(reveal.seq);
+    }
+  }, [allEntries, app.sessionReveal]);
 
   const groups = useMemo<RailGroup[]>(() => {
     const active: RailGroup[] = [];
@@ -395,7 +405,7 @@ export function SessionRail(): React.JSX.Element {
           const haystack =
             entry.kind === 'task'
               ? [
-                  sessionTitle(entry.task),
+                  sessionDisplayTitle(entry.task),
                   entry.task.title,
                   entry.task.goalMd,
                   entry.task.projectName,
@@ -498,7 +508,7 @@ export function SessionRail(): React.JSX.Element {
       <header className="sr-head">
         <div className="sr-heading-row">
           <strong>Sessions</strong>
-          <small>{flatEntries.length} sessions</small>
+          <small>{allEntries.length} sessions</small>
         </div>
         <div className="sr-search-row">
           <label className="sr-search-box">
@@ -613,6 +623,20 @@ export function SessionRail(): React.JSX.Element {
             );
           })
         )}
+        {!query.trim() && !needsOnly && visibleCount < allEntries.length ? (
+          <button
+            className="sr-more"
+            data-testid="rail-more"
+            onClick={() => setVisibleCount((count) => count + SESSION_PAGE_SIZE)}
+          >
+            <span>More</span>
+            <small>
+              {Math.min(SESSION_PAGE_SIZE, allEntries.length - visibleCount)} of{' '}
+              {allEntries.length - visibleCount} remaining
+            </small>
+            <Ic name="chevron" size={11} />
+          </button>
+        ) : null}
       </div>
     </>
   );

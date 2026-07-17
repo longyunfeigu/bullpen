@@ -11,6 +11,7 @@ import { LivePreview } from './LivePreview.js';
 import { ReviewChecks } from './ReviewChecks.js';
 import '../styles/review.css';
 import '../styles/preview.css';
+import { createCodeContextRef } from '../codeContext.js';
 
 /**
  * Task review v2 (ADR-0013): Changes list + Monaco side-by-side diff, per-hunk
@@ -301,17 +302,28 @@ export function ReviewView(): React.JSX.Element | null {
   if (!store.reviewOpen || !task) return null;
   const canDecide = task.state === 'REVIEW_READY';
 
-  const sendFix = (): void => {
+  const sendFix = async (): Promise<void> => {
     if (!fix) return;
     const note = fixNote.trim();
-    const message = [
-      `Review feedback on ${fix.path} (lines ${fix.start}–${fix.end}):`,
-      '```',
-      fix.code.slice(0, 4000),
-      '```',
-      note || 'Please revise this part.',
-    ].join('\n');
-    void store.send(message, 'steer');
+    const codeRef = await createCodeContextRef({
+      path: fix.path,
+      origin: 'review',
+      version: 'working-tree',
+      startLine: fix.start,
+      startColumn: 1,
+      endLine: fix.end,
+      endColumn: (fix.code.split('\n').at(-1)?.length ?? 0) + 1,
+      text: fix.code.slice(0, 16_000),
+      contentHash: selectedFile?.currentHash ?? null,
+    });
+    if (!codeRef) return;
+    const delivered = await store.send(
+      note || 'Please revise the attached code selection.',
+      'steer',
+      undefined,
+      [codeRef],
+    );
+    if (!delivered) return;
     setFix(null);
     setFixNote('');
     store.closeReview();
@@ -543,7 +555,7 @@ export function ReviewView(): React.JSX.Element | null {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    sendFix();
+                    void sendFix();
                   }
                 }}
               />
@@ -551,7 +563,11 @@ export function ReviewView(): React.JSX.Element | null {
                 <button className="btn" onClick={() => setFix(null)}>
                   Cancel
                 </button>
-                <button className="btn primary" data-testid="request-fix-send" onClick={sendFix}>
+                <button
+                  className="btn primary"
+                  data-testid="request-fix-send"
+                  onClick={() => void sendFix()}
+                >
                   Send to agent
                 </button>
               </div>

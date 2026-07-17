@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DocumentDtoSchema, FsChangeSchema } from './documents.js';
 import { WorkspaceDtoSchema } from './dto.js';
-import { TaskStateSchema, TimelineEventDtoSchema } from './agent-dto.js';
+import { TaskDtoSchema, TaskStateSchema, TimelineEventDtoSchema } from './agent-dto.js';
 
 export interface EventChannelDef<S extends z.ZodType = z.ZodType> {
   name: string;
@@ -165,8 +165,8 @@ export const EVENT_CHANNELS = {
   ),
   'task.stateChanged': ev(
     'task.stateChanged',
-    1,
-    z.object({ taskId: z.string(), state: TaskStateSchema }),
+    2,
+    z.object({ taskId: z.string(), state: TaskStateSchema, task: TaskDtoSchema }),
   ),
   'agent.workerStatus': ev(
     'agent.workerStatus',

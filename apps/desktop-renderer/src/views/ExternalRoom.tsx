@@ -1,9 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { TaskDto } from '@pi-ide/ipc-contracts';
 import { rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { useExternalStore, type ExternalSessionFile } from '../store/externalStore.js';
 import { useTerminalStore, mountTerminal } from './TerminalPanel.js';
+import { EMPTY_CODE_CONTEXT_REFS, useDraftStore } from '../store/draftStore.js';
+import { CodeContextAttachments } from './CodeContextAttachments.js';
+import { Ic } from './home-icons.js';
 
 /**
  * ADR-0017 — the center column of an external CLI session's Task Room: the
@@ -122,6 +125,74 @@ export function ExternalTerminalColumn({ task }: { task: TaskDto }): React.JSX.E
           </div>
         </div>
       )}
+      <ExternalContextComposer task={task} live={live} />
+    </div>
+  );
+}
+
+function ExternalContextComposer(props: { task: TaskDto; live: boolean }): React.JSX.Element {
+  const input = useDraftStore((state) => state.drafts[props.task.id] ?? '');
+  const codeRefs = useDraftStore(
+    (state) => state.codeRefs[props.task.id] ?? EMPTY_CODE_CONTEXT_REFS,
+  );
+  const [sending, setSending] = useState(false);
+  const send = async (): Promise<void> => {
+    if (sending || !props.live) return;
+    const text =
+      input.trim() ||
+      (codeRefs.length > 0 ? 'Use the attached code selection as context for this turn.' : '');
+    if (!text) return;
+    setSending(true);
+    const result = await rpcResult('external.message', {
+      taskId: props.task.id,
+      text,
+      codeRefs,
+    });
+    setSending(false);
+    if (!result.ok) {
+      useAppStore.getState().pushToast('error', result.error.userMessage);
+      return;
+    }
+    useDraftStore.getState().clearDraft(props.task.id);
+    useDraftStore.getState().clearCodeRefs(props.task.id);
+  };
+  return (
+    <div className="tr-external-composer" data-testid="external-context-composer">
+      <CodeContextAttachments taskId={props.task.id} refs={codeRefs} />
+      <div className="tr-external-composer-row">
+        <textarea
+          rows={1}
+          data-testid="external-agent-input"
+          value={input}
+          disabled={!props.live || sending}
+          placeholder={
+            props.live
+              ? `Reply to ${props.task.external?.cli ?? 'agent'} or add selected code context…`
+              : 'Resume this Session to continue…'
+          }
+          onChange={(event) => useDraftStore.getState().setDraft(props.task.id, event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              void send();
+            }
+          }}
+        />
+        <button
+          type="button"
+          className={`hm-send ${input.trim() || codeRefs.length > 0 ? 'ready' : ''}`}
+          data-testid="external-agent-send"
+          disabled={!props.live || sending || (!input.trim() && codeRefs.length === 0)}
+          aria-label="Send to external agent"
+          onClick={() => void send()}
+        >
+          <Ic name="arrowUp" size={15} strokeWidth={2} />
+        </button>
+      </div>
+      <span className="tr-external-composer-note">
+        Sent through the Session’s live {props.task.external?.cli ?? 'agent'} terminal · code
+        selections are frozen snapshots
+      </span>
     </div>
   );
 }

@@ -5,12 +5,18 @@ import type {
   Settings,
   SideBarView,
   BottomTab,
+  TaskDto,
 } from '@pi-ide/ipc-contracts';
 import { LayoutStateSchema } from '@pi-ide/ipc-contracts';
 import { newId } from '@pi-ide/foundation';
 import { onEvent, rpc, rpcResult } from '../bridge.js';
 import { peekOpen, peekCloseTab, type PeekState } from '../views/peek.js';
 import { applyAppearance } from '../appearance.js';
+import {
+  sessionCompletionInfo,
+  sessionDisplayTitle,
+  type SessionNoticeTone,
+} from './sessionAttention.js';
 
 export type OverlayKind = 'none' | 'settings' | 'diagnostics' | 'about';
 /** Contextual tools owned by the active Session. These replace the old
@@ -36,6 +42,21 @@ export interface Toast {
   message: string;
 }
 
+export interface SessionCompletionSignal {
+  id: string;
+  edgeKey: string;
+  taskId: string;
+  state: TaskDto['state'];
+  tone: SessionNoticeTone;
+}
+
+export interface SessionNotice extends SessionCompletionSignal {
+  title: string;
+  projectName: string;
+  label: string;
+  body: string;
+}
+
 interface AppStore {
   ready: boolean;
   appInfo: AppInfoDto | null;
@@ -48,6 +69,12 @@ interface AppStore {
   overlay: OverlayKind;
   settingsSection: SettingsSection;
   toasts: Toast[];
+  /** Short-lived run-completion edges that animate the matching Session row. */
+  sessionCompletionSignals: SessionCompletionSignal[];
+  /** Clickable, auto-expiring in-app completion notifications. */
+  sessionNotices: SessionNotice[];
+  /** A notification click asks the rail to reveal this exact Session. */
+  sessionReveal: { taskId: string; seq: number } | null;
   /** Compatibility surface flag; the runtime now always renders the unified Session shell. */
   surface: 'home' | 'workspace';
   /** The managed task selected as the active user-facing Session. */
@@ -117,6 +144,10 @@ interface AppStore {
   refreshSettings(): Promise<void>;
   pushToast(kind: Toast['kind'], message: string): void;
   dismissToast(id: string): void;
+  signalSessionCompletion(task: TaskDto): void;
+  dismissSessionNotice(id: string): void;
+  revealTaskSession(taskId: string): void;
+  clearSessionReveal(seq: number): void;
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -157,6 +188,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   overlay: 'none',
   settingsSection: 'general',
   toasts: [],
+  sessionCompletionSignals: [],
+  sessionNotices: [],
+  sessionReveal: null,
   surface: 'home',
   taskRoomTaskId: null,
   sessionTerminalId: null,
@@ -269,6 +303,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
       projectBottomTab: null,
       ...(peek && peek.taskId !== taskId ? { peek: null } : {}),
     });
+  },
+
+  revealTaskSession(taskId) {
+    get().openTaskRoom(taskId);
+    set({
+      sessionReveal: {
+        taskId,
+        seq: (get().sessionReveal?.seq ?? 0) + 1,
+      },
+    });
+  },
+  clearSessionReveal(seq) {
+    if (get().sessionReveal?.seq === seq) set({ sessionReveal: null });
   },
 
   openTerminalSession(terminalId) {
@@ -430,6 +477,47 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
   dismissToast(id) {
     set({ toasts: get().toasts.filter((t) => t.id !== id) });
+  },
+  signalSessionCompletion(task) {
+    const info = sessionCompletionInfo(task);
+    if (!info) return;
+    const edgeKey = `${task.id}:${task.state}:${task.updatedAt}`;
+    if (get().sessionCompletionSignals.some((signal) => signal.edgeKey === edgeKey)) return;
+
+    const id = newId('session-completion');
+    const signal: SessionCompletionSignal = {
+      id,
+      edgeKey,
+      taskId: task.id,
+      state: task.state,
+      tone: info.tone,
+    };
+    set({
+      sessionCompletionSignals: [...get().sessionCompletionSignals, signal].slice(-24),
+    });
+    setTimeout(() => {
+      set({
+        sessionCompletionSignals: get().sessionCompletionSignals.filter(
+          (candidate) => candidate.id !== id,
+        ),
+      });
+    }, 4_200);
+
+    // The global notification preference gates banners, while the quieter row
+    // pulse remains available as local Session-page feedback.
+    if (get().settings?.notifications.enabled === false) return;
+    const notice: SessionNotice = {
+      ...signal,
+      title: sessionDisplayTitle(task),
+      projectName: task.projectName,
+      label: info.label,
+      body: info.body,
+    };
+    set({ sessionNotices: [...get().sessionNotices, notice].slice(-3) });
+    setTimeout(() => get().dismissSessionNotice(id), 5_000);
+  },
+  dismissSessionNotice(id) {
+    set({ sessionNotices: get().sessionNotices.filter((notice) => notice.id !== id) });
   },
 }));
 

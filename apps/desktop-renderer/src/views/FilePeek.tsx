@@ -8,6 +8,7 @@ import { useEditorStore } from '../store/editorStore.js';
 import { monaco, monacoFontFamily } from '../monaco-setup.js';
 import { EditorArea } from '../workbench/EditorArea.js';
 import { Ic } from './home-icons.js';
+import { addCodeContext } from '../codeContext.js';
 
 /**
  * In-room file peek (ADR-0014, PIVOT-034): a resident split panel beside the
@@ -301,8 +302,21 @@ function PeekFile({
 }): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const pathRef = useRef(path);
   const [meta, setMeta] = useState<PeekFileDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selection, setSelection] = useState<{
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    pathRef.current = path;
+    setSelection(null);
+  }, [path]);
 
   useEffect(() => {
     let alive = true;
@@ -339,7 +353,7 @@ function PeekFile({
       model.setValue(text);
     }
     if (!editorRef.current) {
-      editorRef.current = monaco.editor.create(hostRef.current, {
+      const editor = monaco.editor.create(hostRef.current, {
         model,
         readOnly: true,
         domReadOnly: true,
@@ -354,6 +368,26 @@ function PeekFile({
         lineNumbersMinChars: 3,
         folding: false,
         wordWrap: 'off',
+      });
+      editorRef.current = editor;
+      editor.onDidChangeCursorSelection(({ selection: range }) => {
+        const model = editor.getModel();
+        if (!model || range.isEmpty()) {
+          setSelection(null);
+          return;
+        }
+        const selectedText = model.getValueInRange(range);
+        setSelection(
+          selectedText
+            ? {
+                startLine: range.startLineNumber,
+                startColumn: range.startColumn,
+                endLine: range.endLineNumber,
+                endColumn: range.endColumn,
+                text: selectedText,
+              }
+            : null,
+        );
       });
     } else if (editorRef.current.getModel() !== model) {
       editorRef.current.setModel(model);
@@ -401,6 +435,36 @@ function PeekFile({
       ) : null}
       {meta?.fromBuffer ? (
         <div className="tr-peek-banner info">Showing the unsaved editor buffer.</div>
+      ) : null}
+      {selection ? (
+        <div
+          className="code-context-selection-bar monaco-selection"
+          data-testid="peek-code-selection-bar"
+        >
+          <span className="mono">
+            Selected L{selection.startLine}
+            {selection.endLine === selection.startLine ? '' : `–${selection.endLine}`}
+          </span>
+          <span>File Peek · working tree</span>
+          <button
+            type="button"
+            data-testid="peek-add-code-context"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              void addCodeContext(taskId, {
+                path: pathRef.current,
+                origin: 'file-peek',
+                version: 'working-tree',
+                ...selection,
+                contentHash: null,
+              }).then((ref) => {
+                if (ref) editorRef.current?.setSelection(new monaco.Selection(1, 1, 1, 1));
+              });
+            }}
+          >
+            Add to context
+          </button>
+        </div>
       ) : null}
       <div ref={hostRef} className="tr-peek-monaco" data-testid="peek-monaco" />
     </div>

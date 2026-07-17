@@ -29,6 +29,7 @@ import {
 } from './replay.js';
 import { ProviderApiSchema, ProviderInfoSchema } from './providers.js';
 import { SkillDtoSchema, SkillSourceDtoSchema } from './skills.js';
+import { CodeContextRefsSchema } from './code-context.js';
 
 const SettingsStateSchema = z.object({
   effective: SettingsSchema,
@@ -481,6 +482,19 @@ export const CHANNELS = {
     z.object({ taskId: z.string(), terminalId: z.string() }).strict(),
     z.object({ terminalId: z.string(), cli: z.string() }),
   ),
+  /** Send a structured turn to the live Claude/Codex CLI that owns a Session. */
+  'external.message': ch(
+    'external.message',
+    1,
+    z
+      .object({
+        taskId: z.string().min(1),
+        text: z.string().min(1).max(20000),
+        codeRefs: CodeContextRefsSchema,
+      })
+      .strict(),
+    z.object({ delivered: z.boolean(), terminalId: z.string() }),
+  ),
   'git.status': ch(
     'git.status',
     1,
@@ -594,6 +608,8 @@ export const CHANNELS = {
         prompt: z.string().max(20000).optional(),
         /** ADR-0022 am.2: preview feedback seeding a follow-up task's first run. */
         preview: PreviewAttachmentSchema.optional(),
+        /** Frozen source selections for this task's first runtime turn. */
+        codeRefs: CodeContextRefsSchema,
       })
       .strict(),
     z.object({ task: TaskDtoSchema, queued: z.boolean() }),
@@ -610,6 +626,8 @@ export const CHANNELS = {
         model: ModelRefSchema.optional(),
         /** ADR-0022: marquee feedback from the acceptance-gate preview. */
         preview: PreviewAttachmentSchema.optional(),
+        /** Frozen source selections for this runtime turn. */
+        codeRefs: CodeContextRefsSchema,
       })
       .strict(),
     z.object({ delivered: z.enum(['started', 'steered', 'queued']) }),
@@ -685,6 +703,7 @@ export const CHANNELS = {
         decision: z.enum(['approve', 'reject', 'request_changes']),
         editedPlan: PlanEditDtoSchema.optional(),
         reason: z.string().max(2000).optional(),
+        codeRefs: CodeContextRefsSchema,
         confirmRemovedDone: z.boolean().default(false),
       })
       .strict(),

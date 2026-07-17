@@ -12,6 +12,7 @@ export function registerM8Handlers(tasks: TaskService, logger: Logger): void {
           decision: payload.decision,
           ...(payload.editedPlan !== undefined ? { editedPlan: payload.editedPlan } : {}),
           ...(payload.reason !== undefined ? { reason: payload.reason } : {}),
+          codeRefs: payload.codeRefs,
           confirmRemovedDone: payload.confirmRemovedDone,
         }),
       }),

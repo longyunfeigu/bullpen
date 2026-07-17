@@ -78,17 +78,19 @@ test.describe('Shell v4 — global tasks on a multi-mount engine (ADR-0009)', ()
       await expect(page.getByTestId('plan-card')).toBeVisible({ timeout: 20000 });
 
       // Back home, focus project B — the pending task must NOT be cancelled.
-      // ADR-0023: recents live in the rail's Projects panel; switching returns
-      // the rail to the sessions panel.
+      // The Projects panel stays open and expands B's file tree in place.
       await page.getByTestId('task-room-back').click();
       await page.getByTestId('rail-context').click();
       await page.getByTestId(`home-recent-${projectB}`).click();
+      await expect(page.getByTestId('rail-projects-panel')).toBeVisible();
+      await expect(page.getByTestId('home-project-tree')).toBeVisible({ timeout: 15000 });
       await expect(page.getByTestId('home-project')).toContainText(
         projectB.split('/').pop() ?? 'fixture',
         { timeout: 15000 },
       );
 
       // The A-task is still in the global sidebar, grouped under its project.
+      await page.getByTestId('rail-view-sessions').click();
       const row = page.locator('[data-testid^="home-task-"]').first();
       await expect(row).toBeVisible();
       await expect(row).toHaveAttribute('data-state', 'AWAITING_PLAN_APPROVAL');

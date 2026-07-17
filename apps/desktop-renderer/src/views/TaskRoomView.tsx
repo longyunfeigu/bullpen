@@ -18,12 +18,17 @@ import {
 } from './labels.js';
 import { hasDragRef, readDragRef } from './dragRefs.js';
 import { useSkillSlash } from './SkillSlashPicker.js';
-import { useDraftStore, type TerminalOutputRef } from '../store/draftStore.js';
+import {
+  EMPTY_CODE_CONTEXT_REFS,
+  useDraftStore,
+  type TerminalOutputRef,
+} from '../store/draftStore.js';
 import { PreviewBadge } from './RoomPreviewRail.js';
 import { buildPreviewFeedbackText } from './LivePreview.js';
 import { ExternalTerminalColumn, useExternalFiles } from './ExternalRoom.js';
 import { roomCopyFor } from './roomCopy.js';
 import { SessionToolCanvas, type SessionFileStat } from './SessionToolCanvas.js';
+import { CodeContextAttachments } from './CodeContextAttachments.js';
 
 const EMPTY_TERMINAL_REFS: TerminalOutputRef[] = [];
 
@@ -444,6 +449,7 @@ function RoomComposer({
   const terminalRefs = useDraftStore((s) => s.terminalRefs[task.id] ?? EMPTY_TERMINAL_REFS);
   // ADR-0022 am.2: a picked element / drawn region waiting to ride this reply.
   const previewRef = useDraftStore((s) => s.previewRefs[task.id] ?? null);
+  const codeRefs = useDraftStore((s) => s.codeRefs[task.id] ?? EMPTY_CODE_CONTEXT_REFS);
   const setInput = (text: string): void => useDraftStore.getState().setDraft(task.id, text);
   const [dropActive, setDropActive] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -499,11 +505,11 @@ function RoomComposer({
     return () => document.removeEventListener('mousedown', onDown);
   }, [pickerOpen]);
 
-  const startFollowUp = async (text: string): Promise<void> => {
+  const startFollowUp = async (text: string): Promise<boolean> => {
     const [providerId, modelId] = modelKey.split('::');
     if (!providerId || !modelId) {
       app.pushToast('warning', 'No model available — add a provider key in Settings.');
-      return;
+      return false;
     }
     // ADR-0022 am.2: a preview selection made after the task closed seeds the
     // follow-up — the screenshot rides the new task's first run.
@@ -534,15 +540,17 @@ function RoomComposer({
             },
           }
         : {}),
+      codeRefs,
     });
     if (ok) {
       useDraftStore.getState().clearPreviewRef(task.id);
       const newId = useTaskStore.getState().activeTaskId;
       if (newId) app.openTaskRoom(newId);
     }
+    return ok;
   };
 
-  const send = (): void => {
+  const send = async (): Promise<void> => {
     const typed = input.trim();
     const terminalContext = terminalRefs
       .map(
@@ -550,40 +558,58 @@ function RoomComposer({
           `终端输出引用：${terminalRef.contextLabel} · ${terminalRef.cwd}\n\n\`\`\`text\n${terminalRef.text}\n\`\`\``,
       )
       .join('\n\n');
-    const text = [typed, terminalContext].filter(Boolean).join('\n\n');
+    const text =
+      [typed, terminalContext].filter(Boolean).join('\n\n') ||
+      (codeRefs.length > 0 ? 'Use the attached code selection as context for this turn.' : '');
     if (!text && !previewRef) return;
+    let delivered = false;
     if (planOpen) {
-      void store.decidePlan({ decision: 'request_changes', reason: text || 'See the attachment.' });
+      delivered = await store.decidePlan({
+        decision: 'request_changes',
+        reason: text || 'See the attachment.',
+        codeRefs,
+      });
     } else if (closed) {
-      void startFollowUp(text);
+      delivered = await startFollowUp(text);
     } else if (previewRef) {
       // ADR-0022 am.2: the reply carries the preview selection — same steer
       // loop, one conversation; the model sees the screenshot.
       const structured = buildPreviewFeedbackText(previewRef, text);
       if (previewRef.dataBase64) {
-        void store.sendPreviewFeedback(structured, {
-          dataBase64: previewRef.dataBase64,
-          mimeType: 'image/png',
-          pageUrl: previewRef.pageUrl,
-          rect: previewRef.rect,
-          ...(previewRef.selector ? { selector: previewRef.selector } : {}),
-          ...(text.trim() ? { note: text.trim() } : {}),
-        });
+        delivered = await store.sendPreviewFeedback(
+          structured,
+          {
+            dataBase64: previewRef.dataBase64,
+            mimeType: 'image/png',
+            pageUrl: previewRef.pageUrl,
+            rect: previewRef.rect,
+            ...(previewRef.selector ? { selector: previewRef.selector } : {}),
+            ...(text.trim() ? { note: text.trim() } : {}),
+          },
+          codeRefs,
+        );
       } else {
-        void store.send(`${structured}\n(Screenshot capture failed — none attached.)`, 'steer');
+        delivered = await store.send(
+          `${structured}\n(Screenshot capture failed — none attached.)`,
+          'steer',
+          undefined,
+          codeRefs,
+        );
       }
-      useDraftStore.getState().clearPreviewRef(task.id);
     } else {
       const [providerId, modelId] = modelKey.split('::');
       const override =
         modelDirty && providerId && modelId
           ? { providerId, modelId, thinkingLevel: thinking }
           : undefined;
-      void store.send(text, 'steer', override);
-      setModelDirty(false);
+      delivered = await store.send(text, 'steer', override, codeRefs);
+      if (delivered) setModelDirty(false);
     }
+    if (!delivered) return;
     setInput('');
     useDraftStore.getState().clearTerminalRefs(task.id);
+    useDraftStore.getState().clearCodeRefs(task.id);
+    if (previewRef) useDraftStore.getState().clearPreviewRef(task.id);
   };
 
   // Sidebar tree drag / picker → inline "@path" at the caret (context feeding;
@@ -664,7 +690,7 @@ function RoomComposer({
         }
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
-          send();
+          void send();
         }
       }}
     />
@@ -672,11 +698,11 @@ function RoomComposer({
 
   const sendButton = (
     <button
-      className={`hm-send ${input.trim() || terminalRefs.length > 0 || previewRef ? 'ready' : ''}`}
+      className={`hm-send ${input.trim() || terminalRefs.length > 0 || previewRef || codeRefs.length > 0 ? 'ready' : ''}`}
       data-testid="agent-send"
-      disabled={!input.trim() && terminalRefs.length === 0 && !previewRef}
+      disabled={!input.trim() && terminalRefs.length === 0 && !previewRef && codeRefs.length === 0}
       aria-label={planOpen ? 'Request plan changes' : 'Send'}
-      onClick={send}
+      onClick={() => void send()}
     >
       <Ic name="arrowUp" size={15} strokeWidth={2} />
     </button>
@@ -738,6 +764,7 @@ function RoomComposer({
         {...dragHandlers}
       >
         <div className="tr-ccard">
+          <CodeContextAttachments taskId={task.id} refs={codeRefs} />
           {previewChip}
           {terminalRefChips}
           {textarea('tr-cinput')}
@@ -785,6 +812,7 @@ function RoomComposer({
     >
       <div className="tr-fcard">
         <div className="hm-card">
+          <CodeContextAttachments taskId={task.id} refs={codeRefs} />
           {previewChip}
           {terminalRefChips}
           <div className="hm-chiprow">

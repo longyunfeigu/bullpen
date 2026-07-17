@@ -1205,6 +1205,149 @@ html.xp-resizing * {
   color: var(--fg);
 }
 
+/* ---------- Session completion notifications ---------- */
+.session-notices {
+  position: fixed;
+  top: calc(var(--titlebar-height) + 12px);
+  right: 14px;
+  width: min(360px, calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 230;
+  pointer-events: none;
+}
+.session-notice {
+  --notice-tone: var(--info);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+  box-shadow:
+    0 14px 35px rgba(0, 0, 0, 0.24),
+    inset 3px 0 0 var(--notice-tone);
+  backdrop-filter: blur(18px);
+  pointer-events: auto;
+  animation: sessionNoticeIn 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.session-notice.success {
+  --notice-tone: var(--success);
+}
+.session-notice.review {
+  --notice-tone: var(--warning);
+}
+.session-notice.error {
+  --notice-tone: var(--danger);
+}
+.session-notice.warning {
+  --notice-tone: var(--warning);
+}
+.session-notice::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--notice-tone);
+  content: '';
+  transform-origin: left;
+  animation: sessionNoticeLife 5s linear both;
+  pointer-events: none;
+}
+.session-notice-open {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 11px 5px 12px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.session-notice-open:hover {
+  background: color-mix(in srgb, var(--notice-tone) 7%, transparent);
+}
+.session-notice-icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--notice-tone) 13%, transparent);
+  color: var(--notice-tone);
+}
+.session-notice-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.session-notice-kicker {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--fg-faint);
+  font-size: 9.5px;
+}
+.session-notice-kicker b {
+  color: var(--notice-tone);
+  font-weight: 700;
+}
+.session-notice-kicker span,
+.session-notice-copy > strong,
+.session-notice-copy > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-notice-kicker span {
+  min-width: 0;
+}
+.session-notice-copy > strong {
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.session-notice-copy > small {
+  color: var(--fg-muted);
+  font-size: 10.5px;
+}
+.session-notice-close {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  align-self: start;
+  margin: 6px 4px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-faint);
+  cursor: pointer;
+}
+.session-notice-close:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+@keyframes sessionNoticeIn {
+  from {
+    opacity: 0;
+    transform: translate3d(14px, -4px, 0) scale(0.98);
+  }
+}
+@keyframes sessionNoticeLife {
+  to {
+    transform: scaleX(0);
+  }
+}
+
 /* ---------- toasts ---------- */
 .toasts {
   position: fixed;
@@ -1241,6 +1384,13 @@ html.xp-resizing * {
   border: none;
   color: var(--fg-muted);
   cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-notice,
+  .session-notice::after {
+    animation: none;
+  }
 }
 
 /* ---------- generic bits ---------- */

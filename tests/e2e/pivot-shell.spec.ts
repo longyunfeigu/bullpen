@@ -84,9 +84,13 @@ test.describe('Unified Session shell pivot (ADR-0004, PIVOT-001..010)', () => {
       await expect(page.getByTestId('review-bar')).toBeVisible();
       await expect(page.getByTestId('tl-done')).toBeVisible();
 
-      // PIVOT-007: back on Home, the task shows up in recent tasks.
+      // PIVOT-007: back on Home, the task remains in the persistent Session
+      // rail; Home no longer repeats a Recent section. Project browsing keeps
+      // its own selected rail tab, so explicitly return to Sessions here.
       await page.getByTestId('task-room-back').click();
-      await expect(page.getByTestId('home-view')).toContainText('quick fix from home');
+      await expect(page.getByTestId('home-view')).not.toContainText('quick fix from home');
+      await page.getByTestId('rail-view-sessions').click();
+      await expect(page.getByTestId('home-sidebar')).toContainText('quick fix from home');
     } finally {
       await app.close();
     }

@@ -6,7 +6,7 @@ import type {
   TaskPlanDto,
   TimelineEventDto,
 } from '@pi-ide/ipc-contracts';
-import { toolPaths } from '@pi-ide/ipc-contracts';
+import { CodeContextRefsSchema, toolPaths } from '@pi-ide/ipc-contracts';
 import { useTaskStore } from '../store/taskStore.js';
 import { useAppStore } from '../store/appStore.js';
 import { useEditorStore } from '../store/editorStore.js';
@@ -24,6 +24,7 @@ import {
 import { isAnswered, stateLabel, toolVerb } from './labels.js';
 import { Markdown } from './Markdown.js';
 import { roomCopyFor, type RoomCopy } from './roomCopy.js';
+import { SentCodeContext } from './CodeContextAttachments.js';
 
 /**
  * Task Room conversation: user and agent messages stay visually distinct,
@@ -585,6 +586,8 @@ function eventNode(
       const acceptance = Array.isArray(payload.acceptance)
         ? payload.acceptance.filter((item): item is string => typeof item === 'string')
         : recorded.acceptance;
+      const parsedCodeRefs = CodeContextRefsSchema.safeParse(payload.codeRefs ?? []);
+      const codeRefs = parsedCodeRefs.success ? parsedCodeRefs.data : [];
       return (
         <React.Fragment key={event.id}>
           <Bubble who="you" copy={copy} testid="tl-user">
@@ -615,6 +618,7 @@ function eventNode(
                 ) : null}
               </>
             ) : null}
+            <SentCodeContext refs={codeRefs} />
           </Bubble>
           <TaskContext
             acceptance={acceptance}
@@ -665,24 +669,32 @@ function eventNode(
     }
     case 'user.planDecision': {
       const decision = String(payload.decision);
+      const parsedCodeRefs = CodeContextRefsSchema.safeParse(payload.codeRefs ?? []);
+      const codeRefs = parsedCodeRefs.success ? parsedCodeRefs.data : [];
       return (
-        <div
-          key={event.id}
-          className={`rt-note ${decision === 'approved' ? 'ok' : decision === 'rejected' ? 'err' : 'warn'}`}
-          data-testid="tl-plan-decision"
-        >
-          {decision === 'approved'
-            ? copy.locale === 'zh'
-              ? `✓ 计划已批准${payload.auto === true ? '（自动模式）' : ''}${payload.edited === true ? '，包含你的修改' : ''}`
-              : `✓ Plan approved${payload.auto === true ? ' automatically (auto mode)' : ''}${payload.edited === true ? ' with your edits' : ''}`
-            : decision === 'changes_requested'
+        <React.Fragment key={event.id}>
+          <div
+            className={`rt-note ${decision === 'approved' ? 'ok' : decision === 'rejected' ? 'err' : 'warn'}`}
+            data-testid="tl-plan-decision"
+          >
+            {decision === 'approved'
               ? copy.locale === 'zh'
-                ? `↻ 你要求修改计划${payload.reason ? ` — “${String(payload.reason)}”` : ''}`
-                : `↻ You asked for plan changes${payload.reason ? ` — "${String(payload.reason)}"` : ''}`
-              : copy.locale === 'zh'
-                ? '✕ 计划已拒绝，任务已取消'
-                : '✕ Plan rejected — task cancelled'}
-        </div>
+                ? `✓ 计划已批准${payload.auto === true ? '（自动模式）' : ''}${payload.edited === true ? '，包含你的修改' : ''}`
+                : `✓ Plan approved${payload.auto === true ? ' automatically (auto mode)' : ''}${payload.edited === true ? ' with your edits' : ''}`
+              : decision === 'changes_requested'
+                ? copy.locale === 'zh'
+                  ? `↻ 你要求修改计划${payload.reason ? ` — “${String(payload.reason)}”` : ''}`
+                  : `↻ You asked for plan changes${payload.reason ? ` — "${String(payload.reason)}"` : ''}`
+                : copy.locale === 'zh'
+                  ? '✕ 计划已拒绝，任务已取消'
+                  : '✕ Plan rejected — task cancelled'}
+          </div>
+          {codeRefs.length > 0 ? (
+            <div className="rt-plan-code-context">
+              <SentCodeContext refs={codeRefs} />
+            </div>
+          ) : null}
+        </React.Fragment>
       );
     }
     case 'user.planEdited':

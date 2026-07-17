@@ -4,6 +4,8 @@ import { monaco, modelUri } from '../monaco-setup.js';
 import { onEvent, rpcResult } from '../bridge.js';
 import { useEditorStore } from '../store/editorStore.js';
 import { useAppStore } from '../store/appStore.js';
+import { addCodeContext } from '../codeContext.js';
+import { Ic } from './home-icons.js';
 
 interface Match {
   line: number;
@@ -145,6 +147,7 @@ export function focusSearchView(): void {
 
 export function SearchView(): React.JSX.Element {
   const store = useSearchStore();
+  const taskRoomTaskId = useAppStore((state) => state.taskRoomTaskId);
   const [showReplace, setShowReplace] = useState(false);
   const initialized = useRef(false);
 
@@ -381,6 +384,31 @@ export function SearchView(): React.JSX.Element {
                           </span>
                         ) : null}
                       </button>
+                      {taskRoomTaskId ? (
+                        <button
+                          type="button"
+                          className="search-add-context"
+                          data-testid={`search-add-code-context-${group.path}-${match.line}`}
+                          title={`Add ${group.path}:${match.line} to the current Session context`}
+                          aria-label={`Add ${group.path} line ${match.line} to context`}
+                          onClick={() => {
+                            const text = match.previewText.replace(/\r?\n/gu, '');
+                            void addCodeContext(taskRoomTaskId, {
+                              path: group.path,
+                              origin: 'search',
+                              version: 'working-tree',
+                              startLine: match.line,
+                              startColumn: 1,
+                              endLine: match.line,
+                              endColumn: Math.max(2, text.length + 1),
+                              text,
+                              contentHash: group.contentHash,
+                            });
+                          }}
+                        >
+                          <Ic name="plus" size={11} />
+                        </button>
+                      ) : null}
                     </div>
                   ))
                 : null}

@@ -13,6 +13,7 @@ import { isAnswered, presentedMeta } from './labels.js';
 import { roomCopyFor } from './roomCopy.js';
 import { LiveBoard } from './LiveBoard.js';
 import { monaco } from '../monaco-setup.js';
+import { addCodeContext } from '../codeContext.js';
 
 export interface SessionVerification {
   label: string;
@@ -279,6 +280,14 @@ function SessionDiffReview(props: {
   const store = useTaskStore();
   const app = useAppStore();
   const peek = useAppStore((state) => state.peek);
+  const diffBodyRef = useRef<HTMLDivElement>(null);
+  const [contextSelection, setContextSelection] = useState<{
+    startLine: number;
+    endLine: number;
+    text: string;
+    version: 'working-tree' | 'baseline' | 'diff-patch';
+    hunkHeader?: string;
+  } | null>(null);
 
   useEffect(() => {
     void store.refreshChangeSet();
@@ -291,6 +300,8 @@ function SessionDiffReview(props: {
   const requestedPath = peek?.taskId === props.task.id ? peek.active : null;
   const selected =
     changeFiles.find((file) => file.path === requestedPath) ?? changeFiles[0] ?? null;
+
+  useEffect(() => setContextSelection(null), [selected?.path]);
   const additions =
     changeSet?.totalAdditions ??
     Object.values(props.fileStats).reduce((sum, stat) => sum + stat.additions, 0);
@@ -308,6 +319,80 @@ function SessionDiffReview(props: {
     } catch {
       app.pushToast('error', 'The diff could not be copied.');
     }
+  };
+
+  const readDiffSelection = (): void => {
+    const host = diffBodyRef.current;
+    const selection = window.getSelection();
+    if (!host || !selection || selection.isCollapsed || selection.rangeCount === 0) {
+      setContextSelection(null);
+      return;
+    }
+    const rowForNode = (node: Node | null): HTMLElement | null => {
+      const element = node instanceof HTMLElement ? node : node?.parentElement;
+      return element?.closest<HTMLElement>('[data-code-context-row]') ?? null;
+    };
+    const anchor = rowForNode(selection.anchorNode);
+    const focus = rowForNode(selection.focusNode);
+    if (!anchor || !focus || !host.contains(anchor) || !host.contains(focus)) {
+      setContextSelection(null);
+      return;
+    }
+    const rows = [...host.querySelectorAll<HTMLElement>('[data-code-context-row]')];
+    const anchorIndex = rows.indexOf(anchor);
+    const focusIndex = rows.indexOf(focus);
+    if (anchorIndex < 0 || focusIndex < 0) return;
+    const picked = rows.slice(
+      Math.min(anchorIndex, focusIndex),
+      Math.max(anchorIndex, focusIndex) + 1,
+    );
+    const kinds = picked.map((row) => row.dataset.kind ?? 'context');
+    const version = kinds.every((kind) => kind === 'deletion')
+      ? ('baseline' as const)
+      : kinds.every((kind) => kind !== 'deletion')
+        ? ('working-tree' as const)
+        : ('diff-patch' as const);
+    const text = picked
+      .map((row) => {
+        const code = row.dataset.code ?? '';
+        if (version !== 'diff-patch') return code;
+        return `${row.dataset.kind === 'addition' ? '+' : row.dataset.kind === 'deletion' ? '-' : ' '}${code}`;
+      })
+      .join('\n');
+    const lineNumbers = picked
+      .map((row) => Number(row.dataset.lineNumber))
+      .filter((line) => Number.isFinite(line) && line > 0);
+    const headers = [...new Set(picked.map((row) => row.dataset.hunkHeader).filter(Boolean))];
+    if (!text.trim() || lineNumbers.length === 0) return;
+    setContextSelection({
+      startLine: Math.min(...lineNumbers),
+      endLine: Math.max(...lineNumbers),
+      text,
+      version,
+      ...(headers.length === 1 ? { hunkHeader: headers[0] } : {}),
+    });
+  };
+
+  const attachDiffSelection = async (): Promise<void> => {
+    if (!selected || !contextSelection) return;
+    await addCodeContext(props.task.id, {
+      path: selected.path,
+      origin: 'diff',
+      version: contextSelection.version,
+      startLine: contextSelection.startLine,
+      startColumn: 1,
+      endLine: contextSelection.endLine,
+      endColumn:
+        (contextSelection.text
+          .split('\n')
+          .at(-1)
+          ?.replace(/^[+\- ]/u, '').length ?? 0) + 1,
+      text: contextSelection.text,
+      contentHash: contextSelection.version === 'working-tree' ? selected.currentHash : null,
+      ...(contextSelection.hunkHeader ? { hunkHeader: contextSelection.hunkHeader } : {}),
+    });
+    window.getSelection()?.removeAllRanges();
+    setContextSelection(null);
   };
 
   return (
@@ -370,19 +455,54 @@ function SessionDiffReview(props: {
               <Ic name="sliders" size={15} />
             </button>
           </header>
+          {contextSelection ? (
+            <div className="code-context-selection-bar" data-testid="diff-code-selection-bar">
+              <span className="mono">
+                Selected L{contextSelection.startLine}
+                {contextSelection.endLine === contextSelection.startLine
+                  ? ''
+                  : `–${contextSelection.endLine}`}
+              </span>
+              <span>{contextSelection.version.replace('-', ' ')}</span>
+              <button
+                type="button"
+                data-testid="diff-add-code-context"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void attachDiffSelection()}
+              >
+                Add to context
+              </button>
+            </div>
+          ) : null}
           {selected.binary ? (
             <div className="session-diff-loading">Binary file — no inline text diff.</div>
           ) : selected.hunks.length === 0 ? (
             <div className="session-diff-loading">No text hunks recorded for this file.</div>
           ) : (
-            <div className="session-inline-diff-body" role="table" aria-label={selected.path}>
+            <div
+              ref={diffBodyRef}
+              className="session-inline-diff-body"
+              role="table"
+              aria-label={selected.path}
+              onMouseUp={readDiffSelection}
+              onKeyUp={readDiffSelection}
+            >
               {selected.hunks.map((hunk) => (
                 <React.Fragment key={hunk.key}>
                   <div className="session-inline-hunk mono" role="row">
                     {hunk.header}
                   </div>
                   {inlineLines(hunk).map((line) => (
-                    <div key={line.key} className={`session-inline-line ${line.kind}`} role="row">
+                    <div
+                      key={line.key}
+                      className={`session-inline-line ${line.kind}`}
+                      role="row"
+                      data-code-context-row
+                      data-kind={line.kind}
+                      data-code={line.text}
+                      data-line-number={line.lineNumber ?? ''}
+                      data-hunk-header={hunk.header}
+                    >
                       <span className="session-inline-number mono">{line.lineNumber ?? ''}</span>
                       <span className="session-inline-marker mono">
                         {line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '−' : ''}

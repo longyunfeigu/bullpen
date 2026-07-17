@@ -211,6 +211,181 @@ final result: passed
 
 ---
 
+# Mature CodeContextRef — Design QA
+
+## Comparison target
+
+- Source visual truth:
+  `docs/design/code-context-ref-mockups/unified.html`, captured at
+  `/tmp/charter-code-context-source-1440.png`.
+- Electron implementation:
+  `/tmp/charter-code-context-1440.png` and the responsive
+  `/tmp/charter-code-context-900.png`.
+- Viewports: 1440 × 900 and 900 × 900 CSS pixels.
+- State: a live managed Session with one line selected from its inline Diff,
+  frozen into the next-turn Composer as a structured code reference.
+- Capture method: the repository Playwright Electron harness and isolated user
+  data, as required by AGENTS.md. The renderer was built before capture.
+
+## Visual evidence
+
+- Same-input full comparison:
+  `/tmp/charter-code-context-comparison-1440.png`.
+- Same-input focused Composer comparison:
+  `/tmp/charter-code-context-comparison-focused.png`.
+- Narrow post-fix evidence: `/tmp/charter-code-context-900.png`.
+
+The source and implementation were placed in the same comparison images and
+opened together. The mock uses the Archive cream presentation while the
+production capture intentionally retains the current Studio-light product
+tokens; object hierarchy, selection provenance, Composer shelf, Session/tool
+continuity and responsive priority are the comparison truth.
+
+## Findings
+
+No actionable P0, P1 or P2 findings remain.
+
+- Fonts and typography: production retains Charter's UI and monospace stacks.
+  File path, exact line range, selected-code preview, source surface and frozen
+  snapshot state form the same compact hierarchy as the mature mock, with
+  truncation on long paths instead of changing the Composer width.
+- Spacing and layout rhythm: the context shelf sits inside the existing
+  Composer rather than becoming another panel. It reports selection/line
+  totals, keeps one removable reference card per snapshot and does not move the
+  conversation or Session rail. Diff remains beside the conversation at 1440;
+  at 900 it follows the conversation as the second priority region.
+- Colors and visual tokens: context uses existing information blue, card,
+  border, foreground and muted tokens. It remains legible in Studio light and
+  does not introduce the mock's cream palette as a fifth skin.
+- Image quality and asset fidelity: this flow contains no photography or
+  illustration. It reuses the existing Charter file and action icon set; no
+  generated image, emoji, placeholder graphic, custom SVG or CSS-art asset was
+  added.
+- Copy and content: “Code context for this turn”, source/version provenance and
+  “frozen snapshot” make delivery semantics explicit. Timeline evidence says
+  how many code selections were sent without duplicating the full prompt.
+- Interaction and accessibility: Diff drag-selection, Monaco File Peek and
+  Editor selection, Search-result attachment and Review feedback converge on
+  the same removable Composer card. Buttons have labels/test ids, native
+  selection remains visible until attachment, Enter sends, and refs can be
+  removed before delivery.
+- Responsiveness: the 900px canvas keeps Session identity, context shelf,
+  Composer send action, all five tool icons, Diff evidence and the bottom live
+  status visible. There is no horizontal page overflow or hidden persistent
+  action.
+
+Intentional P3 differences: the source mock demonstrates a three-line CSS
+selection and archive skin; deterministic production evidence uses a one-line
+text-file addition in Studio light. The card is correspondingly more compact,
+while retaining the same range, provenance, snapshot and removal information.
+
+## Comparison history
+
+1. First Electron interaction pass — blocked by P0 render recursion.
+   - Finding: a new empty array returned by the Zustand selector caused React
+     update-depth error 185 as soon as a Session opened.
+   - Fix: introduced one stable `EMPTY_CODE_CONTEXT_REFS` selector fallback and
+     reused it in managed and external Session composers.
+   - Post-fix evidence: the managed runtime Electron scenario renders and
+     completes; the final 1440 and 900 screenshots are non-blank.
+2. Initial 900px visual pass — blocked by P2 blank tool navigation.
+   - Finding: wide Diff deliberately hid icons, while the narrow breakpoint
+     hid labels; together those rules left only an unexplained underline.
+   - Fix: restore existing tool icons for Diff at the narrow breakpoint while
+     retaining the text-only wide layout.
+   - Post-fix evidence: `/tmp/charter-code-context-900.png` shows File, Diff,
+     Preview, Terminal and Review icons with Diff selected.
+3. Initial responsive capture — blocked by P2 transient compositing evidence.
+   - Finding: capturing in the same tick as the Electron viewport resize
+     produced black composited regions even though locators were present.
+   - Fix: wait for the real Diff line and a 300ms repaint boundary before the
+     evidence screenshot.
+   - Post-fix evidence: the final 900px capture is fully painted and the test
+     asserts the Diff contents before capture.
+
+## Primary interactions tested
+
+- Drag-select an added Diff line, attach it, see the unified Composer shelf,
+  send it and inspect the structured timeline evidence.
+- Verify the Pi mock runtime receives the selected bytes in its actual runtime
+  prompt rather than only seeing a frontend card.
+- Deliver the same validated structured snapshot to live fake Claude and Codex
+  processes through their real PTYs and observe the selected marker in terminal
+  output.
+- Resize the live Session from 1440 × 900 to 900 × 900 with the context shelf
+  attached; assert Session tool canvas, reference card and Diff content remain
+  visible.
+- Collect `pageerror` and `console.error` events on the managed primary path and
+  assert the final list is empty.
+
+## Implementation checklist
+
+- [x] Shared validated `CodeContextRef` schema with frozen text, path, source
+      version, exact range, source hash and selection hash.
+- [x] Per-Session draft storage, duplicate suppression, six-reference limit and
+      48,000-character aggregate limit.
+- [x] Unified selection entry points for Diff, File Peek, full Editor, Search
+      results and advanced Review.
+- [x] Main-process runtime serialization for Pi and main-process PTY delivery
+      for Claude/Codex.
+- [x] Structured Session-ledger evidence and compact timeline rendering.
+- [x] Desktop/narrow visual validation and real Electron runtime tests.
+
+final result: passed
+
+---
+
+# Projects Expansion + Home Queue Removal — Design QA
+
+## Comparison target
+
+- Projects source: `/var/folders/23/z96fd00x791_2j0k757hsnjw0000gn/T/codex-clipboard-Pcq8RZ.png`
+- Home source: `/var/folders/23/z96fd00x791_2j0k757hsnjw0000gn/T/codex-clipboard-2KWfnW.png`
+- Production surfaces: `apps/desktop-renderer/src/views/SessionRail.tsx` and
+  `apps/desktop-renderer/src/views/HomeView.tsx`.
+- Capture method: repository Playwright Electron harness with isolated user
+  data, as required by the repository AGENTS.md.
+
+## Visual evidence
+
+- Expanded Projects production capture:
+  `/var/folders/23/z96fd00x791_2j0k757hsnjw0000gn/T/charter-project-tree-expanded.png`
+- Home without the duplicate queue:
+  `/var/folders/23/z96fd00x791_2j0k757hsnjw0000gn/T/charter-home-without-mission-control.png`
+- Normalized Projects comparison: `/tmp/charter-project-expansion-comparison.png`
+- Same-viewport Home comparison: `/tmp/charter-home-removal-comparison.png`
+
+The production screenshots and normalized comparisons were opened and
+inspected together. No actionable P0, P1 or P2 visual finding remains.
+
+## Findings
+
+- Project selection now preserves the Projects activity state while opening
+  the workspace, expands the selected project's real file tree in place and
+  retains that state across the workspace-triggered rail remount.
+- Clicking the active project row toggles the tree without navigating to the
+  Sessions panel. The chevron accurately represents the expanded state.
+- The Home Needs You and Recent queue was removed from both the component tree
+  and stylesheet; the persistent Session rail is now the single task-status
+  surface.
+- Removing the queue does not leave a collapsed-card gap. The heading and
+  composer retain the compact approved vertical position and the open canvas
+  below remains intentionally quiet.
+- The 963 × 749 Home capture verifies non-blank rendering and no duplicate
+  queue at the user's supplied viewport. The Projects capture verifies the
+  primary interaction path at a full desktop viewport.
+- Targeted Electron tests asserted page identity, primary interactions and
+  zero page or console errors on the new paths.
+
+Intentional P3 deviations: the Projects comparison uses real fixture names and
+the production project-tool surface rather than the user's local paths. The
+tree behavior, hierarchy and selection state are the matched interaction
+truth.
+
+final result: passed
+
+---
+
 # Recommended Session Rail + Conversation Roles — Design QA
 
 ## Comparison target

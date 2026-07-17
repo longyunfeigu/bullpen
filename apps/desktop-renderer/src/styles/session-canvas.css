@@ -793,6 +793,11 @@ button.hm-board-now:hover {
   padding-bottom: 8px;
 }
 
+.session-inline-diff-body ::selection {
+  background: color-mix(in srgb, var(--info) 34%, transparent);
+  color: var(--fg);
+}
+
 .session-inline-hunk {
   min-width: max-content;
   padding: 8px 16px 8px 48px;
@@ -1234,6 +1239,12 @@ button.hm-board-now:hover {
   .session-tool-expand span,
   .session-tool-tablist button span {
     display: none;
+  }
+
+  /* Wide Diff is intentionally text-only; once labels collapse at this
+   * breakpoint the icons must return or the entire tab bar becomes blank. */
+  .session-tool-canvas[data-active-tool='diff'] .session-tool-tablist .app-icon {
+    display: block;
   }
 
   .session-tool-tablist button,

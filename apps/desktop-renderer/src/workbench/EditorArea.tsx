@@ -8,6 +8,7 @@ import { parseGutterRanges, toDecorations } from './gutter-diff.js';
 import { WelcomeView } from '../views/WelcomeView.js';
 import { ImageView } from '../views/ImageView.js';
 import { editorFontFamily } from '../appearance.js';
+import { addCodeContext } from '../codeContext.js';
 
 // Rich markdown pulls lexical/mdast (ADR-0007) — loaded only when first used.
 const MarkdownEditor = React.lazy(() =>
@@ -90,6 +91,15 @@ function MonacoPane({
   const toggleMdRich = useEditorStore((s) => s.toggleMdRich);
   const active = group.active;
   const meta = active ? docs[active] : undefined;
+  const taskRoomTaskId = useAppStore((state) => state.taskRoomTaskId);
+  const [codeSelection, setCodeSelection] = useState<{
+    path: string;
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || editorRef.current) return;
@@ -117,6 +127,27 @@ function MonacoPane({
     });
     editor.onDidChangeCursorPosition((e) => {
       setCursor(e.position.lineNumber, e.position.column);
+    });
+    editor.onDidChangeCursorSelection(({ selection }) => {
+      const path = currentPath.current;
+      const model = editor.getModel();
+      if (!path || !model || selection.isEmpty()) {
+        setCodeSelection(null);
+        return;
+      }
+      const text = model.getValueInRange(selection);
+      setCodeSelection(
+        text
+          ? {
+              path,
+              startLine: selection.startLineNumber,
+              startColumn: selection.startColumn,
+              endLine: selection.endLineNumber,
+              endColumn: selection.endColumn,
+              text,
+            }
+          : null,
+      );
     });
     editor.onDidFocusEditorText(() => {
       setActiveGroup(groupIndex);
@@ -187,6 +218,7 @@ function MonacoPane({
       editor.setModel(null);
       currentPath.current = active ?? null;
     }
+    setCodeSelection(null);
   }, [active, meta?.editable, meta?.readonly, setActiveLanguage]);
 
   const richActive = Boolean(active && meta?.editable && isMdRich({ mdRich }, active));
@@ -198,6 +230,35 @@ function MonacoPane({
         style={{ position: 'absolute', inset: 0 }}
         data-testid={`monaco-pane-${groupIndex}`}
       />
+      {taskRoomTaskId && codeSelection && !richActive ? (
+        <div
+          className={`code-context-selection-bar editor-selection ${active?.toLowerCase().endsWith('.md') ? 'with-md-mode' : ''}`}
+          data-testid={`editor-code-selection-bar-${groupIndex}`}
+        >
+          <span className="mono">
+            Selected L{codeSelection.startLine}
+            {codeSelection.endLine === codeSelection.startLine ? '' : `–${codeSelection.endLine}`}
+          </span>
+          <span>Editor · live buffer</span>
+          <button
+            type="button"
+            data-testid={`editor-add-code-context-${groupIndex}`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              void addCodeContext(taskRoomTaskId, {
+                ...codeSelection,
+                origin: 'editor',
+                version: 'working-tree',
+                contentHash: null,
+              }).then((ref) => {
+                if (ref) editorRef.current?.setSelection(new monaco.Selection(1, 1, 1, 1));
+              });
+            }}
+          >
+            Add to context
+          </button>
+        </div>
+      ) : null}
       {/* PIVOT-019: Notion-style editing for .md, one toggle away. */}
       {active && meta?.editable && active.toLowerCase().endsWith('.md') ? (
         <div className="md-mode-toggle" data-testid="md-mode-toggle">

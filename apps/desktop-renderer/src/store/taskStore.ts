@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type {
   ChangeSetDto,
+  CodeContextRefDto,
   ModelDescriptorDto,
   PlanEditDto,
   PrDraftDto,
@@ -73,13 +74,16 @@ interface TaskStore {
     conversationRefTaskIds?: string[];
     /** ADR-0022 am.2: preview feedback seeding this task's first run. */
     preview?: PreviewAttachmentDto;
+    /** Frozen source snapshots for the new Session's first turn. */
+    codeRefs?: CodeContextRefDto[];
   }): Promise<boolean>;
   send(
     text: string,
     during: 'steer' | 'followUp',
     /** ADR-0016: optional model/effort override for the next turn onward. */
     model?: TaskDto['model'],
-  ): Promise<void>;
+    codeRefs?: CodeContextRefDto[],
+  ): Promise<boolean>;
   stop(): Promise<void>;
   /** Restart an INTERRUPTED/FAILED task's run (M10 recovery). */
   resumeTask(taskId?: string): Promise<void>;
@@ -107,6 +111,7 @@ interface TaskStore {
     decision: 'approve' | 'reject' | 'request_changes';
     editedPlan?: PlanEditDto;
     reason?: string;
+    codeRefs?: CodeContextRefDto[];
     confirmRemovedDone?: boolean;
   }): Promise<boolean>;
   openReview(): Promise<void>;
@@ -130,7 +135,11 @@ interface TaskStore {
   prDraft: { taskId: string; draft: PrDraftDto } | null;
   dismissPrDraft(): void;
   /** Marquee feedback: same steer loop as request-fix, plus the screenshot. */
-  sendPreviewFeedback(text: string, preview: PreviewAttachmentDto): Promise<boolean>;
+  sendPreviewFeedback(
+    text: string,
+    preview: PreviewAttachmentDto,
+    codeRefs?: CodeContextRefDto[],
+  ): Promise<boolean>;
 
   // PIVOT-005: Home fast path — one-line intent charters a task.
   createFromIntent(input: {
@@ -218,14 +227,17 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
             : { runId, messageId, text: delta },
       });
     });
-    onEvent('task.stateChanged', ({ taskId, state }) => {
+    onEvent('task.stateChanged', ({ taskId, state, task }) => {
+      const tasks = get().tasks;
       set({
-        tasks: get().tasks.map((t) => (t.id === taskId ? { ...t, state } : t)),
+        tasks: tasks.some((candidate) => candidate.id === taskId)
+          ? tasks.map((candidate) => (candidate.id === taskId ? task : candidate))
+          : [task, ...tasks],
       });
+      useAppStore.getState().signalSessionCompletion(task);
       if (state === 'REVIEW_READY' || state === 'FAILED' || state === 'INTERRUPTED') {
         set({ streaming: null, streamingThinking: null });
       }
-      void get().refreshTasks();
     });
     onEvent('agent.workerStatus', ({ alive }) => {
       const wasAlive = get().workerAlive;
@@ -338,6 +350,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     const start = await rpcResult('task.start', {
       taskId: task.id,
       ...(input.preview ? { preview: input.preview } : {}),
+      codeRefs: input.codeRefs ?? [],
     });
     if (!start.ok) {
       useAppStore.getState().pushToast('error', start.error.userMessage);
@@ -349,19 +362,24 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     return true;
   },
 
-  async send(text, during, model) {
+  async send(text, during, model, codeRefs = []) {
     const taskId = get().activeTaskId;
-    if (!taskId) return;
+    if (!taskId) return false;
     const res = await rpcResult('task.message', {
       taskId,
       text,
       during,
       ...(model ? { model } : {}),
+      codeRefs,
     });
-    if (!res.ok) useAppStore.getState().pushToast('error', res.error.userMessage);
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      return false;
+    }
     // ADR-0016: an override updates the task's model — refresh so the composer
     // pill and task lists reflect the model serving the next turn.
-    else if (model) void get().refreshTasks();
+    if (model) void get().refreshTasks();
+    return true;
   },
 
   async stop() {
@@ -379,7 +397,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       await useExternalStore.getState().resumeTask(task);
       return;
     }
-    const res = await rpcResult('task.start', { taskId });
+    const res = await rpcResult('task.start', { taskId, codeRefs: [] });
     if (!res.ok) useAppStore.getState().pushToast('error', res.error.userMessage);
     else if (res.data.queued) {
       useAppStore.getState().pushToast('info', 'Queued: all agent slots are busy.');
@@ -421,7 +439,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     set({ prDraft: null });
   },
 
-  async sendPreviewFeedback(text, preview) {
+  async sendPreviewFeedback(text, preview, codeRefs = []) {
     const taskId = get().activeTaskId;
     if (!taskId) return false;
     const res = await rpcResult('task.message', {
@@ -429,6 +447,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       text,
       during: 'steer',
       preview,
+      codeRefs,
     });
     if (!res.ok) {
       useAppStore.getState().pushToast('error', res.error.userMessage);
@@ -461,6 +480,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       decision: input.decision,
       ...(input.editedPlan ? { editedPlan: input.editedPlan } : {}),
       ...(input.reason ? { reason: input.reason } : {}),
+      codeRefs: input.codeRefs ?? [],
       confirmRemovedDone: input.confirmRemovedDone ?? false,
     });
     if (!res.ok) {

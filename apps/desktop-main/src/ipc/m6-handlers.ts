@@ -32,23 +32,28 @@ export function registerM6Handlers(
           conversationRefTaskIds: payload.conversationRefTaskIds,
         }),
       }),
-      'task.start': async ({ taskId, prompt, preview }) => {
+      'task.start': async ({ taskId, prompt, preview, codeRefs }) => {
         // ADR-0022 am.2: a follow-up seeded from preview feedback carries the
         // screenshot into its first run (same processing as task.message).
         const attachment = preview ? await processPreviewAttachment(tasks, taskId, preview) : null;
         const result = await tasks.startTask(
           taskId,
           prompt,
-          attachment
+          attachment || codeRefs.length > 0
             ? {
-                images: [{ data: attachment.imageData, mimeType: 'image/png' }],
-                previewMeta: attachment.meta,
+                ...(codeRefs.length > 0 ? { codeRefs } : {}),
+                ...(attachment
+                  ? {
+                      images: [{ data: attachment.imageData, mimeType: 'image/png' }],
+                      previewMeta: attachment.meta,
+                    }
+                  : {}),
               }
             : undefined,
         );
         return { task: result.task, queued: result.queued };
       },
-      'task.message': async ({ taskId, text, during, model, preview }) => {
+      'task.message': async ({ taskId, text, during, model, preview, codeRefs }) => {
         // ADR-0022: marquee feedback — persist the screenshot, attach the
         // timeline meta, and hand the pixels to the runtime with the text.
         const attachment = preview ? await processPreviewAttachment(tasks, taskId, preview) : null;
@@ -58,10 +63,15 @@ export function registerM6Handlers(
             text,
             during,
             model,
-            attachment
+            attachment || codeRefs.length > 0
               ? {
-                  images: [{ data: attachment.imageData, mimeType: 'image/png' }],
-                  previewMeta: attachment.meta,
+                  ...(codeRefs.length > 0 ? { codeRefs } : {}),
+                  ...(attachment
+                    ? {
+                        images: [{ data: attachment.imageData, mimeType: 'image/png' }],
+                        previewMeta: attachment.meta,
+                      }
+                    : {}),
                 }
               : undefined,
           ),

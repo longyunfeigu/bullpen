@@ -325,10 +325,46 @@
   font-size: 11px;
   line-height: 1.5;
 }
+.sr-more {
+  width: calc(100% - 10px);
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 5px 1px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--fg-muted);
+  font: 600 11px var(--font-ui);
+  cursor: pointer;
+}
+.sr-more:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.sr-more small {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-size: 9.5px;
+  font-weight: 400;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sr-more svg {
+  transform: rotate(-90deg);
+}
 .sr-row-wrap {
   position: relative;
 }
 .sr-session {
+  --completion-tone: var(--info);
+  position: relative;
   width: 100%;
   min-height: 58px;
   display: grid;
@@ -344,6 +380,29 @@
   font-family: var(--font-ui);
   text-align: left;
   cursor: pointer;
+}
+.sr-session.completion-success {
+  --completion-tone: var(--success);
+}
+.sr-session.completion-review,
+.sr-session.completion-warning {
+  --completion-tone: var(--warning);
+}
+.sr-session.completion-error {
+  --completion-tone: var(--danger);
+}
+.sr-session.completion-ripple {
+  animation: srCompletionNudge 520ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+.sr-session.completion-ripple::after {
+  position: absolute;
+  inset: 3px;
+  border: 1px solid var(--completion-tone);
+  border-radius: 8px;
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  animation: srCompletionRipple 1.35s ease-out 3;
 }
 .sr-session:hover {
   background: var(--bg-hover);
@@ -462,6 +521,39 @@
 }
 .sr-row-wrap:hover .sr-archive {
   opacity: 1;
+}
+
+@keyframes srCompletionNudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  28% {
+    transform: translateX(1.5px);
+  }
+  58% {
+    transform: translateX(-1px);
+  }
+}
+@keyframes srCompletionRipple {
+  0% {
+    opacity: 0.65;
+    transform: scale(0.985);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.075);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sr-session.completion-ripple,
+  .sr-session.completion-ripple::after {
+    animation: none;
+  }
+  .sr-session.completion-ripple {
+    box-shadow: inset 3px 0 0 var(--completion-tone);
+  }
 }
 
 .sr-inbox-intro {

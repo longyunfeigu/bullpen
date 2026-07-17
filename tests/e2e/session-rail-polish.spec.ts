@@ -151,6 +151,10 @@ test.describe('Session rail and conversation role polish', () => {
       await expect(page.getByTestId('rail-view-projects')).toHaveClass(/active/);
       await expect(page.getByTestId(`home-recent-${projectA}`)).toHaveClass(/active/);
       await expect(page.getByTestId('home-project-tree')).toBeVisible({ timeout: 15_000 });
+      await page.screenshot({
+        path: join(tmpdir(), 'charter-project-tree-expanded.png'),
+        fullPage: true,
+      });
     } finally {
       await app.close();
     }

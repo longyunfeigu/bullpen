@@ -9,6 +9,7 @@ import { DiagnosticsView } from '../views/DiagnosticsView.js';
 import { Ic } from '../views/home-icons.js';
 import { SessionRail } from '../views/SessionRail.js';
 import type { BottomTab, SideBarView } from '@pi-ide/ipc-contracts';
+import { useTaskStore } from '../store/taskStore.js';
 
 function useRegisterCoreCommands(): void {
   const store = useAppStore;
@@ -176,6 +177,8 @@ export function Workbench(): React.JSX.Element {
   const setOverlay = useAppStore((s) => s.setOverlay);
   const toasts = useAppStore((s) => s.toasts);
   const dismissToast = useAppStore((s) => s.dismissToast);
+  const sessionNotices = useAppStore((s) => s.sessionNotices);
+  const dismissSessionNotice = useAppStore((s) => s.dismissSessionNotice);
   const pushToast = useAppStore((s) => s.pushToast);
   const appInfo = useAppStore((s) => s.appInfo);
 
@@ -318,6 +321,56 @@ export function Workbench(): React.JSX.Element {
       {overlayRegistry.map((C, i) => (
         <C key={i} />
       ))}
+
+      <div className="session-notices" aria-live="polite" aria-label="Session updates">
+        {sessionNotices.map((notice) => (
+          <article
+            key={notice.id}
+            className={`session-notice ${notice.tone}`}
+            data-testid="session-completion-notice"
+            data-task-id={notice.taskId}
+            data-state={notice.state}
+          >
+            <button
+              className="session-notice-open"
+              aria-label={`Open Session ${notice.title}`}
+              onClick={() => {
+                dismissSessionNotice(notice.id);
+                void useTaskStore.getState().openTask(notice.taskId);
+                useAppStore.getState().revealTaskSession(notice.taskId);
+              }}
+            >
+              <span className="session-notice-icon" aria-hidden="true">
+                <Ic
+                  name={
+                    notice.tone === 'error'
+                      ? 'xCircle'
+                      : notice.tone === 'warning'
+                        ? 'alert'
+                        : 'checkCircle'
+                  }
+                  size={16}
+                />
+              </span>
+              <span className="session-notice-copy">
+                <span className="session-notice-kicker">
+                  <b>{notice.label}</b>
+                  <span>{notice.projectName}</span>
+                </span>
+                <strong>{notice.title}</strong>
+                <small>{notice.body}</small>
+              </span>
+            </button>
+            <button
+              className="session-notice-close"
+              aria-label="Dismiss Session notification"
+              onClick={() => dismissSessionNotice(notice.id)}
+            >
+              <Ic name="x" size={12} />
+            </button>
+          </article>
+        ))}
+      </div>
 
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (

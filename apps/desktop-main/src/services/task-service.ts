@@ -24,6 +24,7 @@ import type {
   AskUserPromptDto,
   ChangeSetDto,
   ChangeSetFileDto,
+  CodeContextRefDto,
   PermissionCardDto,
   PlanEditDto,
   PrDraftDto,
@@ -32,7 +33,7 @@ import type {
   TimelineEventDto,
   VerificationCommandSchema,
 } from '@pi-ide/ipc-contracts';
-import { projectActivity } from '@pi-ide/ipc-contracts';
+import { formatPromptWithCodeContext, projectActivity } from '@pi-ide/ipc-contracts';
 import type { z } from 'zod';
 import type { SqlDatabase } from '@pi-ide/persistence';
 import {
@@ -88,6 +89,8 @@ export interface PreviewFeedbackMeta {
 interface LaunchExtras {
   images?: PromptImage[];
   previewMeta?: PreviewFeedbackMeta;
+  /** Frozen source snapshots selected by the user for this turn. */
+  codeRefs?: CodeContextRefDto[];
 }
 
 function countPatchLines(patch: string | null): { additions: number; deletions: number } {
@@ -568,6 +571,7 @@ export class TaskService {
     decision: 'approve' | 'reject' | 'request_changes';
     editedPlan?: PlanEditDto;
     reason?: string;
+    codeRefs?: CodeContextRefDto[];
     confirmRemovedDone?: boolean;
   }): TaskDto {
     const record = this.planStatus(input.taskId);
@@ -583,7 +587,8 @@ export class TaskService {
     if (input.decision === 'request_changes') {
       // ADR-0009: the composer is the "Request changes" control — the blocked
       // propose_plan resolves with the feedback and the model revises (v+1).
-      const feedback = (input.reason ?? '').trim() || 'Please revise the plan.';
+      const reason = (input.reason ?? '').trim() || 'Please revise the plan.';
+      const feedback = formatPromptWithCodeContext(reason, input.codeRefs ?? []);
       this.planRecords.set(input.taskId, {
         plan: record.plan,
         status: 'none',
@@ -593,7 +598,8 @@ export class TaskService {
         decision: 'changes_requested',
         auto: false,
         edited: false,
-        reason: feedback,
+        reason,
+        ...(input.codeRefs?.length ? { codeRefs: input.codeRefs } : {}),
         version: record.version,
       });
       const waiter = this.planWaiters.get(input.taskId);
@@ -1686,20 +1692,20 @@ export class TaskService {
       .prepare('UPDATE tasks SET state = ?, updated_at = ? WHERE id = ?')
       .run(to, new Date().toISOString(), taskId);
     this.recordEvent(taskId, 'task.stateChanged', { from, to, ...context });
-    broadcast('task.stateChanged', { taskId, state: to });
-    const changedFiles = (
-      this.db.prepare('SELECT changed_files FROM tasks WHERE id = ?').get(taskId) as
-        { changed_files: number | null } | undefined
-    )?.changed_files;
+    // The renderer needs the whole projection on the state edge. Sending only
+    // `state` left changedFiles/updatedAt/external metadata behind until a
+    // follow-up list RPC completed, which made Session badges appear stale.
+    const task = this.getTask(taskId);
+    broadcast('task.stateChanged', { taskId, state: to, task });
     for (const listener of this.stateChangeListeners) {
       try {
         listener({
           taskId,
           from,
           to,
-          title: row.title,
-          changedFiles: changedFiles ?? null,
-          mode: row.mode,
+          title: task.title,
+          changedFiles: task.changedFiles,
+          mode: task.mode,
         });
       } catch (e) {
         this.logger.warn('state listener failed', {
@@ -1707,7 +1713,7 @@ export class TaskService {
         });
       }
     }
-    return this.getTask(taskId);
+    return task;
   }
 
   /** Observe task state transitions (edge-triggered; used by notifications). */
@@ -2368,6 +2374,7 @@ export class TaskService {
         hasDiff: context.latestDiff !== null,
       })),
       ...(extras?.previewMeta ? { preview: extras.previewMeta } : {}),
+      ...(extras?.codeRefs?.length ? { codeRefs: extras.codeRefs } : {}),
     });
     this.setState(taskId, task.state === 'READY' ? 'EXPLORING' : 'IN_PROGRESS');
 
@@ -2384,7 +2391,7 @@ export class TaskService {
         ...(refreshedSkills
           ? [`<skill_catalog_refresh>\n${refreshedSkills}\n</skill_catalog_refresh>`]
           : []),
-        this.skills.expandCommand(runtimeText),
+        formatPromptWithCodeContext(this.skills.expandCommand(runtimeText), extras?.codeRefs ?? []),
       ].join('\n\n'),
       ...(extras?.images?.length ? { images: extras.images } : {}),
       priorConversations,
@@ -2457,6 +2464,7 @@ export class TaskService {
         text,
         kind: during,
         ...(attachments?.previewMeta ? { preview: attachments.previewMeta } : {}),
+        ...(attachments?.codeRefs?.length ? { codeRefs: attachments.codeRefs } : {}),
       });
       // ADR-0019: active-session replies also receive the current linked
       // catalog; explicit commands are expanded from the same live revision.
@@ -2465,7 +2473,7 @@ export class TaskService {
         ...(currentSkills
           ? [`<skill_catalog_refresh>\n${currentSkills}\n</skill_catalog_refresh>`]
           : []),
-        this.skills.expandCommand(text),
+        formatPromptWithCodeContext(this.skills.expandCommand(text), attachments?.codeRefs ?? []),
       ].join('\n\n');
       if (during === 'steer') this.host.steer(runId, expanded, attachments?.images);
       else this.host.followUp(runId, expanded, attachments?.images);
