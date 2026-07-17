@@ -2069,9 +2069,8 @@
   height: 5px;
 }
 
-/* ---------- replay entry affordances (Home cards, Changes rows, timeline) ---------- */
+/* ---------- replay entry affordances (Changes rows and timeline) ---------- */
 
-.hm-treplay,
 .tr-freplay {
   display: inline-grid;
   place-items: center;
@@ -2088,16 +2087,12 @@
     color 0.12s ease;
 }
 
-.hm-tcard:hover .hm-treplay,
-.hm-tcard:focus-within .hm-treplay,
 .tr-frow:hover .tr-freplay,
 .tr-frow:focus-within .tr-freplay,
-.hm-treplay:focus-visible,
 .tr-freplay:focus-visible {
   opacity: 1;
 }
 
-.hm-treplay:hover,
 .tr-freplay:hover {
   color: var(--rp-blue, #3d78e6);
   border-color: color-mix(in srgb, var(--rp-blue, #3d78e6) 45%, transparent);

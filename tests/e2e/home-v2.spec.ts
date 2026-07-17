@@ -3,11 +3,11 @@ import { launchApp } from './helpers/launch';
 import { createTsSmallFixture } from './helpers/fixtures';
 
 /**
- * Home v2 (ADR-0005/0006, PIVOT-011..015): advanced charter, mission control,
+ * Home v2 (ADR-0005/0006, PIVOT-011..015): advanced charter, persistent Inbox,
  * context feeding. The engine flows underneath are the same ones covered by
  * E2E-009..018 — these tests cover the new shell semantics.
  */
-test.describe('Home v2 — advanced charter, mission control, context feeding', () => {
+test.describe('Home v2 — advanced charter, persistent Inbox, context feeding', () => {
   test('Codex-style @ picker references a completed conversation in a new task', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({
@@ -105,7 +105,7 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
     }
   });
 
-  test('PIVOT-013: mission control surfaces needs-you states and drives navigation', async () => {
+  test('PIVOT-013: the persistent Inbox surfaces needs-you states and drives navigation', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
@@ -118,17 +118,18 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
       await page.getByTestId('home-intent').fill('[scenario:edit-basic] refactor utils');
       await page.getByTestId('home-submit').click();
 
-      // The run pauses for plan approval; Home shows it under "Needs you".
+      // The run pauses for plan approval; the global Inbox owns that queue.
       await expect(page.getByTestId('plan-card')).toBeVisible({ timeout: 20000 });
       await page.getByTestId('task-room-back').click();
-      const needs = page.getByTestId('home-mc-needs');
-      await expect(needs).toBeVisible();
+      await expect(page.getByTestId('home-mc-needs')).toHaveCount(0);
+      await expect(page.getByTestId('rail-needs-you')).toContainText('1');
+      await page.getByTestId('rail-needs-you').click();
+      const needs = page.getByTestId('rail-inbox-panel');
       await expect(needs).toContainText('Plan ready');
       await expect(needs).toContainText('refactor utils');
-      await expect(needs).toContainText('Proposed a plan'); // live activity line
 
-      // Card click jumps straight to the waiting task's room.
-      await needs.locator('button.hm-tcard').first().click();
+      // Inbox row click jumps straight to the waiting task's room.
+      await needs.locator('button[data-testid^="home-task-"]').first().click();
       await expect(page.getByTestId('home-view')).toHaveCount(0);
       await expect(page.getByTestId('task-room')).toBeVisible();
       await expect(page.getByTestId('plan-card')).toBeVisible();
@@ -139,11 +140,12 @@ test.describe('Home v2 — advanced charter, mission control, context feeding', 
         timeout: 30000,
       });
 
-      // Review-ready tasks surface in Needs you and behind the Inbox badge.
+      // Review-ready tasks surface behind the single Inbox badge.
       await page.getByTestId('task-room-back').click();
-      await expect(page.getByTestId('home-mc-needs')).toContainText('Review');
+      await expect(page.getByTestId('home-mc-needs')).toHaveCount(0);
       await expect(page.getByTestId('rail-needs-you')).toContainText('1');
       await page.getByTestId('rail-needs-you').click();
+      await expect(page.getByTestId('rail-inbox-panel')).toContainText('Review');
       await page
         .locator('[data-testid="rail-inbox-panel"] [data-testid^="home-task-"]')
         .first()

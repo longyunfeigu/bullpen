@@ -65,13 +65,16 @@ test.describe('Unified Session Canvas', () => {
       await settleLayout(page);
       await page.screenshot({ path: `${OUT}/agent-picker-1440.png` });
       await page.getByTestId('home-agent-pi').click();
-      await expect(page.getByTestId('home-open-ide')).toHaveCount(0);
       await expect(page.locator('.activitybar')).toHaveCount(0);
       await settleLayout(page);
       await page.screenshot({ path: `${OUT}/launcher-1440.png` });
 
+      await page.getByTestId('home-advanced-toggle').click();
+      await page.getByTestId('home-verif-npm test').click();
       await page.getByTestId('home-mode-auto').click();
-      await page.getByTestId('home-intent').fill('[scenario:edit-basic] unify the Session shell');
+      await page
+        .getByTestId('home-intent')
+        .fill('[scenario:edit-multifile] unify the Session shell');
       await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
@@ -91,20 +94,31 @@ test.describe('Unified Session Canvas', () => {
       await settleLayout(page);
       await page.screenshot({ path: `${OUT}/review-1440.png` });
 
-      await page.getByTestId('session-tool-summary').click();
-      await expect(page.getByTestId('session-summary')).toBeVisible();
-      await page.getByTestId('session-tool-review').click();
-      await expect(page.getByTestId('review-bar')).toBeVisible();
-
-      const changedFile = page.locator('[data-testid^="task-room-file-"]').first();
-      await expect(changedFile).toBeVisible();
-      await changedFile.click();
+      // File remains a first-class Session tool; Diff is the focused inline
+      // review from the selected reference, not a second workspace shell.
+      await page.getByTestId('session-tool-file').click();
       await expect(page.getByTestId('file-peek')).toBeVisible();
       await expect(page.locator('.rt-scroll')).toBeVisible();
-      await page.getByTestId('session-tool-expand').click();
+      await page.getByTestId('session-tool-review').click();
+      await expect(page.getByTestId('review-bar')).toBeVisible();
+      await page.getByTestId('checks-run').click();
+      await expect(page.getByTestId('tl-verification-passed')).toBeVisible({ timeout: 30000 });
+
+      await page.getByTestId('session-tool-diff').click();
+      await expect(page.getByTestId('session-diff-review')).toBeVisible();
+      await expect(page.locator('[data-testid^="session-diff-file-"]')).toHaveCount(3);
+      await expect(page.getByTestId('session-inline-diff')).toBeVisible();
+      await expect(page.locator('.session-diff-verification')).toContainText('1 check passed');
+      await page.getByTestId('session-diff-file-src/index.ts').click();
+      await expect(page.getByTestId('session-inline-diff')).toContainText('src/index.ts');
+      const toastDismiss = page.locator('.toast button[aria-label="Dismiss"]');
+      if (await toastDismiss.isVisible()) await toastDismiss.click();
       await expect(page.getByTestId('session-tool-expand')).toHaveAttribute('aria-pressed', 'true');
       await settleLayout(page);
       await page.screenshot({ path: `${OUT}/diff-zoom-1440.png` });
+      await page
+        .getByTestId('session-tool-canvas')
+        .screenshot({ path: `${OUT}/diff-panel-1440.png` });
 
       // At 900px, the tool canvas reorders below the collaboration ledger.
       await page.setViewportSize({ width: 900, height: 900 });

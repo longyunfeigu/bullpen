@@ -24,17 +24,17 @@ test.describe('Shell v5 — in-room file peek and zoom continuity', () => {
         timeout: 30000,
       });
 
-      // Rail file row → peek opens IN the room (no surface switch), diff mode.
+      // Rail file row → reference-faithful Diff opens IN the room.
       await page.getByTestId('task-room-file-src/index.ts').click();
-      await expect(page.getByTestId('file-peek')).toBeVisible();
+      await expect(page.getByTestId('session-diff-review')).toBeVisible();
       await expect(page.getByTestId('task-room')).toBeVisible();
-      await expect(page.getByTestId('peek-mode-diff')).toHaveAttribute('aria-checked', 'true');
-      await expect(page.getByTestId('peek-body')).toContainText('return add(3, 4);');
+      await expect(page.getByTestId('session-inline-diff')).toContainText('return add(3, 4);');
       // The conversation stays interactive: the composer is still there.
       await expect(page.getByTestId('room-composer')).toBeVisible();
 
       // File mode shows the CURRENT content through the task's mount (Monaco).
-      await page.getByTestId('peek-mode-file').click();
+      await page.getByTestId('session-tool-file').click();
+      await expect(page.getByTestId('file-peek')).toBeVisible();
       await expect(page.getByTestId('peek-monaco')).toBeVisible();
       await expect(page.getByTestId('peek-body')).toContainText('add(3, 4)', { timeout: 10000 });
 
@@ -52,6 +52,8 @@ test.describe('Shell v5 — in-room file peek and zoom continuity', () => {
 
       // Explicit edit expands the same File tool; room and conversation stay mounted.
       await page.getByTestId('task-room-file-src/index.ts').click();
+      await expect(page.getByTestId('session-diff-review')).toBeVisible();
+      await page.getByTestId('session-tool-file').click();
       await page.getByTestId('peek-open-editor').click();
       await expect(page.getByTestId('home-shell')).toBeVisible();
       await expect(page.getByTestId('task-room')).toBeVisible();
@@ -82,6 +84,8 @@ test.describe('Shell v5 — in-room file peek and zoom continuity', () => {
 
       // Open a peek and start typing a reply — then expand into edit mode.
       await page.getByTestId('task-room-file-src/index.ts').click();
+      await expect(page.getByTestId('session-diff-review')).toBeVisible();
+      await page.getByTestId('session-tool-file').click();
       await expect(page.getByTestId('file-peek')).toBeVisible();
       await page.getByTestId('agent-input').fill('also add a unit test for main()');
       await page.getByTestId('peek-mode-edit').click();

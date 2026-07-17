@@ -6,12 +6,14 @@
   - `/Users/edy/.codex/generated_images/019f6dd2-efed-7192-8c25-8f0354b55d93/exec-1cfca054-d647-4bf0-88d9-2576809d4d68.png` — persistent Session shell.
   - `/Users/edy/.codex/generated_images/019f6dd2-efed-7192-8c25-8f0354b55d93/exec-c1c556a8-07b7-4365-8efc-5b3a70e831f0.png` — tool/code-expanded state.
   - `/Users/edy/.codex/generated_images/019f6dd2-efed-7192-8c25-8f0354b55d93/exec-fea62e94-43e2-4833-a959-023093980346.png` — evidence-first Review state.
+  - `/var/folders/23/z96fd00x791_2j0k757hsnjw0000gn/T/codex-clipboard-r22dXe.png` — user-selected inline Diff fidelity target.
 - Implementation screenshots captured from the real Electron renderer:
   - `/tmp/charter-session-canvas/launcher-1440.png`
   - `/tmp/charter-session-canvas/agent-picker-1440.png`
   - `/tmp/charter-session-canvas/review-1440.png`
   - `/tmp/charter-session-canvas/diff-zoom-1440.png`
   - `/tmp/charter-session-canvas/diff-zoom-900.png`
+  - `/tmp/charter-session-canvas/diff-panel-1440.png`
   - `/tmp/charter-session-canvas/claude-session-1440.png`
 - Viewport: 1440 × 900 CSS pixels; responsive validation at 900 × 900.
 - Theme: Studio light, using the existing Charter tokens and icon system.
@@ -28,6 +30,8 @@
   `/tmp/charter-session-canvas/design-qa-review-comparison.png`
 - Focused collaboration-plus-Diff comparison:
   `/tmp/charter-session-canvas/design-qa-diff-focus-comparison.png`
+- User-selected Diff reference/implementation comparison:
+  `/tmp/charter-session-canvas/diff-reference-vs-implementation.png`
 
 Both comparison images normalize the source and implementation to 1440 × 900
 before stacking them in one input. Fixture project names, one-file mock output
@@ -39,7 +43,10 @@ No actionable P0, P1 or P2 findings remain.
 
 - Fonts and typography: the existing Charter UI/monospace stacks are retained,
   with a serif Session title and compact metadata hierarchy matching the source
-  direction. Titles and project paths truncate instead of changing track size.
+  direction. The inline Diff uses Monaco's real tokenizer so TypeScript
+  keywords, strings and types preserve editor syntax color rather than a
+  hand-authored approximation. Titles and project paths truncate instead of
+  changing track size.
 - Spacing and layout rhythm: the implementation has one 210px persistent rail,
   a balanced 56/44 collaboration/tool split, a 38/62 expanded-tool state, one
   bottom Action Dock, and consistent small-radius cards. The source's three
@@ -57,10 +64,12 @@ No actionable P0, P1 or P2 findings remain.
   mock scenario directives no longer leak into titles or transcripts, Replay is
   secondary under More, and review-ready copy asks for changes or context rather
   than claiming it starts another run.
-- States and interactions: Summary, Diff, Preview, Terminal, and Review are
-  states of the same tool canvas. Review becomes the default at review-ready but
-  remains user-switchable. File Peek expands in place and the single Action Dock
-  retains accept, rollback, request-changes/resume, stop, and completion states.
+- States and interactions: running Sessions expose Summary, while review-ready
+  Sessions use the reference's File, Diff, Preview, Terminal, and Review tabs in
+  the same tool canvas. Diff is a complete inline review: totals, selectable
+  file ledger, line-numbered hunks, copy/advanced-review actions, recorded
+  verification, and the single Request changes / Rollback / Approve changes
+  Dock. File Peek remains a separate File state and expands in place.
   Control+backquote opens the mature multi-terminal manager inside the same
   persistent Session shell; live PTYs, promotion, resizing, return-to-dock, and
   external-session accounting remain intact. A zero-change answer stays on
@@ -72,10 +81,11 @@ No actionable P0, P1 or P2 findings remain.
   tab semantics, menus/dialogs retain accessible labels, buttons remain keyboard
   reachable, and reduced-motion removes layout transitions.
 
-Residual P3: the reference screens use richer multi-file and CI fixtures, while
-the deterministic Electron fixture changes one file with no configured checks.
-This leaves more white space in the final capture but does not change hierarchy,
-layout, or interaction behavior.
+Residual P3: the user reference contains a longer 38-line retry rewrite and 12
+tests, while the deterministic Electron proof contains a five-line TypeScript
+change and one recorded check. This creates expected white space after the
+verification card; the same renderer expands naturally with real hunk volume.
+File names, line counts and diff totals are task data, not visual drift.
 
 ## Comparison history
 
@@ -137,14 +147,28 @@ layout, or interaction behavior.
      Action Dock. The superseded sidebar mock is explicitly gated out.
    - Post-fix evidence: the complete Electron suite passes with only manual or
      environment-gated scenarios skipped.
+8. User-selected Diff fidelity pass — blocked by P1 review-structure drift.
+   - Finding: the first unified canvas routed Diff into the old single-file Peek,
+     omitting the reference's change summary, inline hunk card, verification
+     result and three-action decision dock.
+   - Fix: implemented a Session-owned inline Diff with selectable files,
+     line-numbered red/green hunks, Monaco syntax color, compact verification,
+     copy/advanced-review actions and the exact File/Diff/Preview/Terminal/Review
+     focus hierarchy. The destructive rollback remains two-step even though its
+     first state visually matches the reference.
+   - Post-fix evidence: `diff-panel-1440.png` and
+     `diff-reference-vs-implementation.png`; production Electron regressions
+     covering Session Canvas, File Peek, Review, Editor, worktree, 1440px and
+     900px states pass 16/16 with no renderer console/page errors.
 
 ## Primary interactions tested
 
 - Open the single Composer Agent Picker and select Charter, Claude, or Codex.
-- Create a managed auto-mode Session and run it through plan, file write, final
-  report, evidence-first Review, Diff, and expanded tool states.
-- Switch Summary and Review without losing the Session or conversation.
-- Open a changed file in File Peek while the timeline remains mounted.
+- Create a managed auto-mode Session that changes three files, run a configured
+  verification, switch/select files in the inline Diff, copy the active patch,
+  open advanced review, and retain the single decision Dock.
+- Switch File, Diff, and Review without losing the Session or conversation.
+- Open a changed file in File Peek from the File tab while the timeline remains mounted.
 - Reorder the same canvas at 900px and verify no horizontal overflow.
 - Accept unverified changes from the single Action Dock and remain in the same
   persistent Session shell.
@@ -165,18 +189,75 @@ Console errors checked: yes. The final Playwright flow collected renderer
 - [x] Merge managed and native agents into one Composer Agent Picker.
 - [x] Make files, Diff, Preview, Terminal, Summary, and Review Session-owned
       tool states.
+- [x] Reproduce the supplied Diff reference with a file summary, selectable
+      inline hunks, syntax color, verification card, and one decision Dock.
 - [x] Preserve the existing live multi-terminal/Claude/Codex manager inside the
       Session-owned Terminal state, including PTY identity and promotion.
 - [x] Preserve editor, Search/Replace, Git, Problems, split/conflict handling,
       and Quick Open as Project Tool states before a Session exists.
 - [x] Remove the runtime Full workspace Activity Bar/Sidebar/Agent Panel shell.
 - [x] Use one responsive Action Dock for all review and execution decisions.
-- [x] Demote Replay and remove default Live Board waveform/heat presentation.
-- [x] Restore execution presence without restoring dashboard noise: the Summary
-      shows an event-driven Live activity band, fresh current action/path/time,
-      recent file-write pulses, and a direct live-file → Diff interaction.
+- [x] Demote Replay while restoring the historical event-driven Live Board
+      semantics inside the unified Session shell.
+- [x] Restore all three execution-presence layers from the historical HTML:
+      persistent Session Rail ticker; one Launcher Live Board per running
+      Session; Room live timeline row + file heat tiles + activity strip. Real
+      task/change events drive hot/warm/cool decay, rhythm, writing beacon, and
+      direct live-file → Diff interaction; no decorative scanning loop remains.
 - [x] Verify desktop, narrow, managed-agent, native-agent, tool zoom, and accept
       paths in the production Electron renderer.
+
+final result: passed
+
+---
+
+# Recommended Session Rail + Conversation Roles — Design QA
+
+## Comparison target
+
+- Rail source visual truth: `docs/design/session-rail-recommended-mock.html`
+- Conversation source: `/var/folders/23/z96fd00x791_2j0k757hsnjw0000gn/T/codex-clipboard-xYttzS.png`
+- Semantic-badge source: `/var/folders/23/z96fd00x791_2j0k757hsnjw0000gn/T/codex-clipboard-91fjqf.png`
+- Production surface: the real Electron renderer at 1220 × 780 and the narrow
+  960 × 720 viewport, using Archive/light for the visual comparison.
+- Capture method: repository Playwright Electron harness with isolated
+  user-data; no browser substitute was used for application validation.
+
+## Same-input evidence
+
+- Rail source + production: `/tmp/design-qa-session-rail.png`
+- Conversation source + production: `/tmp/design-qa-conversation-roles.png`
+- Badge source + production: `/tmp/design-qa-semantic-status.png`
+- Production desktop: the platform temporary directory's
+  `charter-session-rail-production-desktop.png`
+- Production narrow: the platform temporary directory's
+  `charter-session-rail-production-narrow.png`
+
+## Findings
+
+- The production rail matches the approved 320px structure: 44px stable
+  activity navigation plus one contextual panel, with the same header,
+  visible search, filter, dark split New Session control, project groups and
+  two-line session-row rhythm.
+- Attention is expressed once on the global Inbox icon. Project groups no
+  longer repeat amber “need you” labels, reducing noise without hiding work.
+- Review and Answered use the reference's compact amber and green semantic
+  pills. Live work uses the green presence dot instead of another text badge.
+- Archive/light user messages use the reference's right-aligned terracotta
+  fill and light text. Agent replies are borderless reading-surface prose.
+  Studio, Archive, Terminal and Index each resolve the same semantic roles
+  through their own accent and contrast tokens.
+- At 960 × 720 the rail remains fully operable at 304px; labels, badges,
+  search, project control and primary session rows do not clip.
+- The focused Electron test exercised session search, needs-only filtering,
+  activity destinations, project context, Review/Answered states, both
+  conversation roles and all four skins. It also asserted zero renderer page
+  errors and zero `console.error` events.
+
+Intentional P3 deviations: production captures use real fixture names, two
+real tasks and the application's native host chrome instead of the mock's
+illustrative five-task data. These do not change hierarchy, geometry or state
+semantics.
 
 final result: passed
 

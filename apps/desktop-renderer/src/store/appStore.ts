@@ -198,6 +198,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       peek: peekOpen(get().peek, taskId, path, nextMode),
       previewRailTaskId: null,
       sessionTool: nextMode === 'diff' ? 'diff' : 'file',
+      ...(nextMode === 'diff' ? { sessionToolExpanded: true } : {}),
     });
   },
   closePeek() {
@@ -212,6 +213,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setSessionTool(sessionTool) {
     set({
       sessionTool,
+      ...(sessionTool === 'diff' ? { sessionToolExpanded: true } : {}),
       ...(sessionTool !== 'preview' ? { previewRailTaskId: null } : {}),
       ...(sessionTool !== 'diff' && sessionTool !== 'file' ? { peek: null } : {}),
     });
@@ -238,7 +240,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setPeekMode(mode) {
     const peek = get().peek;
     if (peek) {
-      set({ peek: { ...peek, mode }, sessionTool: mode === 'diff' ? 'diff' : 'file' });
+      set({
+        peek: { ...peek, mode },
+        sessionTool: mode === 'diff' ? 'diff' : 'file',
+        ...(mode === 'diff' || mode === 'edit' ? { sessionToolExpanded: true } : {}),
+      });
     }
   },
   setPeekActive(path) {

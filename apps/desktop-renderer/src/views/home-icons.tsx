@@ -35,6 +35,7 @@ const PATHS: Record<string, React.JSX.Element> = {
       <path d="m21 21-4.3-4.3" />
     </>
   ),
+  filter: <path d="M4 5h16l-6.5 7.2V19l-3 1v-7.8Z" />,
   chevron: <path d="m6 9 6 6 6-6" />,
   branch: (
     <>

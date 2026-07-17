@@ -92,14 +92,16 @@ test.describe('M10 — crash recovery, reliability, diagnostics', () => {
       const { page } = second;
       page.on('dialog', (dialog) => void dialog.accept());
 
-      // The interrupted task surfaces on Home under "Needs you" with a
-      // recovery entry (REC).
+      // The interrupted task surfaces in the persistent Inbox with a recovery
+      // entry; Home no longer duplicates that queue.
       await page.getByTestId('surface-home').click();
-      const needs = page.getByTestId('home-mc-needs');
-      await expect(needs).toBeVisible({ timeout: 15000 });
+      await expect(page.getByTestId('home-mc-needs')).toHaveCount(0);
+      await expect(page.getByTestId('rail-needs-you')).toContainText('1', { timeout: 15000 });
+      await page.getByTestId('rail-needs-you').click();
+      const needs = page.getByTestId('rail-inbox-panel');
       await expect(needs).toContainText('Interrupted');
       await expect(needs).toContainText('Crash victim');
-      await needs.locator('button.hm-tcard').first().click();
+      await needs.locator('button[data-testid^="home-task-"]').first().click();
 
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'INTERRUPTED');
       await expect(page.getByTestId('tl-restart')).toBeVisible();

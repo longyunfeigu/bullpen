@@ -678,6 +678,8 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       );
       await expect(page.getByTestId('session-action-dock')).toBeVisible();
       await page.getByTestId('task-room-file-src/util.ts').click();
+      await expect(page.getByTestId('session-diff-review')).toBeVisible();
+      await page.getByTestId('session-tool-file').click();
       await expect(page.getByTestId('file-peek')).toBeVisible();
       await expect(page.getByTestId('peek-tab-src/util.ts')).toBeVisible();
       await page.getByTestId('session-tool-review').click();

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { TaskDto } from '@pi-ide/ipc-contracts';
+import type { ChangeSetDto, TaskDto } from '@pi-ide/ipc-contracts';
 import { useAppStore, type SessionTool } from '../store/appStore.js';
 import { useTaskStore, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { currentActionLine, useActivityStore } from '../store/activityStore.js';
@@ -12,6 +12,7 @@ import { mountTerminal, observeTerminalFit, useTerminalStore } from './TerminalP
 import { isAnswered, presentedMeta } from './labels.js';
 import { roomCopyFor } from './roomCopy.js';
 import { LiveBoard } from './LiveBoard.js';
+import { monaco } from '../monaco-setup.js';
 
 export interface SessionVerification {
   label: string;
@@ -23,8 +24,8 @@ export interface SessionFileStat {
   deletions: number;
 }
 
-const TOOL_TABS: Array<{ id: SessionTool; label: string; icon: string }> = [
-  { id: 'summary', label: 'Summary', icon: 'map' },
+const SESSION_TABS: Array<{ id: SessionTool; label: string; icon: string }> = [
+  { id: 'file', label: 'File', icon: 'file' },
   { id: 'diff', label: 'Diff', icon: 'file' },
   { id: 'preview', label: 'Preview', icon: 'eye' },
   { id: 'terminal', label: 'Terminal', icon: 'terminal' },
@@ -48,6 +49,10 @@ export function SessionToolCanvas(props: {
   const tool = useAppStore((state) => state.sessionTool);
   const expanded = useAppStore((state) => state.sessionToolExpanded);
   const running = RUNNING_TASK_STATES.has(task.state);
+  const toolTabs =
+    running || files.length === 0 || isAnswered(task) || task.state === 'ROLLED_BACK'
+      ? [{ id: 'summary' as const, label: 'Summary', icon: 'map' }, ...SESSION_TABS.slice(1)]
+      : SESSION_TABS;
 
   useEffect(() => {
     const current = useAppStore.getState();
@@ -65,9 +70,9 @@ export function SessionToolCanvas(props: {
   }, [task.state, task.id, files.length]);
 
   const chooseTool = (next: SessionTool): void => {
-    if ((next === 'diff' || next === 'file') && files.length > 0) {
+    if (next === 'file' && files.length > 0) {
       const active = app.peek?.taskId === task.id ? app.peek.active : files[0]!;
-      app.openPeek(task.id, active, next === 'diff' ? 'diff' : 'file');
+      app.openPeek(task.id, active, 'file');
       return;
     }
     if (next === 'preview') {
@@ -81,13 +86,13 @@ export function SessionToolCanvas(props: {
     <aside
       className={`session-tool-canvas ${expanded ? 'expanded' : ''}`}
       data-testid="session-tool-canvas"
+      data-active-tool={tool}
       aria-label="Session tools"
     >
       <header className="session-tool-tabs">
         <div className="session-tool-tablist" role="tablist" aria-label="Session tools">
-          {TOOL_TABS.map((item) => {
-            const active =
-              item.id === tool || (item.id === 'diff' && (tool === 'diff' || tool === 'file'));
+          {toolTabs.map((item) => {
+            const active = item.id === tool;
             return (
               <button
                 key={item.id}
@@ -96,7 +101,7 @@ export function SessionToolCanvas(props: {
                 aria-selected={active}
                 className={active ? 'active' : ''}
                 data-testid={`session-tool-${item.id}`}
-                disabled={item.id === 'diff' && files.length === 0}
+                disabled={(item.id === 'diff' || item.id === 'file') && files.length === 0}
                 onClick={() => chooseTool(item.id)}
               >
                 <Ic name={item.icon} size={13} />
@@ -120,7 +125,20 @@ export function SessionToolCanvas(props: {
       </header>
 
       <div className="session-tool-body">
-        {tool === 'diff' || tool === 'file' ? (
+        {tool === 'diff' ? (
+          files.length > 0 ? (
+            <SessionDiffReview
+              task={task}
+              files={files}
+              fileStats={fileStats}
+              verifications={verifications}
+            />
+          ) : (
+            <ToolEmpty icon="file" title="No changes yet">
+              Files touched by this Session will appear here without replacing the conversation.
+            </ToolEmpty>
+          )
+        ) : tool === 'file' ? (
           files.length > 0 ? (
             <FilePeek
               taskId={task.id}
@@ -158,6 +176,284 @@ export function SessionToolCanvas(props: {
 
       <SessionActionDock task={task} files={files} />
     </aside>
+  );
+}
+
+type ChangeFile = ChangeSetDto['files'][number];
+type ChangeHunk = ChangeFile['hunks'][number];
+
+interface InlineDiffLine {
+  key: string;
+  kind: 'context' | 'addition' | 'deletion';
+  lineNumber: number | null;
+  text: string;
+}
+
+function inlineLines(hunk: ChangeHunk): InlineDiffLine[] {
+  const match = /@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/.exec(hunk.header);
+  let oldLine = Number(match?.[1] ?? 1);
+  let newLine = Number(match?.[2] ?? 1);
+  return hunk.lines.map((raw, index) => {
+    if (raw.startsWith('+') && !raw.startsWith('+++')) {
+      const line: InlineDiffLine = {
+        key: `${hunk.key}-add-${index}`,
+        kind: 'addition',
+        lineNumber: newLine,
+        text: raw.slice(1),
+      };
+      newLine += 1;
+      return line;
+    }
+    if (raw.startsWith('-') && !raw.startsWith('---')) {
+      const line: InlineDiffLine = {
+        key: `${hunk.key}-del-${index}`,
+        kind: 'deletion',
+        lineNumber: oldLine,
+        text: raw.slice(1),
+      };
+      oldLine += 1;
+      return line;
+    }
+    const line: InlineDiffLine = {
+      key: `${hunk.key}-ctx-${index}`,
+      kind: 'context',
+      lineNumber: newLine,
+      text: raw.startsWith(' ') ? raw.slice(1) : raw,
+    };
+    oldLine += 1;
+    newLine += 1;
+    return line;
+  });
+}
+
+function languageForPath(path: string): string {
+  const extension = path.split('.').pop()?.toLowerCase() ?? '';
+  const languages: Record<string, string> = {
+    cjs: 'javascript',
+    css: 'css',
+    html: 'html',
+    js: 'javascript',
+    json: 'json',
+    jsx: 'javascript',
+    md: 'markdown',
+    mjs: 'javascript',
+    py: 'python',
+    scss: 'scss',
+    sh: 'shell',
+    ts: 'typescript',
+    tsx: 'typescript',
+    yaml: 'yaml',
+    yml: 'yaml',
+  };
+  return languages[extension] ?? 'plaintext';
+}
+
+function ColorizedDiffCode(props: { path: string; code: string }): React.JSX.Element {
+  const [html, setHtml] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setHtml(null);
+    void monaco.editor
+      .colorize(props.code || ' ', languageForPath(props.path), { tabSize: 2 })
+      .then((colored) => {
+        if (!cancelled && colored.includes('<span')) setHtml(colored);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [props.code, props.path]);
+  return html ? (
+    <code dangerouslySetInnerHTML={{ __html: html }} />
+  ) : (
+    <code>{props.code || ' '}</code>
+  );
+}
+
+function SessionDiffReview(props: {
+  task: TaskDto;
+  files: string[];
+  fileStats: Record<string, SessionFileStat>;
+  verifications: SessionVerification[];
+}): React.JSX.Element {
+  const store = useTaskStore();
+  const app = useAppStore();
+  const peek = useAppStore((state) => state.peek);
+
+  useEffect(() => {
+    void store.refreshChangeSet();
+    // task id is the refresh boundary; write events update the store projection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.task.id]);
+
+  const changeSet = store.changeSet?.taskId === props.task.id ? store.changeSet : null;
+  const changeFiles = changeSet?.files ?? [];
+  const requestedPath = peek?.taskId === props.task.id ? peek.active : null;
+  const selected =
+    changeFiles.find((file) => file.path === requestedPath) ?? changeFiles[0] ?? null;
+  const additions =
+    changeSet?.totalAdditions ??
+    Object.values(props.fileStats).reduce((sum, stat) => sum + stat.additions, 0);
+  const deletions =
+    changeSet?.totalDeletions ??
+    Object.values(props.fileStats).reduce((sum, stat) => sum + stat.deletions, 0);
+
+  const selectFile = (path: string): void => app.openPeek(props.task.id, path, 'diff');
+  const copyPatch = async (): Promise<void> => {
+    if (!selected) return;
+    const patch = selected.hunks.flatMap((hunk) => [hunk.header, ...hunk.lines]).join('\n');
+    try {
+      await navigator.clipboard.writeText(patch);
+      app.pushToast('success', `Copied diff for ${selected.path}`);
+    } catch {
+      app.pushToast('error', 'The diff could not be copied.');
+    }
+  };
+
+  return (
+    <div className="session-diff-review" data-testid="session-diff-review">
+      <section className="session-diff-overview" aria-label="Changed files">
+        <header>
+          <h2>
+            {props.files.length} file{props.files.length === 1 ? '' : 's'} changed
+          </h2>
+          <span className="session-diff-grand-total mono">
+            <i className="plus">+{additions}</i> <i className="minus">−{deletions}</i>
+          </span>
+        </header>
+        <div className="session-diff-file-list">
+          {(changeFiles.length > 0 ? changeFiles : props.files).map((entry) => {
+            const path = typeof entry === 'string' ? entry : entry.path;
+            const stat = typeof entry === 'string' ? props.fileStats[path] : entry;
+            const active = selected?.path === path;
+            return (
+              <button
+                key={path}
+                type="button"
+                className={active ? 'active' : ''}
+                data-testid={`session-diff-file-${path}`}
+                aria-pressed={active}
+                onClick={() => selectFile(path)}
+              >
+                <span className="session-code-file-icon">
+                  <Ic name="terminal" size={12} strokeWidth={1.9} />
+                </span>
+                <span>{path}</span>
+                {stat ? (
+                  <small className="mono">
+                    <i className="plus">+{stat.additions}</i>{' '}
+                    <i className="minus">−{stat.deletions}</i>
+                  </small>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {store.loadingChangeSet && !selected ? (
+        <div className="session-diff-loading">Computing the review diff…</div>
+      ) : selected ? (
+        <section className="session-inline-diff" data-testid="session-inline-diff">
+          <header>
+            <strong className="mono">{selected.path}</strong>
+            <span />
+            <button type="button" aria-label="Copy diff" title="Copy diff" onClick={copyPatch}>
+              <Ic name="clipboard" size={15} />
+            </button>
+            <button
+              type="button"
+              aria-label="Open advanced review"
+              title="Open advanced review"
+              onClick={() => void store.openReview()}
+            >
+              <Ic name="sliders" size={15} />
+            </button>
+          </header>
+          {selected.binary ? (
+            <div className="session-diff-loading">Binary file — no inline text diff.</div>
+          ) : selected.hunks.length === 0 ? (
+            <div className="session-diff-loading">No text hunks recorded for this file.</div>
+          ) : (
+            <div className="session-inline-diff-body" role="table" aria-label={selected.path}>
+              {selected.hunks.map((hunk) => (
+                <React.Fragment key={hunk.key}>
+                  <div className="session-inline-hunk mono" role="row">
+                    {hunk.header}
+                  </div>
+                  {inlineLines(hunk).map((line) => (
+                    <div key={line.key} className={`session-inline-line ${line.kind}`} role="row">
+                      <span className="session-inline-number mono">{line.lineNumber ?? ''}</span>
+                      <span className="session-inline-marker mono">
+                        {line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '−' : ''}
+                      </span>
+                      <ColorizedDiffCode path={selected.path} code={line.text} />
+                    </div>
+                  ))}
+                </React.Fragment>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : (
+        <div className="session-diff-loading">No reviewable text changes were recorded.</div>
+      )}
+
+      <SessionDiffVerification task={props.task} verifications={props.verifications} />
+    </div>
+  );
+}
+
+function SessionDiffVerification(props: {
+  task: TaskDto;
+  verifications: SessionVerification[];
+}): React.JSX.Element {
+  const store = useTaskStore();
+  const configured = props.task.verification.length > 0;
+  const passed = props.verifications.filter((item) => item.state === 'passed').length;
+  const allPassed = props.verifications.length > 0 && passed === props.verifications.length;
+
+  return (
+    <details className={`session-diff-verification ${allPassed ? 'passed' : ''}`} open>
+      <summary>
+        <span className="session-diff-verification-icon">
+          <Ic name={allPassed ? 'check' : 'alert'} size={16} strokeWidth={2} />
+        </span>
+        <strong>Verification</strong>
+        <span />
+        <b className={allPassed ? 'ok' : 'muted'}>
+          {allPassed
+            ? `${passed} ${passed === 1 ? 'check' : 'checks'} passed`
+            : props.verifications.length > 0
+              ? `${passed}/${props.verifications.length} passed`
+              : 'Not run'}
+        </b>
+      </summary>
+      <div className="session-diff-verification-detail">
+        <span>
+          {props.verifications.length > 0
+            ? `Executed ${props.verifications.length} recorded ${props.verifications.length === 1 ? 'check' : 'checks'}.`
+            : configured
+              ? `${props.task.verification.length} configured ${props.task.verification.length === 1 ? 'check has' : 'checks have'} not run yet.`
+              : 'No verification commands are configured for this Session.'}
+        </span>
+        {configured && props.verifications.length === 0 ? (
+          <button
+            type="button"
+            className="btn"
+            data-testid="session-diff-run-verification"
+            onClick={(event) => {
+              event.preventDefault();
+              void store.runVerification();
+            }}
+          >
+            Run verification
+          </button>
+        ) : (
+          <Ic name="chevron" size={14} className="session-diff-verification-chevron" />
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -455,13 +751,12 @@ function VerificationSection(props: {
 function SessionActionDock({ task, files }: { task: TaskDto; files: string[] }): React.JSX.Element {
   const store = useTaskStore();
   const app = useAppStore();
-  const copy = roomCopyFor(`${task.title}\n${task.goalMd}`);
   const running = RUNNING_TASK_STATES.has(task.state);
   const answered = isAnswered(task);
 
   if (task.state === 'REVIEW_READY' && !answered) {
     return (
-      <footer className="session-action-dock" data-testid="session-action-dock">
+      <footer className="session-action-dock review-decision" data-testid="session-action-dock">
         {task.external ? (
           <button
             type="button"
@@ -485,10 +780,11 @@ function SessionActionDock({ task, files }: { task: TaskDto; files: string[] }):
           </button>
         )}
         <ConfirmDangerButton
-          label={task.worktree ? 'Discard…' : 'Rollback…'}
+          label={task.worktree ? 'Discard worktree' : 'Rollback'}
           confirmLabel={task.worktree ? 'Confirm — discard worktree' : 'Confirm — roll back'}
           testid="task-rollback"
           quiet
+          icon="undo"
           onConfirm={() => void store.rollbackTask()}
         />
         <button
@@ -497,7 +793,7 @@ function SessionActionDock({ task, files }: { task: TaskDto; files: string[] }):
           data-testid="review-bar-accept"
           onClick={() => void store.acceptTask()}
         >
-          <Ic name="check" size={13} /> {copy.accept}
+          <Ic name="checkCircle" size={15} /> Approve changes
         </button>
       </footer>
     );

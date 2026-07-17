@@ -76,8 +76,8 @@ test.describe('Session Rail Workbench', () => {
     }
   });
 
-  // ADR-0023 direction D: activity bar + project-grouped panel with an
-  // attention row, an Inbox destination and a resident working-context row.
+  // ADR-0023 direction D: activity bar + project-grouped panel with one global
+  // Inbox badge and a resident working-context control in the new-session row.
   test('groups sessions by project and routes attention through the inbox', async () => {
     const fixture = realpathSync(createGitFixture());
     const name = fixture.split('/').pop()!;
@@ -97,14 +97,13 @@ test.describe('Session Rail Workbench', () => {
         timeout: 30000,
       });
 
-      // The session sits under its project group; the header carries the
-      // attention badge so a collapsed group never hides that it wants you.
+      // The session sits under its project group. Attention is intentionally
+      // not repeated per group; the stable Inbox icon is the one global queue.
       const group = page.getByTestId(`rail-group-${name}`);
       await expect(group).toBeVisible();
-      await expect(group).toContainText('1 need you');
+      await expect(group).toContainText('1');
 
-      // The amber Needs-you row and the Inbox destination are one queue:
-      // the row opens the triage panel, a panel row opens its room.
+      // The Inbox badge opens the triage panel; a panel row opens its room.
       await expect(page.getByTestId('rail-needs-you')).toContainText('1');
       await page.getByTestId('rail-needs-you').click();
       await expect(page.getByTestId('rail-inbox-panel')).toBeVisible();
@@ -114,11 +113,11 @@ test.describe('Session Rail Workbench', () => {
         .click();
       await expect(page.getByTestId('task-room')).toBeVisible();
 
-      // Collapse hides the rows but keeps the badge; expand restores them.
-      await page.getByLabel('Back to Sessions').click();
+      // Collapse hides the rows but the global badge remains; expand restores them.
+      await page.getByTestId('rail-view-sessions').click();
       await group.click();
       await expect(page.locator('[data-testid^="home-task-"]')).toHaveCount(0);
-      await expect(group).toContainText('1 need you');
+      await expect(page.getByTestId('rail-needs-you')).toContainText('1');
       await group.click();
       await expect(page.locator('[data-testid^="home-task-"]').first()).toBeVisible();
 

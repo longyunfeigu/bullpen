@@ -148,9 +148,12 @@ test.describe('Replay V3 — one story, three depths', () => {
       await page.keyboard.press('Escape');
       await expect(page.getByTestId('replay-view')).toHaveCount(0);
 
-      // Home-card entry: the card's recap affordance opens this task's replay.
+      // The Session row replaces the removed Home card; replay stays available
+      // from the room's More menu.
       await page.getByTestId('task-room-back').click();
-      await page.getByTestId('home-mc-needs').locator('.hm-treplay').first().click();
+      await page.locator('button[data-testid^="home-task-"]').first().click();
+      await page.getByTestId('session-more').click();
+      await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
       await expect(page.getByTestId('replay-summary')).toBeVisible();
       await page.keyboard.press('Escape');
@@ -303,7 +306,7 @@ test.describe('Replay V3 — one story, three depths', () => {
     try {
       const { page } = second;
       await page.getByTestId('surface-home').click();
-      await page.getByTestId('home-mc-needs').locator('button.hm-tcard').first().click();
+      await page.locator('button[data-testid^="home-task-"]').first().click();
       // A REVIEW_READY card may open straight into the review overlay.
       if (
         await page

@@ -120,6 +120,8 @@ test.describe('M3 workspace and editor', () => {
         timeout: 30000,
       });
       await page.getByTestId('task-room-file-src/index.ts').click();
+      await expect(page.getByTestId('session-diff-review')).toBeVisible();
+      await page.getByTestId('session-tool-file').click();
       await page.getByTestId('peek-mode-edit').click();
       const editor = page.locator('.tr-peek-editor .monaco-editor').first();
       await expect(editor).toContainText('add(3, 4)', { timeout: 15000 });

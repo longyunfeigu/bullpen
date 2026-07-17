@@ -28,14 +28,15 @@ test('shell v5 visual walk — peek', async () => {
     // Peek closed (baseline room).
     await page.screenshot({ path: `${OUT}/v5-1-room.png` });
 
-    // Peek open — Changes mode.
+    // Reference-faithful Session Diff.
     await page.getByTestId('task-room-file-src/index.ts').click();
-    await expect(page.getByTestId('file-peek')).toBeVisible();
+    await expect(page.getByTestId('session-diff-review')).toBeVisible();
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${OUT}/v5-2-peek-diff.png` });
 
     // Peek — File mode (read-only Monaco).
-    await page.getByTestId('peek-mode-file').click();
+    await page.getByTestId('session-tool-file').click();
+    await expect(page.getByTestId('file-peek')).toBeVisible();
     await expect(page.getByTestId('peek-monaco')).toBeVisible();
     await page.waitForTimeout(600);
     await page.screenshot({ path: `${OUT}/v5-3-peek-file.png` });
@@ -52,7 +53,7 @@ test('shell v5 visual walk — peek', async () => {
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.waitForTimeout(400);
     await page.getByTestId('task-room-file-src/index.ts').click();
-    await page.getByTestId('peek-mode-file').click();
+    await page.getByTestId('session-tool-file').click();
     await expect(page.getByTestId('peek-monaco')).toBeVisible();
     await page.waitForTimeout(600);
     await page.screenshot({ path: `${OUT}/v5-5-peek-dark.png` });

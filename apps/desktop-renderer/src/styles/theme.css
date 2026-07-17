@@ -57,6 +57,12 @@
   --titlebar-height: 38px;
   --statusbar-height: 24px;
   --activitybar-width: 48px;
+  /* Conversation roles are semantic across every skin. The user speaks in
+     the skin accent; the agent answer belongs to the reading surface. */
+  --message-user-bg: var(--accent);
+  --message-user-fg: var(--accent-fg);
+  --message-user-border: color-mix(in srgb, var(--accent) 82%, var(--fg));
+  --message-user-code-bg: color-mix(in srgb, var(--message-user-fg) 14%, transparent);
 }
 
 [data-skin='studio'][data-theme='dark'] {

@@ -22,7 +22,7 @@ test.describe('Sidebar — New project entry and drag-to-@ context feeding', () 
       await expect(page.getByTestId('new-project-dialog')).toBeVisible();
       await page.getByLabel('Close').click();
       await expect(page.getByTestId('new-project-dialog')).toHaveCount(0);
-      await page.getByLabel('Back to Sessions').click();
+      await page.getByTestId('rail-view-sessions').click();
 
       // The entry keeps working while a Task Room fills the content area —
       // the dialog is shell-global, not a Launcher local.

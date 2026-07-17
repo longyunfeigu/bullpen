@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
 import { createTsSmallFixture } from './helpers/fixtures';
 
-/** P2 (ADR-0006, PIVOT-016..018): parallel runs, presence glow, replay, ⌘K. */
+/** P2 (ADR-0006, PIVOT-016..018): parallel runs, persistent Sessions, replay, ⌘K. */
 test.describe('P2 — parallel runs, session replay, quick launcher', () => {
-  test('ADR-0006: two tasks run concurrently; mission control tracks both', async () => {
+  test('ADR-0006: two tasks run concurrently; the Session rail tracks both', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
@@ -29,13 +29,18 @@ test.describe('P2 — parallel runs, session replay, quick launcher', () => {
         timeout: 30000,
       });
 
-      // Mission control: B needs review, A still running.
+      // The persistent rail keeps both sessions visible; Home does not repeat
+      // them in a second mission-control surface.
       await page.getByTestId('task-room-back').click();
-      await expect(page.getByTestId('home-mc-needs')).toContainText('task B in parallel');
-      await expect(page.getByTestId('home-mc-running')).toContainText('task A holds a slot');
+      await expect(page.getByTestId('home-mc-needs')).toHaveCount(0);
+      await expect(page.getByTestId('home-sidebar')).toContainText('task B in parallel');
+      await expect(page.getByTestId('home-sidebar')).toContainText('task A holds a slot');
 
       // Jump back to A, answer, and it finishes independently.
-      await page.getByTestId('home-mc-running').locator('button.hm-tcard').first().click();
+      await page
+        .locator('button[data-testid^="home-task-"]')
+        .filter({ hasText: 'task A holds a slot' })
+        .click();
       await expect(page.getByTestId('q-card')).toBeVisible();
       await page.getByTestId('q-option-0').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {

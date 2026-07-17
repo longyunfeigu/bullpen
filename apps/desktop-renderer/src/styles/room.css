@@ -253,46 +253,59 @@
   display: none;
 }
 
-/* Request → response follows the page's left-to-right reading direction. */
+/* The request is a compact, high-contrast object; the answer stays on the
+   page's reading surface. This hierarchy is shared by all four skins. */
 .rt-bubble {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   width: fit-content;
-  max-width: 86%;
+  max-width: 100%;
   margin: 4px 0 18px;
   font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.68;
 }
 .rt-bubble.you {
-  margin-right: auto;
-  max-width: 78%;
-}
-.rt-bubble.agent {
   align-items: flex-end;
   margin-left: auto;
+  max-width: 72%;
+}
+.rt-bubble.agent {
+  width: 100%;
+  align-items: flex-start;
+  margin-right: auto;
 }
 .rt-speaker {
-  margin: 0 4px 5px;
-  color: var(--fg-muted);
-  font-size: 12px;
-  font-weight: 650;
+  display: none;
 }
 .rt-bubble .rt-text {
-  border: 1px solid var(--border-strong);
-  border-radius: 14px;
-  background: var(--bg-card);
-  padding: 10px 13px;
+  max-width: 100%;
   text-align: left;
 }
 .rt-bubble.you .rt-text {
-  border-color: transparent;
-  border-radius: 14px 14px 14px 5px;
-  background: var(--bg-hover);
+  border: 1px solid var(--message-user-border);
+  border-radius: 12px 12px 3px 12px;
+  background: var(--message-user-bg);
+  color: var(--message-user-fg);
+  padding: 10px 13px;
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--message-user-bg) 12%, transparent);
 }
 .rt-bubble.agent .rt-text {
-  border-radius: 14px 14px 5px 14px;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  padding: 0;
+}
+.rt-bubble.you .rt-text :is(a, .md-link) {
+  color: inherit;
+  text-decoration-color: color-mix(in srgb, currentColor 62%, transparent);
+}
+.rt-bubble.you .md-inlinecode {
+  background: var(--message-user-code-bg);
+  color: inherit;
 }
 /* Serif prose keeps mono chips at worklog scale. */
 .rt-bubble .md-inlinecode {
@@ -401,6 +414,14 @@
   background: none;
   margin: 0;
   border-radius: 6px;
+}
+.rt-tool.live {
+  background: color-mix(in srgb, var(--info) 4%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--info) 34%, var(--border-soft));
+}
+.rt-tool.live .rt-tool-verb,
+.rt-tool.live .rt-tool-target {
+  color: var(--fg);
 }
 .rt-tool.denied .rt-tool-target {
   color: var(--warning);
@@ -853,9 +874,8 @@
   .rt-scroll {
     padding-inline: 16px;
   }
-  .rt-bubble.you,
-  .rt-bubble.agent {
-    max-width: 94%;
+  .rt-bubble.you {
+    max-width: 88%;
   }
   .tr-reviewbar {
     width: calc(100% - 32px);

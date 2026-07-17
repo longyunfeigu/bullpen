@@ -231,14 +231,6 @@
   color: var(--fg-faint);
   text-align: center;
 }
-/* With live tasks the greeting steps aside (mission control is the hero). */
-.hm-hero.compact {
-  padding: 5vh 24px 16px;
-}
-.hm-hero.compact h1 {
-  font-size: 20px;
-}
-
 .hm-composer {
   padding: 0 28px 8px;
   display: flex;
@@ -789,19 +781,6 @@
   border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
   background: color-mix(in srgb, var(--danger) 10%, var(--bg-card));
 }
-/* Card-sized variant used on the launcher's RECENT rows. */
-.hm-archx.card {
-  position: static;
-  flex: none;
-  width: 24px;
-  height: 24px;
-  opacity: 0;
-}
-.hm-tcard:hover .hm-archx.card,
-.hm-archx.card.armed,
-.hm-archx.card:focus-visible {
-  opacity: 1;
-}
 .hm-projbadge {
   flex: none;
   min-width: 16px;
@@ -812,20 +791,6 @@
   background: color-mix(in srgb, var(--info) 14%, transparent);
   border-radius: 999px;
   padding: 1px 5px;
-}
-.hm-projchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10.5px;
-  color: var(--fg-muted);
-  background: var(--bg-chip);
-  border-radius: 999px;
-  padding: 1px 7px;
-  max-width: 220px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 .hm-wtrow {
   display: flex;
@@ -908,97 +873,6 @@
   text-align: center;
 }
 
-/* ---------- mission control ---------- */
-
-.hm-mc {
-  width: 100%;
-  max-width: 680px;
-  margin: 10px auto 0;
-  padding: 0 28px 26px;
-  box-sizing: content-box;
-  flex: none;
-  align-self: center;
-}
-.hm-mc-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 10.5px;
-  color: var(--fg-faint);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  padding: 12px 2px 8px;
-}
-.hm-mc-label .hm-count {
-  background: var(--warning-bg);
-  color: var(--warning);
-  border-radius: 999px;
-  padding: 0 7px;
-  font-size: 10.5px;
-}
-.hm-tcard {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-card);
-  padding: 12px 15px;
-  margin-bottom: 8px;
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  font-family: inherit;
-  color: var(--fg);
-}
-.hm-tcard:hover {
-  border-color: var(--fg-faint);
-}
-/* RECENT rows: quieter than live cards — finished work shouldn't shout. */
-.hm-tcard.recent {
-  padding: 8px 12px;
-  box-shadow: none;
-  background: color-mix(in srgb, var(--bg-card) 60%, transparent);
-}
-.hm-tcard.recent .hm-ttitle {
-  font-weight: 480;
-  color: var(--fg-muted);
-}
-.hm-tcard.recent:hover .hm-ttitle {
-  color: var(--fg);
-}
-.hm-tcard.attention {
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
-}
-.hm-tcard .hm-tinfo {
-  min-width: 0;
-  flex: 1;
-}
-.hm-tcard .hm-ttitle {
-  font-size: 13px;
-  font-weight: 550;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.hm-tcard .hm-tmeta {
-  font-size: 11.5px;
-  color: var(--fg-muted);
-  margin-top: 3px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.hm-tcard .hm-tmeta code {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  background: var(--bg-hover);
-  border-radius: 5px;
-  padding: 1px 5px;
-}
 .hm-stchip {
   flex: none;
   font-size: 10.5px;
@@ -1026,24 +900,6 @@
   background: var(--success-bg);
   color: var(--success);
 }
-.hm-act {
-  flex: none;
-  font-size: 12px;
-  font-weight: 560;
-  border-radius: 999px;
-  padding: 6px 14px;
-  border: none;
-  cursor: pointer;
-  background: var(--accent);
-  color: var(--accent-fg);
-  font-family: inherit;
-}
-.hm-act.ghost {
-  background: transparent;
-  color: var(--fg-muted);
-  border: 1px solid var(--border);
-}
-
 /* Composer focus lives on the card, not the raw textarea outline. */
 .hm-ta:focus-visible {
   outline: none;

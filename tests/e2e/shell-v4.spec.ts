@@ -157,8 +157,9 @@ test.describe('Shell v4 — worktree isolation and merge-back (ADR-0009)', () =>
       // so File mode shows the WORKTREE content while the main tree is
       // untouched — and the Editor escape hatch is hidden (not honest here).
       await page.getByTestId('task-room-file-src/index.ts').click();
+      await expect(page.getByTestId('session-diff-review')).toBeVisible();
+      await page.getByTestId('session-tool-file').click();
       await expect(page.getByTestId('file-peek')).toBeVisible();
-      await page.getByTestId('peek-mode-file').click();
       await expect(page.getByTestId('peek-body')).toContainText('add(3, 4)', { timeout: 10000 });
       await expect(page.getByTestId('peek-open-editor')).toHaveCount(0);
       await page.keyboard.press('Escape');
@@ -246,16 +247,18 @@ test.describe('Shell v4 — heartbeat + focus layers (PIVOT-028/025)', () => {
       await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('task-room')).toBeVisible();
 
-      // Fleet layer: the Launcher keeps a full per-Session Live Board under
-      // the running card. It appears only after a real write event.
+      // Fleet layer: the persistent rail keeps the running Session and its
+      // current activity visible. Home no longer duplicates a Live Board.
       await page.getByTestId('task-room-back').click();
       await expect(page.getByTestId('home-view')).toBeVisible();
-      const launcherBoard = page.locator('[data-testid^="live-board-"]').first();
-      await expect(launcherBoard).toBeVisible({ timeout: 25000 });
-      await expect(launcherBoard.getByTestId('live-tile-notes-live-a.txt')).toBeVisible();
+      await expect(page.locator('.hm-mc')).toHaveCount(0);
+      await expect(page.locator('[data-testid^="live-board-"]')).toHaveCount(0);
+      const railSession = page.locator('button[data-testid^="home-task-"]').first();
+      await expect(railSession).toBeVisible({ timeout: 25000 });
+      await expect(railSession.locator('[data-testid^="home-task-ticker-"]')).toBeVisible();
       await page.screenshot({ path: '/tmp/charter-live-launcher-1440.png' });
 
-      await page.locator('[data-testid^="home-mc-card-"]').first().click();
+      await railSession.click();
       await expect(page.getByTestId('task-room')).toBeVisible();
 
       // Focus layer: the same write events become stable file heat tiles in
@@ -265,6 +268,9 @@ test.describe('Shell v4 — heartbeat + focus layers (PIVOT-028/025)', () => {
       await expect(roomBoard).toBeVisible();
       await expect(roomBoard).toContainText('THIS SESSION');
       await expect(roomBoard.getByTestId('live-tile-notes-live-a.txt')).toBeVisible({
+        timeout: 25000,
+      });
+      await expect(roomBoard.getByTestId('live-tile-notes-live-b.txt')).toBeVisible({
         timeout: 25000,
       });
 
@@ -277,7 +283,7 @@ test.describe('Shell v4 — heartbeat + focus layers (PIVOT-028/025)', () => {
 
       // Live file rows are evidence shortcuts, not decoration.
       await roomBoard.getByTestId('live-tile-notes-live-a.txt').click();
-      await expect(page.getByTestId('file-peek')).toBeVisible();
+      await expect(page.getByTestId('session-diff-review')).toBeVisible();
 
       // Heartbeat layer: the sidebar row ticks with the current action.
       await expect(page.locator('[data-testid^="home-task-ticker-"]').first()).toBeVisible();

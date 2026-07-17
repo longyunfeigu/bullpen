@@ -3,145 +3,6 @@
  * canvas. Code, preview, terminal and review are states of the active Session.
  */
 
-/* ---------- the sole global navigation ---------- */
-.sr-rail.sr-single {
-  width: 260px;
-  min-width: 260px;
-  display: block;
-  background: var(--bg-sidebar);
-}
-
-.sr-single .sr-panel {
-  height: 100%;
-}
-
-.sr-single .sr-head {
-  min-height: 92px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-content: center;
-  gap: 9px 8px;
-  padding: 10px 12px;
-}
-
-.sr-head-title,
-.sr-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-
-.sr-head-title strong {
-  color: var(--fg);
-  font-size: 12px;
-  font-weight: 680;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.sr-head-title .sr-shortcuts {
-  margin-left: auto;
-}
-
-.sr-head-actions button,
-.sr-head-back {
-  width: 27px;
-  height: 27px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-
-.sr-head-actions button:hover,
-.sr-head-back:hover {
-  border-color: var(--border-soft);
-  background: var(--bg-hover);
-  color: var(--fg);
-}
-
-.sr-single .sr-new-wrap {
-  grid-column: 1 / -1;
-}
-
-.sr-single .sr-new {
-  min-height: 34px;
-  border-radius: 9px;
-  font-size: 11.5px;
-}
-
-.sr-single .sr-head-plain {
-  min-height: 52px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-content: center;
-}
-
-.sr-head-back .app-icon {
-  transform: rotate(90deg);
-}
-
-.sr-single .sr-attention {
-  min-height: 38px;
-  margin: 9px 10px 1px;
-  padding: 0 10px;
-}
-
-.sr-single .sr-scroll {
-  padding: 8px 10px;
-}
-
-.sr-single .sr-group-items {
-  margin-left: 5px;
-  padding-left: 5px;
-}
-
-.sr-single .sr-session {
-  min-height: 68px;
-  grid-template-columns: 24px minmax(0, 1fr);
-  padding: 8px 7px;
-}
-
-.sr-single .sr-provider {
-  width: 22px;
-  height: 22px;
-}
-
-.sr-project-use {
-  position: absolute;
-  right: 8px;
-  top: 4px;
-  min-width: 38px;
-  height: 23px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-card);
-  color: var(--fg-muted);
-  font: 10px var(--font-ui);
-  cursor: pointer;
-}
-
-.sr-project-use:hover {
-  background: var(--bg-hover);
-  color: var(--fg);
-}
-
-.sr-single .sr-project-wrap {
-  position: relative;
-}
-
-.sr-single .sr-project-wrap .sr-project {
-  padding-right: 54px;
-}
-
-.sr-single .sr-context-foot {
-  padding: 8px 10px;
-}
-
 /* ---------- Session identity ---------- */
 .session-identity-head {
   min-height: 72px;
@@ -364,6 +225,14 @@
   margin-left: auto;
   border-bottom: 0;
   border-left: 1px solid var(--border-soft);
+}
+
+/* Diff focus follows the supplied review reference: text-only tabs and no
+ * competing layout control while the review itself owns the canvas. */
+.session-tool-canvas[data-active-tool='diff'] .session-tool-tablist .app-icon,
+.session-tool-canvas[data-active-tool='diff'] .session-tool-tablist small,
+.session-tool-canvas[data-active-tool='diff'] .session-tool-expand {
+  display: none;
 }
 
 .session-tool-body {
@@ -775,6 +644,309 @@ button.hm-board-now:hover {
   background: var(--bg-hover);
 }
 
+/* ---------- reference-faithful inline Diff review ---------- */
+.session-diff-review {
+  min-height: 100%;
+  display: grid;
+  align-content: start;
+  gap: 20px;
+  padding: 21px 24px 28px;
+  background: var(--bg-card);
+}
+
+.session-diff-overview {
+  display: grid;
+  gap: 13px;
+}
+
+.session-diff-overview > header {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.session-diff-overview h2 {
+  margin: 0;
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 520;
+  letter-spacing: -0.01em;
+}
+
+.session-diff-grand-total {
+  margin-left: auto;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+.session-diff-file-list {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-editor);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 3%, transparent);
+}
+
+.session-diff-file-list > button {
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--fg-muted);
+  font: 12px var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-diff-file-list > button:first-child {
+  border-top: 0;
+}
+
+.session-diff-file-list > button:hover {
+  background: color-mix(in srgb, var(--bg-hover) 58%, transparent);
+  color: var(--fg);
+}
+
+.session-diff-file-list > button.active {
+  color: var(--fg);
+}
+
+.session-diff-file-list > button > span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-diff-file-list small {
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.session-code-file-icon {
+  width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--fg-faint);
+  border-radius: 4px;
+  color: var(--fg-muted);
+}
+
+.session-inline-diff {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-editor);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.session-inline-diff > header {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, auto) 1fr 30px 30px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 13px 0 17px;
+  border-bottom: 1px solid var(--border);
+}
+
+.session-inline-diff > header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  font-weight: 540;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-inline-diff > header button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.session-inline-diff > header button:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.session-inline-diff-body {
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.session-inline-hunk {
+  min-width: max-content;
+  padding: 8px 16px 8px 48px;
+  border-bottom: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--bg-panel) 72%, var(--bg-editor));
+  color: var(--fg-faint);
+  font-size: 10.5px;
+  line-height: 18px;
+}
+
+.session-inline-line {
+  min-width: max-content;
+  display: grid;
+  grid-template-columns: 38px 18px minmax(520px, 1fr);
+  align-items: stretch;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  line-height: 20px;
+}
+
+.session-inline-line.addition {
+  background: var(--diff-add-bg);
+}
+
+.session-inline-line.deletion {
+  background: var(--diff-del-bg);
+}
+
+.session-inline-number,
+.session-inline-marker {
+  user-select: none;
+}
+
+.session-inline-number {
+  padding-right: 7px;
+  border-right: 1px solid color-mix(in srgb, var(--border-soft) 72%, transparent);
+  color: var(--fg-faint);
+  text-align: right;
+}
+
+.session-inline-marker {
+  text-align: center;
+}
+
+.session-inline-line.addition .session-inline-marker {
+  color: var(--success);
+}
+
+.session-inline-line.deletion .session-inline-marker {
+  color: var(--danger);
+}
+
+.session-inline-line code {
+  padding: 0 12px 0 6px;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  white-space: pre;
+}
+
+.session-diff-loading {
+  min-height: 92px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+}
+
+.session-diff-verification {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-editor);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 3%, transparent);
+}
+
+.session-diff-verification > summary {
+  min-height: 49px;
+  display: grid;
+  grid-template-columns: 30px auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px 0 11px;
+  color: var(--fg);
+  cursor: pointer;
+  list-style: none;
+}
+
+.session-diff-verification > summary::-webkit-details-marker {
+  display: none;
+}
+
+.session-diff-verification-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--warning) 46%, var(--border));
+  border-radius: 50%;
+  color: var(--warning);
+}
+
+.session-diff-verification.passed .session-diff-verification-icon {
+  border-color: color-mix(in srgb, var(--success) 62%, var(--border));
+  color: var(--success);
+}
+
+.session-diff-verification > summary strong,
+.session-diff-verification > summary b {
+  font-size: 11.5px;
+}
+
+.session-diff-verification > summary strong {
+  font-weight: 560;
+}
+
+.session-diff-verification > summary b {
+  color: var(--fg-muted);
+  font-weight: 520;
+}
+
+.session-diff-verification > summary b.ok {
+  color: var(--success);
+}
+
+.session-diff-verification-detail {
+  min-height: 51px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 11px 17px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.session-diff-verification-detail > span {
+  grid-column: 1;
+}
+
+.session-diff-verification-detail .btn {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.session-diff-verification-chevron {
+  grid-column: 2;
+  transform: rotate(-90deg);
+  color: var(--fg-muted);
+}
+
 /* ---------- the single responsive Action Dock ---------- */
 .session-action-dock {
   min-height: 64px;
@@ -804,6 +976,36 @@ button.hm-board-now:hover {
 
 .session-action-dock .session-approve {
   min-width: 112px;
+}
+
+.session-action-dock.review-decision {
+  min-height: 80px;
+  gap: 20px;
+  padding: 14px 24px;
+}
+
+.session-action-dock.review-decision .btn {
+  min-width: 142px;
+  min-height: 44px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.session-action-dock.review-decision .quiet-danger {
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+.session-action-dock.review-decision .quiet-danger:hover {
+  border-color: color-mix(in srgb, var(--danger) 48%, var(--border-strong));
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.session-action-dock.review-decision .session-approve {
+  min-width: 166px;
+  background: var(--fg);
+  color: var(--bg-editor);
 }
 
 .session-action-note {
@@ -991,11 +1193,6 @@ button.hm-board-now:hover {
 
 /* ---------- responsive priority reordering ---------- */
 @media (max-width: 1120px) {
-  .sr-rail.sr-single {
-    width: 228px;
-    min-width: 228px;
-  }
-
   .session-identity-head {
     min-height: 66px;
     padding: 8px 11px;
@@ -1056,11 +1253,6 @@ button.hm-board-now:hover {
 }
 
 @media (max-width: 920px) {
-  .sr-rail.sr-single {
-    width: 210px;
-    min-width: 210px;
-  }
-
   .session-identity-head .tr-back {
     width: 30px;
     overflow: hidden;

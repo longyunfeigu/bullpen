@@ -82,6 +82,8 @@ test.describe('P4 review v2 + decorations (ADR-0013)', () => {
       // A non-git change remains first-class evidence. Opening it expands the
       // Session-owned File tool and mounts the real editor beside the conversation.
       await page.getByTestId('task-room-file-src/index.ts').click();
+      await expect(page.getByTestId('session-diff-review')).toBeVisible();
+      await page.getByTestId('session-tool-file').click();
       await page.getByTestId('peek-mode-edit').click();
       await expect(page.getByTestId('file-peek').getByTestId('editor-groups')).toBeVisible({
         timeout: 15000,

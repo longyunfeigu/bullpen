@@ -14,6 +14,7 @@ export function ConfirmDangerButton(props: {
   testid: string;
   disabled?: boolean;
   quiet?: boolean;
+  icon?: string;
   title?: string;
   onConfirm: () => void;
 }): React.JSX.Element {
@@ -37,6 +38,7 @@ export function ConfirmDangerButton(props: {
         {...(props.title ? { title: props.title } : {})}
         onClick={() => setArmed(true)}
       >
+        {props.icon ? <Ic name={props.icon} size={14} /> : null}
         {props.label}
       </button>
     );

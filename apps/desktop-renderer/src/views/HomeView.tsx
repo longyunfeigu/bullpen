@@ -5,22 +5,13 @@ import { onEvent, pathForDroppedFile, rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useTaskStore, titleFromIntent, RUNNING_TASK_STATES } from '../store/taskStore.js';
-import { useActivityStore, currentActionLine } from '../store/activityStore.js';
-import { useGlowTasks } from './useGlow.js';
-import { needsAttention, ATTENTION_STATES } from './HomeSidebar.js';
+import { useActivityStore } from '../store/activityStore.js';
 import { Ic, ProviderMark } from './home-icons.js';
-import {
-  MODE_META,
-  type ThinkingLevelId,
-  canArchiveTask,
-  isAnswered,
-  presentedMeta,
-} from './labels.js';
-import { ArmedIconButton, ModelEffortControl } from './ui.js';
+import { MODE_META, type ThinkingLevelId, presentedMeta } from './labels.js';
+import { ModelEffortControl } from './ui.js';
 import { readDragRef } from './dragRefs.js';
 import { useSkillSlash } from './SkillSlashPicker.js';
 import { useTerminalStore } from './TerminalPanel.js';
-import { LiveBoard } from './LiveBoard.js';
 
 type VerificationCommand = z.infer<typeof VerificationCommandSchema>;
 
@@ -50,15 +41,12 @@ function parseCustomCommand(raw: string): VerificationCommand | null {
 /**
  * Launcher (PIVOT-011..015, PIVOT-028): the content page of the persistent
  * shell — serif hero, composer (dispatch target = selected project), Advanced
- * charter, and the global mission control with per-task Live Boards.
+ * charter. Global session state and attention live in the persistent rail.
  */
 export function HomeView(): React.JSX.Element {
   const app = useAppStore();
   const workspaceStore = useWorkspaceStore();
   const taskStore = useTaskStore();
-  const perTask = useActivityStore((s) => s.perTask);
-  // PIVOT-016: fresh agent writes make their task cards glow.
-  const glowTasks = useGlowTasks();
 
   const [intent, setIntent] = useState('');
   const [agent, setAgent] = useState<ComposerAgent>('pi');
@@ -226,17 +214,6 @@ export function HomeView(): React.JSX.Element {
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [projectMenuOpen, pickerOpen, agentMenuOpen]);
-
-  // ADR-0008 (PIVOT-021/022): tasks open in their Task Room — never the Editor.
-  const openTask = useCallback(
-    (taskId: string, options: { review?: boolean } = {}) => {
-      void taskStore.openTask(taskId).then(() => {
-        if (options.review) void taskStore.openReview();
-      });
-      app.openTaskRoom(taskId);
-    },
-    [taskStore, app],
-  );
 
   const addRefs = useCallback(
     (rels: string[]) => {
@@ -448,140 +425,13 @@ export function HomeView(): React.JSX.Element {
     else pickFile(item.path);
   };
 
-  // ---------- mission control (global, ADR-0009) ----------
-
-  const needsYou = taskStore.tasks
-    .filter(needsAttention)
-    .sort((a, b) => ATTENTION_STATES.indexOf(a.state) - ATTENTION_STATES.indexOf(b.state))
-    .slice(0, 5);
-  const running = taskStore.tasks
-    .filter((t) => RUNNING_TASK_STATES.has(t.state) && t.state !== 'AWAITING_PERMISSION')
-    .slice(0, 5);
-  // Finished work stays one glance (and one archive) away instead of leaving
-  // the launcher dead-empty after a burst of tasks.
-  const recentDone = taskStore.tasks
-    .filter(
-      (t) =>
-        !t.archived &&
-        (['ACCEPTED', 'ROLLED_BACK', 'CANCELLED'].includes(t.state) || isAnswered(t)),
-    )
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, 4);
-  const multiProject = new Set([...needsYou, ...running].map((t) => t.projectPath)).size > 1;
-  const recentMultiProject =
-    new Set([...needsYou, ...running, ...recentDone].map((t) => t.projectPath)).size > 1;
-
-  const mcCard = (t: TaskDto): React.JSX.Element => {
-    const attention = needsAttention(t);
-    const activity = perTask[t.id];
-    const action = currentActionLine(activity);
-    const meta = presentedMeta(t);
-    const chip = (
-      <span
-        className={`hm-stchip ${t.state === 'FAILED' ? 'err' : attention ? 'warn' : 'run'}`}
-        data-state={t.state}
-      >
-        {attention ? meta.short : 'Running'}
-      </span>
-    );
-    const button =
-      t.state === 'AWAITING_PLAN_APPROVAL'
-        ? 'Review plan'
-        : t.state === 'AWAITING_PERMISSION'
-          ? 'Approve'
-          : t.state === 'REVIEW_READY'
-            ? 'Review'
-            : t.state === 'INTERRUPTED'
-              ? 'Recover'
-              : t.state === 'FAILED'
-                ? 'Open'
-                : 'Watch';
-    const cardMeta: React.ReactNode[] = [];
-    if (multiProject) {
-      cardMeta.push(
-        <span key="p" className="hm-projchip" title={t.projectPath}>
-          <Ic name="folder" size={10} />
-          {t.projectName}
-          {t.worktree ? <span className="mono"> · {t.worktree.branch}</span> : null}
-        </span>,
-      );
-    } else if (t.worktree) {
-      cardMeta.push(
-        <span key="w" className="hm-projchip mono" title="Isolated worktree">
-          <Ic name="branch" size={10} />
-          {t.worktree.branch}
-        </span>,
-      );
-    }
-    if (action) {
-      cardMeta.push(<span key="a">{action.label}</span>);
-      if (action.status === 'running')
-        cardMeta.unshift(<span key="d" className="hm-dot run" style={{ margin: 0 }} />);
-    } else {
-      cardMeta.push(<span key="s">{meta.short}</span>);
-    }
-    const touched = activity?.filesTouched.length ?? 0;
-    if (touched > 0)
-      cardMeta.push(
-        <span key="f">
-          {' '}
-          · {touched} file{touched === 1 ? '' : 's'} touched
-        </span>,
-      );
-    return (
-      <button
-        key={t.id}
-        className={`hm-tcard ${attention ? 'attention' : ''} ${glowTasks.has(t.id) ? 'glow-pulse' : ''}`}
-        data-testid={`home-mc-card-${t.id}`}
-        onClick={() => openTask(t.id, { review: t.state === 'REVIEW_READY' && !t.worktree })}
-      >
-        {chip}
-        <span className="hm-tinfo">
-          <span className="hm-ttitle" style={{ display: 'block' }}>
-            {t.title}
-          </span>
-          <span className="hm-tmeta">{cardMeta}</span>
-        </span>
-        <span
-          className="hm-treplay"
-          role="button"
-          tabIndex={0}
-          data-testid={`home-card-replay-${t.id}`}
-          title={RUNNING_TASK_STATES.has(t.state) ? 'Watch live' : 'View recap'}
-          onClick={(e) => {
-            e.stopPropagation();
-            taskStore.openReplay({
-              taskId: t.id,
-              ...(RUNNING_TASK_STATES.has(t.state) ? { liveFollow: true } : {}),
-            });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              taskStore.openReplay({
-                taskId: t.id,
-                ...(RUNNING_TASK_STATES.has(t.state) ? { liveFollow: true } : {}),
-              });
-            }
-          }}
-        >
-          <Ic name="play" size={11} />
-        </span>
-        <span className={`hm-act ${attention ? '' : 'ghost'}`}>{button}</span>
-      </button>
-    );
-  };
-
   const activeModeHint = MODE_META.find((m) => m.id === mode)?.hint;
 
   return (
     <main className="hm-main" data-testid="home-view">
       <div className="hm-main-top" />
 
-      <div
-        className={`hm-hero ${needsYou.length > 0 || running.length > 0 || recentDone.length > 0 ? 'compact' : ''}`}
-      >
+      <div className="hm-hero">
         <h1>What should we build?</h1>
         <div className="hm-sub">
           Describe the outcome — plans, diffs and verification all wait for your OK.
@@ -1101,97 +951,6 @@ export function HomeView(): React.JSX.Element {
           ⏎ to start · ⇧⏎ new line.
         </div>
       </div>
-
-      {needsYou.length > 0 || running.length > 0 || recentDone.length > 0 ? (
-        <div className="hm-mc">
-          {needsYou.length > 0 ? (
-            <>
-              <div className="hm-mc-label">
-                NEEDS YOU <span className="hm-count">{needsYou.length}</span>
-              </div>
-              <div data-testid="home-mc-needs">{needsYou.map(mcCard)}</div>
-            </>
-          ) : null}
-          {running.length > 0 ? (
-            <>
-              <div className="hm-mc-label">RUNNING</div>
-              <div data-testid="home-mc-running">
-                {running.map((task) => (
-                  <React.Fragment key={task.id}>
-                    {mcCard(task)}
-                    <LiveBoard
-                      taskId={task.id}
-                      onOpenLens={(path) => {
-                        openTask(task.id);
-                        app.openPeek(task.id, path, 'diff');
-                      }}
-                    />
-                  </React.Fragment>
-                ))}
-              </div>
-            </>
-          ) : null}
-          {recentDone.length > 0 ? (
-            <>
-              <div className="hm-mc-label">RECENT</div>
-              <div data-testid="home-mc-recent">
-                {recentDone.map((t) => {
-                  const meta = presentedMeta(t);
-                  return (
-                    <div
-                      key={t.id}
-                      className="hm-tcard recent"
-                      role="button"
-                      tabIndex={0}
-                      data-testid={`home-recent-task-${t.id}`}
-                      title={`${t.title} — ${meta.label}`}
-                      onClick={() => openTask(t.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          openTask(t.id);
-                        }
-                      }}
-                    >
-                      <span
-                        className={`hm-stchip ${meta.tone === 'ok' ? 'ok' : meta.tone === 'err' ? 'err' : 'idle'}`}
-                        data-state={t.state}
-                      >
-                        {meta.short}
-                      </span>
-                      <span className="hm-tinfo">
-                        <span className="hm-ttitle" style={{ display: 'block' }}>
-                          {t.title}
-                        </span>
-                        {recentMultiProject ? (
-                          <span className="hm-tmeta">
-                            <span className="hm-projchip" title={t.projectPath}>
-                              <Ic name="folder" size={10} />
-                              {t.projectName}
-                            </span>
-                          </span>
-                        ) : null}
-                      </span>
-                      {canArchiveTask(t) ? (
-                        <ArmedIconButton
-                          icon="archive"
-                          className="hm-archx card"
-                          testid={`home-recent-archive-${t.id}`}
-                          title={isAnswered(t) ? 'Close out and archive' : 'Archive task'}
-                          armedTitle="Click again to archive"
-                          onConfirm={() => void taskStore.archiveTask(t.id)}
-                        />
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : null}
-        </div>
-      ) : (
-        <div style={{ height: 26 }} />
-      )}
     </main>
   );
 }
