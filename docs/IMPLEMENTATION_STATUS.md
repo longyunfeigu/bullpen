@@ -71,6 +71,7 @@ None.
 ## Latest test evidence
 
 | Date | Commit | Command | Result | Artifact |
+| 2026-07-17 | (rail-marks+starters) | `npm run check` + build + `playwright test session-workbench` (3, incl. new starters spec) + `CHARTER_SHOTS` rail walk | ADR-0023 am.1: brand logomarks (Claude/Codex/π) replace letter chips, bare row titles (no `Provider ·` prefix, no hardcoded CLI-name titles), Projects-panel hover starters (π context+composer; Claude/Codex bound via `kind:'recent'`); check+tsc clean, 3/3 e2e, light/dark screenshots reviewed | /tmp/ui-shots/rail-icons-\*.png |
 | 2026-07-16 | (external-session-ids, uncommitted) | `npm test` + `npm run check` + `playwright test external-cli session-workbench` | 470 unit passed (9 new locator/command tests); check + build clean; e2e failure set identical to clean HEAD (4 pre-existing dock-surface failures, 0 new) | vitest+playwright |
 | 2026-07-16 | (rail-d, uncommitted) | `playwright test session-workbench home-v2 home-dragref shell-v4 skills` | 17 passed, 1 failed (home-v2 PIVOT-012/015 — pre-existing, reproduces on clean HEAD with the rail files checked out to HEAD; advanced-criteria loss is in the composer/charter path, untouched here) | playwright |
 | 2026-07-16 | (rail-d, uncommitted) | `playwright test pivot-shell shell-v3 p3-full-mode external-cli` + tmp screenshot walk | 12 passed, 4 failed — all 4 in external-cli (editor terminal dock surfaces); representative 2 re-run against a clean-HEAD build fail identically → pre-existing from the earlier shell rework, unrelated to the rail | playwright |

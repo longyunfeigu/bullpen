@@ -106,3 +106,28 @@ weakened.
   `layout.save`; it resets with cleared web storage, never loses data.
 - The old footer rows are gone; Inbox gained a real destination, Editor and
   Settings became icons — copy moved into tooltips/aria-labels.
+
+## Amendment 1 (2026-07-17) — brand marks, bare titles, Projects-panel starters
+
+User-directed refinements against a reference session-list design:
+
+- **Brand logomarks replace letter chips.** `ProviderMark` (home-icons.tsx)
+  renders the Claude sunburst (#d97757), the Codex disc-and-knot and a π
+  rounded square (plus a `shell` variant) as filled SVGs; fills follow `--fg`
+  per theme and knockouts use `--pm-hole`. The old `CC`/`CX`/`Pi` colored text
+  chips are gone everywhere (`SessionRail`, `SessionTerminalView`, dialog).
+- **The mark carries the provider; titles stay bare.** Session rows no longer
+  prefix titles with `Claude · `/`Codex · `/`Pi · ` (provider stays in the
+  tooltip), and terminal rows never repeat the CLI name as a title — generic
+  launch titles display as “New session”.
+- **Projects panel is the one quick-start surface.** Hovering a project row
+  reveals three starters: π (make the project the working context and focus
+  the composer — native sessions begin at intent), Claude and Codex (one-click
+  external PTY bound via `{ kind: 'recent', projectPath }`, global working
+  context untouched). Rows without sessions get first-session bootstrap this
+  way. Considered and rejected: starters on session-group headers (groups are
+  derived from existing sessions and the 302px header already carries
+  needs/count), and any always-visible icon row. The New Session dialog stays
+  as the explicit fallback.
+- New testids: `project-spawn-pi-*`, `project-spawn-claude-*`,
+  `project-spawn-codex-*`. Mockup: `docs/design/rail-quick-spawn-mockup.html`.

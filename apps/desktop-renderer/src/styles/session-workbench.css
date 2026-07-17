@@ -302,29 +302,29 @@
   background: color-mix(in srgb, var(--info-bg) 78%, var(--bg-card));
   box-shadow: inset 2px 0 0 var(--info);
 }
+/* Bare brand logomarks (reference style) — no letter chips. `--pm-hole` is
+   the knockout colour inside filled marks (knot / π / prompt glyph). */
 .sr-provider {
   width: 25px;
   height: 25px;
   display: inline-grid;
   place-items: center;
   flex: none;
-  border-radius: 6px;
-  color: #fff;
-  background: #7455df;
-  font: 700 9px/1 var(--font-ui);
-  letter-spacing: -0.02em;
+  --pm-hole: var(--bg-sidebar);
 }
 .sr-provider.claude {
-  background: #25241f;
-  color: #f1a35e;
+  color: #d97757;
 }
-.sr-provider.codex {
-  background: #299452;
-  color: #fff;
+.sr-provider.codex,
+.sr-provider.pi,
+.sr-provider.shell {
+  color: var(--fg);
 }
-.sr-provider.pi {
-  background: #7455df;
-  color: #fff;
+.sr-modal .sr-provider {
+  --pm-hole: var(--bg-card);
+}
+.stv-header .sr-provider {
+  --pm-hole: var(--bg-titlebar);
 }
 
 .sr-session-copy {
@@ -344,8 +344,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
-  font-weight: 650;
+  font-size: 12px;
+  font-weight: 550;
 }
 .sr-live-dot {
   width: 5px;
@@ -460,6 +460,54 @@
 }
 .sr-chevron-open {
   transform: rotate(90deg);
+}
+/* Hover-revealed per-project session starters (π / Claude / Codex). The chip
+   overlays the row's right edge; the row itself keeps its full hit area. */
+.sr-project-wrap {
+  position: relative;
+}
+.sr-project-wrap:hover .sr-project {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.sr-project-qs {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--bg-sidebar);
+  box-shadow: var(--shadow-card);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.sr-project-wrap:hover .sr-project-qs,
+.sr-project-qs:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sr-qs-btn {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.sr-qs-btn:hover {
+  background: var(--bg-hover);
+}
+.sr-qs-btn .sr-provider {
+  width: auto;
+  height: auto;
 }
 
 /* Absorbed from direction B: the resident working-context row. */

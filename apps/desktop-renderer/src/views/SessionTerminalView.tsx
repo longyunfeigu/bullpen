@@ -4,7 +4,7 @@ import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { EditorArea } from '../workbench/EditorArea.js';
 import { ExplorerView } from './ExplorerView.js';
 import { ScmView } from './ScmView.js';
-import { Ic } from './home-icons.js';
+import { Ic, ProviderMark } from './home-icons.js';
 import { mountTerminal, observeTerminalFit, useTerminalStore } from './TerminalPanel.js';
 
 function launchName(launch: 'shell' | 'claude' | 'codex'): string {
@@ -44,11 +44,10 @@ export function SessionTerminalView({ terminalId }: { terminalId: string }): Rea
   return (
     <main className="stv-root" data-testid="session-terminal-view">
       <header className="stv-header">
-        <span
-          className={`sr-provider ${item.launch === 'claude' ? 'claude' : item.launch === 'codex' ? 'codex' : 'pi'}`}
-        >
-          {item.launch === 'claude' ? 'CC' : item.launch === 'codex' ? 'CX' : '›_'}
-        </span>
+        <ProviderMark
+          provider={item.launch === 'claude' || item.launch === 'codex' ? item.launch : 'shell'}
+          size={19}
+        />
         <div className="stv-title">
           <strong>
             {launchName(item.launch)} · {item.title}

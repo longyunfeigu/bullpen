@@ -8,7 +8,7 @@ import { RUNNING_TASK_STATES, useTaskStore } from '../store/taskStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useTerminalStore, type TerminalLaunch } from './TerminalPanel.js';
 import { HomeProjectTree } from './HomeProjectTree.js';
-import { Ic } from './home-icons.js';
+import { Ic, ProviderMark } from './home-icons.js';
 import { canArchiveTask, isAnswered, presentedMeta } from './labels.js';
 import { ArmedIconButton } from './ui.js';
 import { needsAttention } from './HomeSidebar.js';
@@ -79,21 +79,14 @@ function providerLabel(provider: 'pi' | 'claude' | 'codex'): string {
   return 'Pi';
 }
 
-function sessionTitle(task: TaskDto, provider: 'pi' | 'claude' | 'codex'): string {
+/** The brand mark carries the provider — the title stays bare (reference style). */
+function sessionTitle(task: TaskDto): string {
   const withoutFixtureDirective = task.title.replace(/^\[scenario:[^\]]+\]\s*/i, '');
   const withoutRepeatedProvider = withoutFixtureDirective.replace(
     /^(?:claude(?: code)?|codex|pi)\s*[·:—-]\s*/i,
     '',
   );
-  return `${providerLabel(provider)} · ${withoutRepeatedProvider || 'Session'}`;
-}
-
-function ProviderMark({ provider }: { provider: 'pi' | 'claude' | 'codex' }): React.JSX.Element {
-  return (
-    <span className={`sr-provider ${provider}`} aria-hidden>
-      {provider === 'pi' ? 'Pi' : provider === 'claude' ? 'CC' : 'CX'}
-    </span>
-  );
+  return withoutRepeatedProvider || 'Session';
 }
 
 function SessionTaskRow({
@@ -110,7 +103,7 @@ function SessionTaskRow({
   const glowTasks = useGlowTasks();
   const selected = app.taskRoomTaskId === task.id;
   const provider = providerForTask(task);
-  const displayTitle = sessionTitle(task, provider);
+  const displayTitle = sessionTitle(task);
   const running = RUNNING_TASK_STATES.has(task.state);
   const meta = presentedMeta(task);
   const action = running ? currentActionLine(activity) : null;
@@ -129,7 +122,7 @@ function SessionTaskRow({
         data-testid={`home-task-${task.id}`}
         data-session-key={`task:${task.id}`}
         data-state={task.state}
-        title={`${displayTitle} — ${meta.label}`}
+        title={`${providerLabel(provider)} · ${displayTitle} — ${meta.label}`}
         onClick={open}
       >
         <ProviderMark provider={provider} />
@@ -185,6 +178,8 @@ function TerminalSessionRow({
   if (!item) return null;
   const selected = app.sessionTerminalId === terminalId;
   const provider = launch;
+  // The brand mark carries the provider — never repeat the CLI name as the
+  // title. Generic launch titles read as an unnamed session.
   const sessionName = /^(?:Claude Code|Codex)$/i.test(item.title) ? 'New session' : item.title;
   return (
     <button
@@ -198,9 +193,7 @@ function TerminalSessionRow({
       <span className="sr-session-copy">
         <span className="sr-session-title">
           <span className={`sr-live-dot ${item.exited ? '' : 'live'}`} />
-          <b>
-            {providerLabel(provider)} · {sessionName}
-          </b>
+          <b>{sessionName}</b>
           <span className="sr-state run">{item.exited ? 'ENDED' : 'LIVE'}</span>
         </span>
         <span className="sr-session-meta">
@@ -304,7 +297,7 @@ function NewSessionDialog({ onClose }: { onClose: () => void }): React.JSX.Eleme
               data-testid={`session-kind-${value}`}
               onClick={() => setKind(value)}
             >
-              <ProviderMark provider={value} />
+              <ProviderMark provider={value} size={22} />
               <span>
                 <strong>{title}</strong>
                 <small>{detail}</small>
@@ -634,6 +627,37 @@ export function SessionRail(): React.JSX.Element {
     </>
   );
 
+  /** Quick-start a Pi session in a project: it becomes the working context and
+   * the composer is focused — one step to the point where intent can be typed. */
+  const quickStartPi = (project: RecentWorkspaceDto): void => {
+    if (workspaceStore.workspace?.path !== project.path) {
+      app.setHomePick(true);
+      void workspaceStore.openPath(project.path);
+    }
+    app.closeTaskRoom();
+    app.setSurface('home');
+    app.focusComposer();
+    setView('sessions');
+  };
+
+  /** One-click external PTY session bound to the hovered project — the global
+   * working context is intentionally untouched (ADR-0023 amendment). */
+  const quickSpawn = async (
+    launch: 'claude' | 'codex',
+    project: RecentWorkspaceDto,
+  ): Promise<void> => {
+    const id = await useTerminalStore.getState().create({
+      launch,
+      context: { kind: 'recent', projectPath: project.path },
+      title: launch === 'claude' ? 'Claude Code' : 'Codex',
+      reveal: false,
+    });
+    if (id) {
+      app.openTerminalSession(id);
+      setView('sessions');
+    }
+  };
+
   const projectsPanel = (
     <>
       <div className="sr-head sr-head-plain">
@@ -645,27 +669,59 @@ export function SessionRail(): React.JSX.Element {
           const active = workspaceStore.workspace?.path === project.path;
           return (
             <React.Fragment key={project.path}>
-              <button
-                className={`sr-project ${active ? 'active' : ''}`}
-                data-testid={`home-recent-${project.path}`}
-                title={project.path}
-                onClick={() => {
-                  if (active) setTreeOpen(!treeOpen);
-                  else {
-                    app.setHomePick(true);
-                    void workspaceStore.openPath(project.path);
-                    // Picking a new working context completes the errand —
-                    // return to the sessions panel.
-                    setView('sessions');
-                  }
-                }}
-              >
-                <Ic name="folder" size={13} />
-                <span>{project.displayName}</span>
-                {active ? (
-                  <Ic name="chevron" size={12} className={treeOpen ? 'sr-chevron-open' : ''} />
-                ) : null}
-              </button>
+              <div className="sr-project-wrap">
+                <button
+                  className={`sr-project ${active ? 'active' : ''}`}
+                  data-testid={`home-recent-${project.path}`}
+                  title={project.path}
+                  onClick={() => {
+                    if (active) setTreeOpen(!treeOpen);
+                    else {
+                      app.setHomePick(true);
+                      void workspaceStore.openPath(project.path);
+                      // Picking a new working context completes the errand —
+                      // return to the sessions panel.
+                      setView('sessions');
+                    }
+                  }}
+                >
+                  <Ic name="folder" size={13} />
+                  <span>{project.displayName}</span>
+                  {active ? (
+                    <Ic name="chevron" size={12} className={treeOpen ? 'sr-chevron-open' : ''} />
+                  ) : null}
+                </button>
+                <span
+                  className="sr-project-qs"
+                  role="group"
+                  aria-label={`Start a session in ${project.displayName}`}
+                >
+                  <button
+                    className="sr-qs-btn"
+                    data-testid={`project-spawn-pi-${project.path}`}
+                    title={`Start a Pi session in ${project.displayName} — focuses the composer`}
+                    onClick={() => quickStartPi(project)}
+                  >
+                    <ProviderMark provider="pi" size={15} />
+                  </button>
+                  <button
+                    className="sr-qs-btn"
+                    data-testid={`project-spawn-claude-${project.path}`}
+                    title={`New Claude Code session in ${project.displayName}`}
+                    onClick={() => void quickSpawn('claude', project)}
+                  >
+                    <ProviderMark provider="claude" size={15} />
+                  </button>
+                  <button
+                    className="sr-qs-btn"
+                    data-testid={`project-spawn-codex-${project.path}`}
+                    title={`New Codex session in ${project.displayName}`}
+                    onClick={() => void quickSpawn('codex', project)}
+                  >
+                    <ProviderMark provider="codex" size={15} />
+                  </button>
+                </span>
+              </div>
               {active && treeOpen ? <HomeProjectTree /> : null}
             </React.Fragment>
           );
