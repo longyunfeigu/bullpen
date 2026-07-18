@@ -2,7 +2,6 @@ import type {
   ReplayChapterCategory,
   ReplayEvidenceLevel,
   ReplayFactDto,
-  ReplayLane,
 } from '@pi-ide/ipc-contracts';
 
 /**
@@ -54,13 +53,6 @@ export const LEVEL_LABEL: Record<ReplayEvidenceLevel, string> = {
   observed: '观察记录',
   inferred: '推导叙事',
   missing: '证据缺失',
-};
-
-export const LANE_LABEL: Record<ReplayLane, string> = {
-  intent: '意图与对话',
-  actions: '动作与应用',
-  artifacts: '产物与变化',
-  risk: '决策、风险与验证',
 };
 
 export const CHAPTER_LABEL: Record<ReplayChapterCategory, string> = {

@@ -1068,23 +1068,6 @@ html.xp-resizing * {
   color: var(--fg);
 }
 
-/* ---------- splitter ---------- */
-.splitter {
-  flex: 0 0 4px;
-  cursor: col-resize;
-  background: transparent;
-  position: relative;
-  z-index: 5;
-}
-.splitter:hover,
-.splitter.dragging {
-  background: var(--accent);
-  opacity: 0.5;
-}
-.splitter.horizontal {
-  cursor: row-resize;
-}
-
 /* ---------- command palette / quick pick ---------- */
 .overlay-backdrop {
   position: fixed;
