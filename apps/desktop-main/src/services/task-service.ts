@@ -33,7 +33,13 @@ import type {
   TimelineEventDto,
   VerificationCommandSchema,
 } from '@pi-ide/ipc-contracts';
-import { formatPromptWithCodeContext, projectActivity } from '@pi-ide/ipc-contracts';
+import {
+  fileRefsForEventPayload,
+  formatPromptWithCodeContext,
+  formatPromptWithFileContext,
+  projectActivity,
+  type FileContextRefDto,
+} from '@pi-ide/ipc-contracts';
 import type { z } from 'zod';
 import type { SqlDatabase } from '@pi-ide/persistence';
 import {
@@ -91,6 +97,8 @@ interface LaunchExtras {
   previewMeta?: PreviewFeedbackMeta;
   /** Frozen source snapshots selected by the user for this turn. */
   codeRefs?: CodeContextRefDto[];
+  /** ADR-0024: file / folder / image references attached to this turn. */
+  fileRefs?: FileContextRefDto[];
 }
 
 function countPatchLines(patch: string | null): { additions: number; deletions: number } {
@@ -1110,6 +1118,13 @@ export class TaskService {
   /** ADR-0022: inject the replay receipt hasher (wired after ReplayService exists). */
   setReceiptProvider(provider: (taskId: string) => string | null): void {
     this.receiptProvider = provider;
+  }
+
+  /** ADR-0024: the task's context-attachment directory (outside any workspace
+   * or worktree — imported images never touch the project tree). */
+  attachmentsDir(taskId: string): string {
+    const task = this.getTask(taskId);
+    return join(workspaceDataDir(this.appPaths, task.workspaceId), 'attachments', taskId);
   }
 
   /** ADR-0022: persist a preview-feedback screenshot outside any workspace or
@@ -2375,6 +2390,7 @@ export class TaskService {
       })),
       ...(extras?.previewMeta ? { preview: extras.previewMeta } : {}),
       ...(extras?.codeRefs?.length ? { codeRefs: extras.codeRefs } : {}),
+      ...(extras?.fileRefs?.length ? { fileRefs: fileRefsForEventPayload(extras.fileRefs) } : {}),
     });
     this.setState(taskId, task.state === 'READY' ? 'EXPLORING' : 'IN_PROGRESS');
 
@@ -2391,7 +2407,13 @@ export class TaskService {
         ...(refreshedSkills
           ? [`<skill_catalog_refresh>\n${refreshedSkills}\n</skill_catalog_refresh>`]
           : []),
-        formatPromptWithCodeContext(this.skills.expandCommand(runtimeText), extras?.codeRefs ?? []),
+        formatPromptWithFileContext(
+          formatPromptWithCodeContext(
+            this.skills.expandCommand(runtimeText),
+            extras?.codeRefs ?? [],
+          ),
+          extras?.fileRefs ?? [],
+        ),
       ].join('\n\n'),
       ...(extras?.images?.length ? { images: extras.images } : {}),
       priorConversations,
@@ -2465,6 +2487,9 @@ export class TaskService {
         kind: during,
         ...(attachments?.previewMeta ? { preview: attachments.previewMeta } : {}),
         ...(attachments?.codeRefs?.length ? { codeRefs: attachments.codeRefs } : {}),
+        ...(attachments?.fileRefs?.length
+          ? { fileRefs: fileRefsForEventPayload(attachments.fileRefs) }
+          : {}),
       });
       // ADR-0019: active-session replies also receive the current linked
       // catalog; explicit commands are expanded from the same live revision.
@@ -2473,7 +2498,10 @@ export class TaskService {
         ...(currentSkills
           ? [`<skill_catalog_refresh>\n${currentSkills}\n</skill_catalog_refresh>`]
           : []),
-        formatPromptWithCodeContext(this.skills.expandCommand(text), attachments?.codeRefs ?? []),
+        formatPromptWithFileContext(
+          formatPromptWithCodeContext(this.skills.expandCommand(text), attachments?.codeRefs ?? []),
+          attachments?.fileRefs ?? [],
+        ),
       ].join('\n\n');
       if (during === 'steer') this.host.steer(runId, expanded, attachments?.images);
       else this.host.followUp(runId, expanded, attachments?.images);

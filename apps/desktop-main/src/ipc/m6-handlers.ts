@@ -2,6 +2,7 @@ import { productError, ProductFailure, type Logger } from '@pi-ide/foundation';
 import { providerPreset } from '@pi-ide/ipc-contracts';
 import { registerHandlers } from './router.js';
 import { processPreviewAttachment } from './preview-handlers.js';
+import { resolveFileRefImages } from './context-attachment-handlers.js';
 import type { TaskService } from '../services/task-service.js';
 import type { AgentHost } from '../services/agent-host.js';
 import type { SecretService } from '../services/secret-service.js';
@@ -32,46 +33,52 @@ export function registerM6Handlers(
           conversationRefTaskIds: payload.conversationRefTaskIds,
         }),
       }),
-      'task.start': async ({ taskId, prompt, preview, codeRefs }) => {
+      'task.start': async ({ taskId, prompt, preview, codeRefs, fileRefs }) => {
         // ADR-0022 am.2: a follow-up seeded from preview feedback carries the
         // screenshot into its first run (same processing as task.message).
         const attachment = preview ? await processPreviewAttachment(tasks, taskId, preview) : null;
+        // ADR-0024: image refs become prompt pixels alongside preview shots.
+        const refImages = await resolveFileRefImages(tasks, taskId, fileRefs);
+        const images = [
+          ...(attachment ? [{ data: attachment.imageData, mimeType: 'image/png' }] : []),
+          ...refImages,
+        ];
         const result = await tasks.startTask(
           taskId,
           prompt,
-          attachment || codeRefs.length > 0
+          attachment || codeRefs.length > 0 || fileRefs.length > 0
             ? {
                 ...(codeRefs.length > 0 ? { codeRefs } : {}),
-                ...(attachment
-                  ? {
-                      images: [{ data: attachment.imageData, mimeType: 'image/png' }],
-                      previewMeta: attachment.meta,
-                    }
-                  : {}),
+                ...(fileRefs.length > 0 ? { fileRefs } : {}),
+                ...(images.length > 0 ? { images } : {}),
+                ...(attachment ? { previewMeta: attachment.meta } : {}),
               }
             : undefined,
         );
         return { task: result.task, queued: result.queued };
       },
-      'task.message': async ({ taskId, text, during, model, preview, codeRefs }) => {
+      'task.message': async ({ taskId, text, during, model, preview, codeRefs, fileRefs }) => {
         // ADR-0022: marquee feedback — persist the screenshot, attach the
         // timeline meta, and hand the pixels to the runtime with the text.
         const attachment = preview ? await processPreviewAttachment(tasks, taskId, preview) : null;
+        // ADR-0024: image refs become prompt pixels alongside preview shots.
+        const refImages = await resolveFileRefImages(tasks, taskId, fileRefs);
+        const images = [
+          ...(attachment ? [{ data: attachment.imageData, mimeType: 'image/png' }] : []),
+          ...refImages,
+        ];
         return {
           delivered: await tasks.steerOrQueue(
             taskId,
             text,
             during,
             model,
-            attachment || codeRefs.length > 0
+            attachment || codeRefs.length > 0 || fileRefs.length > 0
               ? {
                   ...(codeRefs.length > 0 ? { codeRefs } : {}),
-                  ...(attachment
-                    ? {
-                        images: [{ data: attachment.imageData, mimeType: 'image/png' }],
-                        previewMeta: attachment.meta,
-                      }
-                    : {}),
+                  ...(fileRefs.length > 0 ? { fileRefs } : {}),
+                  ...(images.length > 0 ? { images } : {}),
+                  ...(attachment ? { previewMeta: attachment.meta } : {}),
                 }
               : undefined,
           ),

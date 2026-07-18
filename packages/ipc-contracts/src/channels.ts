@@ -30,6 +30,7 @@ import {
 import { ProviderApiSchema, ProviderInfoSchema } from './providers.js';
 import { SkillDtoSchema, SkillSourceDtoSchema } from './skills.js';
 import { CodeContextRefsSchema } from './code-context.js';
+import { FileContextRefsSchema, MAX_ATTACHMENT_IMAGE_BYTES } from './file-context.js';
 
 const SettingsStateSchema = z.object({
   effective: SettingsSchema,
@@ -601,7 +602,7 @@ export const CHANNELS = {
   ),
   'task.start': ch(
     'task.start',
-    2,
+    3,
     z
       .object({
         taskId: z.string(),
@@ -610,13 +611,15 @@ export const CHANNELS = {
         preview: PreviewAttachmentSchema.optional(),
         /** Frozen source selections for this task's first runtime turn. */
         codeRefs: CodeContextRefsSchema,
+        /** ADR-0024: file / folder / image references for the first turn. */
+        fileRefs: FileContextRefsSchema,
       })
       .strict(),
     z.object({ task: TaskDtoSchema, queued: z.boolean() }),
   ),
   'task.message': ch(
     'task.message',
-    2,
+    3,
     z
       .object({
         taskId: z.string(),
@@ -628,6 +631,8 @@ export const CHANNELS = {
         preview: PreviewAttachmentSchema.optional(),
         /** Frozen source selections for this runtime turn. */
         codeRefs: CodeContextRefsSchema,
+        /** ADR-0024: file / folder / image references for this runtime turn. */
+        fileRefs: FileContextRefsSchema,
       })
       .strict(),
     z.object({ delivered: z.enum(['started', 'steered', 'queued']) }),
@@ -1004,6 +1009,40 @@ export const CHANNELS = {
     1,
     z.object({ path: z.string().min(1) }).strict(),
     z.object({ dataBase64: z.string(), mime: z.string(), sizeBytes: z.number().int() }),
+  ),
+  /** ADR-0024: copy an out-of-project image (dropped path or pasted bytes)
+   * into attachments/<taskId>/ and return chip metadata. Images only in
+   * phase 1 — the agent never gains filesystem scope from an import. */
+  'task.attachments.import': ch(
+    'task.attachments.import',
+    1,
+    z
+      .object({
+        taskId: z.string().min(1),
+        source: z.discriminatedUnion('kind', [
+          z.object({ kind: z.literal('path'), path: z.string().min(1).max(2000) }).strict(),
+          z
+            .object({
+              kind: z.literal('bytes'),
+              /** ~10 MiB of raw bytes once base64 is decoded. */
+              dataBase64: z
+                .string()
+                .min(8)
+                .max(Math.ceil((MAX_ATTACHMENT_IMAGE_BYTES / 3) * 4) + 8),
+              name: z.string().min(1).max(255),
+              mimeType: z.string().min(3).max(100),
+            })
+            .strict(),
+        ]),
+      })
+      .strict(),
+    z.object({
+      attachmentId: z.string(),
+      name: z.string(),
+      mimeType: z.string(),
+      sizeBytes: z.number().int(),
+      thumbDataUrl: z.string(),
+    }),
   ),
   'image.saveAnnotated': ch(
     'image.saveAnnotated',

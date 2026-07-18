@@ -2,7 +2,10 @@ import { create } from 'zustand';
 import {
   MAX_CODE_CONTEXT_REFS,
   MAX_CODE_CONTEXT_TOTAL_CHARS,
+  MAX_FILE_CONTEXT_IMAGES,
+  MAX_FILE_CONTEXT_REFS,
   type CodeContextRefDto,
+  type FileContextRefDto,
 } from '@pi-ide/ipc-contracts';
 
 /**
@@ -17,6 +20,8 @@ interface DraftStore {
   previewRefs: Record<string, PreviewFeedbackRef>;
   /** Frozen source selections waiting for the next turn, scoped to a Session. */
   codeRefs: Record<string, CodeContextRefDto[]>;
+  /** ADR-0024: file / folder / image references waiting for the next turn. */
+  fileRefs: Record<string, FileContextRefDto[]>;
   setDraft(taskId: string, text: string): void;
   clearDraft(taskId: string): void;
   addTerminalRef(taskId: string, ref: TerminalOutputRef): void;
@@ -27,6 +32,12 @@ interface DraftStore {
   addCodeRef(taskId: string, ref: CodeContextRefDto): 'added' | 'duplicate' | 'limit' | 'too-large';
   removeCodeRef(taskId: string, refId: string): void;
   clearCodeRefs(taskId: string): void;
+  addFileRef(
+    taskId: string,
+    ref: FileContextRefDto,
+  ): 'added' | 'duplicate' | 'limit' | 'image-limit';
+  removeFileRef(taskId: string, refId: string): void;
+  clearFileRefs(taskId: string): void;
 }
 
 export interface TerminalOutputRef {
@@ -40,6 +51,9 @@ export interface TerminalOutputRef {
 
 /** Stable selector fallback — avoids a new empty array on every Zustand read. */
 export const EMPTY_CODE_CONTEXT_REFS: CodeContextRefDto[] = [];
+
+/** Stable selector fallback for file references (ADR-0024). */
+export const EMPTY_FILE_REFS: FileContextRefDto[] = [];
 
 /** A picked element / drawn region from the live preview, waiting in the
  * composer (ADR-0022 am.2). `dataBase64` is null when capture failed —
@@ -58,6 +72,7 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   terminalRefs: {},
   previewRefs: {},
   codeRefs: {},
+  fileRefs: {},
   setDraft(taskId, text) {
     set({ drafts: { ...get().drafts, [taskId]: text } });
   },
@@ -122,5 +137,31 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
     const codeRefs = { ...get().codeRefs };
     delete codeRefs[taskId];
     set({ codeRefs });
+  },
+  addFileRef(taskId, ref) {
+    const current = get().fileRefs[taskId] ?? [];
+    // Path refs dedupe on path; attachment refs on their imported id.
+    const duplicate = current.some((item) =>
+      ref.path ? item.path === ref.path : item.attachmentId === ref.attachmentId,
+    );
+    if (duplicate) return 'duplicate';
+    if (current.length >= MAX_FILE_CONTEXT_REFS) return 'limit';
+    const images = current.filter((item) => item.kind === 'image').length;
+    if (ref.kind === 'image' && images >= MAX_FILE_CONTEXT_IMAGES) return 'image-limit';
+    set({ fileRefs: { ...get().fileRefs, [taskId]: [...current, ref] } });
+    return 'added';
+  },
+  removeFileRef(taskId, refId) {
+    set({
+      fileRefs: {
+        ...get().fileRefs,
+        [taskId]: (get().fileRefs[taskId] ?? []).filter((ref) => ref.id !== refId),
+      },
+    });
+  },
+  clearFileRefs(taskId) {
+    const fileRefs = { ...get().fileRefs };
+    delete fileRefs[taskId];
+    set({ fileRefs });
   },
 }));

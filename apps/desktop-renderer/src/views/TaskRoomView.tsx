@@ -16,13 +16,21 @@ import {
   isAnswered,
   modeLabel,
 } from './labels.js';
-import { hasDragRef, readDragRef } from './dragRefs.js';
+import { hasDragRef } from './dragRefs.js';
 import { useSkillSlash } from './SkillSlashPicker.js';
 import {
   EMPTY_CODE_CONTEXT_REFS,
+  EMPTY_FILE_REFS,
   useDraftStore,
   type TerminalOutputRef,
 } from '../store/draftStore.js';
+import { FileContextAttachments } from './FileContextAttachments.js';
+import {
+  addFileRefWithToast,
+  handleComposerPaste,
+  handleRoomDrop,
+  refFromRel,
+} from './roomFileRefs.js';
 import { PreviewBadge } from './RoomPreviewRail.js';
 import { buildPreviewFeedbackText } from './LivePreview.js';
 import { ExternalTerminalColumn, useExternalFiles } from './ExternalRoom.js';
@@ -62,6 +70,9 @@ export function TaskRoomView(): React.JSX.Element {
   const activity = useActivityStore((s) => (taskId ? s.perTask[taskId] : undefined));
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
+  const canvasBodyRef = useRef<HTMLDivElement>(null);
+  // ADR-0024: the whole Session room is one drop target for context feeding.
+  const [roomDrop, setRoomDrop] = useState(false);
 
   useEffect(() => {
     store.init();
@@ -144,8 +155,45 @@ export function TaskRoomView(): React.JSX.Element {
     app.setSessionToolExpanded(true);
   };
 
+  // ADR-0024: tree drags and OS files land anywhere in the room — no aiming
+  // at the composer. External sessions keep their own terminal semantics.
+  const acceptsRoomDrops = !task.external;
+  const roomDropHandlers = acceptsRoomDrops
+    ? {
+        onDragOver: (e: React.DragEvent): void => {
+          if (!hasDragRef(e) && !e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setRoomDrop(true);
+        },
+        onDragLeave: (e: React.DragEvent): void => {
+          const next = e.relatedTarget as Node | null;
+          if (!next || !e.currentTarget.contains(next)) setRoomDrop(false);
+        },
+        onDrop: (e: React.DragEvent): void => {
+          if (!hasDragRef(e) && !e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          setRoomDrop(false);
+          void handleRoomDrop(task.id, sameProject, e);
+        },
+      }
+    : {};
+
   return (
-    <div className="tr-root" data-testid="task-room" data-task-id={task.id}>
+    <div
+      className={`tr-root ${roomDrop ? 'room-drop' : ''}`}
+      data-testid="task-room"
+      data-task-id={task.id}
+      {...roomDropHandlers}
+    >
+      {roomDrop ? (
+        <div className="tr-dropveil" data-testid="room-dropveil" aria-hidden>
+          <span>
+            <Ic name="file" size={14} />
+            Drop to attach to this reply — files, folders, images
+          </span>
+        </div>
+      ) : null}
       <div className="tr-head session-identity-head">
         <div className="tr-head-drag" />
         <button className="tr-back" data-testid="task-room-back" onClick={app.closeTaskRoom}>
@@ -241,6 +289,7 @@ export function TaskRoomView(): React.JSX.Element {
       </div>
 
       <div
+        ref={canvasBodyRef}
         className={`tr-body session-canvas-body ${app.sessionToolExpanded ? 'tool-expanded' : ''}`}
       >
         <div className="tr-main">
@@ -447,8 +496,9 @@ function RoomComposer({
   // ADR-0022 am.2: a picked element / drawn region waiting to ride this reply.
   const previewRef = useDraftStore((s) => s.previewRefs[task.id] ?? null);
   const codeRefs = useDraftStore((s) => s.codeRefs[task.id] ?? EMPTY_CODE_CONTEXT_REFS);
+  // ADR-0024: file / folder / image chips riding the next turn.
+  const fileRefs = useDraftStore((s) => s.fileRefs[task.id] ?? EMPTY_FILE_REFS);
   const setInput = (text: string): void => useDraftStore.getState().setDraft(task.id, text);
-  const [dropActive, setDropActive] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const composerFocusSeq = useAppStore((s) => s.composerFocusSeq);
   const planOpen = task.state === 'AWAITING_PLAN_APPROVAL';
@@ -538,9 +588,11 @@ function RoomComposer({
           }
         : {}),
       codeRefs,
+      fileRefs,
     });
     if (ok) {
       useDraftStore.getState().clearPreviewRef(task.id);
+      useDraftStore.getState().clearFileRefs(task.id);
       const newId = useTaskStore.getState().activeTaskId;
       if (newId) app.openTaskRoom(newId);
     }
@@ -557,7 +609,11 @@ function RoomComposer({
       .join('\n\n');
     const text =
       [typed, terminalContext].filter(Boolean).join('\n\n') ||
-      (codeRefs.length > 0 ? 'Use the attached code selection as context for this turn.' : '');
+      (codeRefs.length > 0
+        ? 'Use the attached code selection as context for this turn.'
+        : fileRefs.length > 0
+          ? 'Use the attached files as context for this turn.'
+          : '');
     if (!text && !previewRef) return;
     let delivered = false;
     if (planOpen) {
@@ -584,6 +640,7 @@ function RoomComposer({
             ...(text.trim() ? { note: text.trim() } : {}),
           },
           codeRefs,
+          fileRefs,
         );
       } else {
         delivered = await store.send(
@@ -591,6 +648,7 @@ function RoomComposer({
           'steer',
           undefined,
           codeRefs,
+          fileRefs,
         );
       }
     } else {
@@ -599,54 +657,29 @@ function RoomComposer({
         modelDirty && providerId && modelId
           ? { providerId, modelId, thinkingLevel: thinking }
           : undefined;
-      delivered = await store.send(text, 'steer', override, codeRefs);
+      delivered = await store.send(text, 'steer', override, codeRefs, fileRefs);
       if (delivered) setModelDirty(false);
     }
     if (!delivered) return;
     setInput('');
     useDraftStore.getState().clearTerminalRefs(task.id);
     useDraftStore.getState().clearCodeRefs(task.id);
+    // Plan-change feedback rides codeRefs only — file chips stay for the next
+    // real turn instead of silently vanishing unsent (ADR-0024).
+    if (!planOpen) useDraftStore.getState().clearFileRefs(task.id);
     if (previewRef) useDraftStore.getState().clearPreviewRef(task.id);
   };
 
-  // Sidebar tree drag / picker → inline "@path" at the caret (context feeding;
-  // the reply is plain text, so refs travel inside the message itself).
-  const insertRef = (rel: string): void => {
-    const el = ref.current;
-    const token = `@${rel}`;
-    const start = el?.selectionStart ?? input.length;
-    const end = el?.selectionEnd ?? input.length;
-    const before = input.slice(0, start);
-    const after = input.slice(end);
-    const sep = before.length > 0 && !/\s$/.test(before) ? ' ' : '';
-    const caret = start + sep.length + token.length + 1;
-    setInput(`${before}${sep}${token} ${after}`);
-    setTimeout(() => {
-      el?.focus();
-      el?.setSelectionRange(caret, caret);
-    }, 0);
+  // ADR-0024: tree drags and @ picks land as structured chips above the input
+  // (the Room no longer smuggles inline "@path" prose into the reply text).
+  const attachRef = (rel: string): void => {
+    addFileRefWithToast(task.id, refFromRel(rel));
+    ref.current?.focus();
   };
 
   const pickFile = (path: string): void => {
     setPickerOpen(false);
-    insertRef(path);
-  };
-
-  const dragHandlers = {
-    onDragOver: (e: React.DragEvent): void => {
-      if (!hasDragRef(e)) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-      setDropActive(true);
-    },
-    onDragLeave: (): void => setDropActive(false),
-    onDrop: (e: React.DragEvent): void => {
-      const rel = readDragRef(e);
-      if (!rel) return;
-      e.preventDefault();
-      setDropActive(false);
-      insertRef(rel);
-    },
+    attachRef(path);
   };
 
   const placeholder = planOpen
@@ -680,6 +713,10 @@ function RoomComposer({
         setInput(e.target.value);
         slash.handleChange(e.target.value);
       }}
+      onPaste={(e) => {
+        // ADR-0024: pasted screenshots become image chips, not text.
+        if (handleComposerPaste(task.id, e)) e.preventDefault();
+      }}
       onKeyDown={(e) => {
         if (slash.handleKeyDown(e)) {
           e.preventDefault();
@@ -693,11 +730,13 @@ function RoomComposer({
     />
   );
 
+  const hasAttachments =
+    terminalRefs.length > 0 || Boolean(previewRef) || codeRefs.length > 0 || fileRefs.length > 0;
   const sendButton = (
     <button
-      className={`hm-send ${input.trim() || terminalRefs.length > 0 || previewRef || codeRefs.length > 0 ? 'ready' : ''}`}
+      className={`hm-send ${input.trim() || hasAttachments ? 'ready' : ''}`}
       data-testid="agent-send"
-      disabled={!input.trim() && terminalRefs.length === 0 && !previewRef && codeRefs.length === 0}
+      disabled={!input.trim() && !hasAttachments}
       aria-label={planOpen ? 'Request plan changes' : 'Send'}
       onClick={() => void send()}
     >
@@ -748,6 +787,72 @@ function RoomComposer({
       </div>
     ) : null;
 
+  // ADR-0024: one @ picker serves both composer variants — picks land chips.
+  const pickerMenu = pickerOpen ? (
+    <div className="hm-menu room-file-menu" data-testid="room-file-picker">
+      <input
+        ref={pickerInputRef}
+        data-testid="room-file-input"
+        placeholder="Reference a project file…"
+        value={pickerQuery}
+        onChange={(e) => setPickerQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            setPickerOpen(false);
+            ref.current?.focus();
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setPickerIndex(Math.min(pickerIndex + 1, pickerItems.length - 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setPickerIndex(Math.max(pickerIndex - 1, 0));
+          } else if (e.key === 'Enter' && pickerItems[pickerIndex]) {
+            e.preventDefault();
+            pickFile(pickerItems[pickerIndex]!);
+          }
+        }}
+      />
+      {pickerItems.map((path, i) => (
+        <button
+          key={path}
+          className={`hm-row ${i === pickerIndex ? 'active' : ''}`}
+          data-testid={`room-file-item-${path}`}
+          onClick={() => pickFile(path)}
+        >
+          <Ic name="file" size={13} />
+          <span className="hm-tt">{path}</span>
+        </button>
+      ))}
+      {pickerItems.length === 0 ? (
+        <div className="hm-sec" style={{ padding: '8px 10px' }}>
+          Type to search files in {task.projectName}.
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+
+  const attachButton = (
+    <button
+      className="hm-iconbtn"
+      data-testid="room-attach"
+      disabled={!sameProject}
+      title={
+        sameProject
+          ? 'Attach project files (or drop them anywhere in the room)'
+          : 'Open this project to attach files by name'
+      }
+      onClick={() => {
+        if (!sameProject) return;
+        setPickerOpen((v) => !v);
+        setPickerQuery('');
+        setPickerItems([]);
+        setTimeout(() => pickerInputRef.current?.focus(), 0);
+      }}
+    >
+      <Ic name="at" size={15} />
+    </button>
+  );
+
   // Mid-run / plan-awaiting: the mockup-A reply card (ADR-0014) — textarea on
   // top, trust level (fixed for the session) and the model·effort control in
   // the foot. ADR-0016: replies can re-pick model/effort for the next turn;
@@ -755,18 +860,17 @@ function RoomComposer({
   // read-only meta (the override rides on task.message only).
   if (!closed) {
     return (
-      <div
-        className={`tr-composer ${dropActive ? 'drop' : ''}`}
-        data-testid="room-composer"
-        {...dragHandlers}
-      >
+      <div className="tr-composer" data-testid="room-composer">
         <div className="tr-ccard">
           <CodeContextAttachments taskId={task.id} refs={codeRefs} />
+          <FileContextAttachments taskId={task.id} refs={fileRefs} />
           {previewChip}
           {terminalRefChips}
+          {pickerMenu}
           {textarea('tr-cinput')}
           {slash.menu}
           <div className="tr-cfoot">
+            {attachButton}
             <span className="tr-mode" title="The trust level is fixed for this task's session">
               {modeLabel(task.mode)}
             </span>
@@ -802,14 +906,11 @@ function RoomComposer({
 
   // Closed → follow-up: full composer parity with Home.
   return (
-    <div
-      className={`tr-composer follow ${dropActive ? 'drop' : ''}`}
-      data-testid="room-composer"
-      {...dragHandlers}
-    >
+    <div className="tr-composer follow" data-testid="room-composer">
       <div className="tr-fcard">
         <div className="hm-card">
           <CodeContextAttachments taskId={task.id} refs={codeRefs} />
+          <FileContextAttachments taskId={task.id} refs={fileRefs} />
           {previewChip}
           {terminalRefChips}
           <div className="hm-chiprow">
@@ -823,73 +924,14 @@ function RoomComposer({
               <span>{task.projectName}</span>
             </span>
 
-            {pickerOpen ? (
-              <div className="hm-menu" data-testid="room-file-picker">
-                <input
-                  ref={pickerInputRef}
-                  data-testid="room-file-input"
-                  placeholder="Reference a project file…"
-                  value={pickerQuery}
-                  onChange={(e) => setPickerQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      setPickerOpen(false);
-                      ref.current?.focus();
-                    } else if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      setPickerIndex(Math.min(pickerIndex + 1, pickerItems.length - 1));
-                    } else if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      setPickerIndex(Math.max(pickerIndex - 1, 0));
-                    } else if (e.key === 'Enter' && pickerItems[pickerIndex]) {
-                      e.preventDefault();
-                      pickFile(pickerItems[pickerIndex]!);
-                    }
-                  }}
-                />
-                {pickerItems.map((path, i) => (
-                  <button
-                    key={path}
-                    className={`hm-row ${i === pickerIndex ? 'active' : ''}`}
-                    data-testid={`room-file-item-${path}`}
-                    onClick={() => pickFile(path)}
-                  >
-                    <Ic name="file" size={13} />
-                    <span className="hm-tt">{path}</span>
-                  </button>
-                ))}
-                {pickerItems.length === 0 ? (
-                  <div className="hm-sec" style={{ padding: '8px 10px' }}>
-                    Type to search files in {task.projectName}.
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+            {pickerMenu}
           </div>
 
           {textarea('hm-ta tr-fta')}
           {slash.menu}
 
           <div className="hm-btmrow">
-            <button
-              className="hm-iconbtn"
-              data-testid="room-attach"
-              disabled={!sameProject}
-              title={
-                sameProject
-                  ? 'Attach project files (or drop them here)'
-                  : 'Open this project to attach files by name'
-              }
-              onClick={() => {
-                if (!sameProject) return;
-                setPickerOpen((v) => !v);
-                setPickerQuery('');
-                setPickerItems([]);
-                setTimeout(() => pickerInputRef.current?.focus(), 0);
-              }}
-            >
-              <Ic name="at" size={15} />
-            </button>
+            {attachButton}
             <div
               className="hm-seg"
               data-testid="room-mode"

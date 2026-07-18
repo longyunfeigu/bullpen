@@ -11,6 +11,7 @@ import { Ic, ProviderMark } from './home-icons.js';
 import { canArchiveTask, isAnswered, presentedMeta } from './labels.js';
 import { ArmedIconButton } from './ui.js';
 import { needsAttention } from './HomeSidebar.js';
+import { SessionFilesPane } from './SessionFilesPane.js';
 import { useGlowTasks } from './useGlow.js';
 import { sessionDisplayTitle } from '../store/sessionAttention.js';
 
@@ -24,8 +25,9 @@ type SessionEntry =
       projectName: string;
     };
 
-/** The rail's three contextual views inside the single navigation surface. */
-type RailView = 'sessions' | 'inbox' | 'projects';
+/** The rail's contextual views inside the single navigation surface.
+ * 'files' is the persistent context-feeding tree (ADR-0024, mock B+D). */
+type RailView = 'sessions' | 'inbox' | 'projects' | 'files';
 
 interface RailGroup {
   key: string;
@@ -72,7 +74,9 @@ function saveCollapsed(collapsed: ReadonlySet<string>): void {
 function loadRailView(): RailView {
   try {
     const saved = window.sessionStorage.getItem(VIEW_KEY);
-    if (saved === 'sessions' || saved === 'inbox' || saved === 'projects') return saved;
+    if (saved === 'sessions' || saved === 'inbox' || saved === 'projects' || saved === 'files') {
+      return saved;
+    }
   } catch {
     // Session-local navigation persistence is best effort.
   }
@@ -511,9 +515,57 @@ export function SessionRail(): React.JSX.Element {
     setView('sessions');
   };
 
+  // ADR-0024 (mock B+D): Sessions ⇄ Files segmented tabs. The attention dot on
+  // Sessions keeps needs-you visible while the Files tree is showing.
+  const railTabs = (
+    <div className="sr-tabs" role="tablist" aria-label="Rail panel">
+      <button
+        role="tab"
+        className={`sr-tab ${view === 'files' ? '' : 'active'}`}
+        data-testid="rail-tab-sessions"
+        aria-selected={view !== 'files'}
+        onClick={() => setView('sessions')}
+      >
+        <Ic name="terminal" size={12} />
+        <span>Sessions</span>
+        {inbox.length > 0 ? (
+          <span
+            className="sr-tab-dot"
+            data-testid="rail-tab-dot"
+            title={`${inbox.length} session(s) need you`}
+          />
+        ) : null}
+      </button>
+      <button
+        role="tab"
+        className={`sr-tab ${view === 'files' ? 'active' : ''}`}
+        data-testid="rail-tab-files"
+        aria-selected={view === 'files'}
+        onClick={() => setView('files')}
+      >
+        <Ic name="folder" size={12} />
+        <span>Files</span>
+      </button>
+    </div>
+  );
+
+  const filesPanel = (
+    <>
+      <header className="sr-head">
+        {railTabs}
+        <div className="sr-heading-row">
+          <strong>Files</strong>
+          <small>drag into a conversation</small>
+        </div>
+      </header>
+      <SessionFilesPane />
+    </>
+  );
+
   const sessionsPanel = (
     <>
       <header className="sr-head">
+        {railTabs}
         <div className="sr-heading-row">
           <strong>Sessions</strong>
           <small>{allEntries.length} sessions</small>
@@ -893,7 +945,13 @@ export function SessionRail(): React.JSX.Element {
         </button>
       </nav>
       <section className="sr-panel">
-        {view === 'inbox' ? inboxPanel : view === 'projects' ? projectsPanel : sessionsPanel}
+        {view === 'inbox'
+          ? inboxPanel
+          : view === 'projects'
+            ? projectsPanel
+            : view === 'files'
+              ? filesPanel
+              : sessionsPanel}
       </section>
     </aside>
   );

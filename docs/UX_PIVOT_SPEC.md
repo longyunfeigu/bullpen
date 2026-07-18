@@ -149,6 +149,26 @@ New acceptance:
 | PIVOT-038 | Sessions group by project with collapsible headers carrying "N need you" badges and counts; rows inside a group omit the project name; settled sessions (ACCEPTED/ROLLED_BACK/CANCELLED) fold into a default-collapsed cross-project History group; attention states never move to History; the open room's group auto-expands so the selected row is never hidden. |
 | PIVOT-039 | The sessions panel pins an amber "Needs you · N" row whenever sessions await the user, and ends with a resident working-context row naming the focused project with a one-click route to the Projects panel. Search and Settings live in the rail header. Files/Editor are contextual Project Tools before dispatch and Session File states after dispatch (⌘E expands the contextual editor), never global navigation. |
 
+## Room context feeding parity (ADR-0024, mock B+D)
+
+Mockup ancestry: `docs/design/context-attach-mockups/bd-fusion.html` (user
+decision 2026-07-18; drawer variant `d-hybrid.html` rejected, inline tokens
+deferred as plan E).
+
+Revisions to earlier acceptance (authoritative where they conflict):
+
+| ID | Revision |
+| --- | --- |
+| PIVOT-015r2 | Context feeding lands as **structured reference chips everywhere** — the Room's `@` picker and tree drags no longer insert inline `@path` prose. Home behavior (chips) unchanged. |
+| PIVOT-039r | The session rail's panel header carries **Sessions ⇄ Files segmented tabs**; the Files panel is a context-feeding drag source (persistent lazy tree + flat search results, hover quick-add), not global file navigation — file clicks keep the peek/Editor routing of PIVOT-027r. The Sessions tab shows an attention dot while another panel is active and sessions need the user. |
+
+New acceptance:
+
+| ID | Requirement |
+| --- | --- |
+| PIVOT-040 | Room reference chips: file / folder / image references attach to a reply as removable chips (with a clear-all), riding `task.message`/`task.start` beside code selections; caps 12 refs / 4 images per message; sent messages render their refs as read-only chips in the timeline from the recorded event payload. |
+| PIVOT-041 | Room drop parity: the whole Session room is one drop target (veil feedback) accepting sidebar-tree payloads and OS drops; in-project files/folders become path refs; out-of-project **images** are imported into `attachments/<taskId>/` (10 MB cap, decode-validated, never into the project tree) and delivered to the runtime as prompt images; out-of-project non-images are refused with an explanatory toast (phase-1 limit, ADR-0024). Pasting a clipboard image into the Room composer imports the same way. |
+
 ## Notes
 
 - Fast path vs full form: the shared Composer is the only creation path.

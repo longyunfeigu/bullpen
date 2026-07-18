@@ -47,6 +47,7 @@ import { registerReplayHandlers } from './ipc/replay-handlers.js';
 import { ReplayService } from './services/replay-service.js';
 import { registerImageHandlers } from './ipc/image-handlers.js';
 import { registerPreviewHandlers } from './ipc/preview-handlers.js';
+import { registerContextAttachmentHandlers } from './ipc/context-attachment-handlers.js';
 import { PreviewService } from './services/preview-service.js';
 import { ExternalSessionService } from './services/external-session-service.js';
 import { registerExternalHandlers } from './ipc/external-handlers.js';
@@ -570,6 +571,8 @@ if (!gotLock) {
         new PreviewService(logger.child('preview')),
         logger.child('ipc'),
       );
+      // ADR-0024: out-of-project image imports for context-feeding chips.
+      registerContextAttachmentHandlers(taskService, logger.child('ipc'));
 
       // ADR-0017: external CLI agent sessions (claude/codex in user terminals).
       externalSessionsRef = new ExternalSessionService(

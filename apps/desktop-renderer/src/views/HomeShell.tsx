@@ -13,6 +13,7 @@ import { FileLens } from './FileLens.js';
 import { NewProjectDialog } from './NewProjectDialog.js';
 import '../styles/home.css';
 import '../styles/room.css';
+import '../styles/context-refs.css';
 import '../styles/session-workbench.css';
 import '../styles/session-canvas.css';
 

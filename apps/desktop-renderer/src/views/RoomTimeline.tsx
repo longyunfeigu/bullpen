@@ -25,6 +25,7 @@ import { isAnswered, stateLabel, toolVerb } from './labels.js';
 import { Markdown } from './Markdown.js';
 import { roomCopyFor, type RoomCopy } from './roomCopy.js';
 import { SentCodeContext } from './CodeContextAttachments.js';
+import { SentFileRefs, type SentFileRefPayload } from './FileContextAttachments.js';
 
 /**
  * Task Room conversation: user and agent messages stay visually distinct,
@@ -588,6 +589,27 @@ function eventNode(
         : recorded.acceptance;
       const parsedCodeRefs = CodeContextRefsSchema.safeParse(payload.codeRefs ?? []);
       const codeRefs = parsedCodeRefs.success ? parsedCodeRefs.data : [];
+      // ADR-0024: file / folder / image references that rode this message.
+      const fileRefs: SentFileRefPayload[] = Array.isArray(payload.fileRefs)
+        ? payload.fileRefs.flatMap((value) => {
+            if (!value || typeof value !== 'object') return [];
+            const ref = value as Record<string, unknown>;
+            const kind =
+              ref.kind === 'file' || ref.kind === 'folder' || ref.kind === 'image'
+                ? ref.kind
+                : null;
+            if (!kind || typeof ref.name !== 'string') return [];
+            return [
+              {
+                kind,
+                name: ref.name,
+                ...(typeof ref.path === 'string' ? { path: ref.path } : {}),
+                ...(typeof ref.sizeBytes === 'number' ? { sizeBytes: ref.sizeBytes } : {}),
+                ...(typeof ref.thumbDataUrl === 'string' ? { thumbDataUrl: ref.thumbDataUrl } : {}),
+              },
+            ];
+          })
+        : [];
       return (
         <React.Fragment key={event.id}>
           <Bubble who="you" copy={copy} testid="tl-user">
@@ -619,6 +641,7 @@ function eventNode(
               </>
             ) : null}
             <SentCodeContext refs={codeRefs} />
+            <SentFileRefs refs={fileRefs} />
           </Bubble>
           <TaskContext
             acceptance={acceptance}

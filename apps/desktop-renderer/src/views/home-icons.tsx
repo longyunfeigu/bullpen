@@ -47,6 +47,13 @@ const PATHS: Record<string, React.JSX.Element> = {
   ),
   filter: <path d="M4 5h16l-6.5 7.2V19l-3 1v-7.8Z" />,
   chevron: <path d="m6 9 6 6 6-6" />,
+  image: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="m5 18 5-5 3 3 3.5-3.5L21 17" />
+    </>
+  ),
   branch: (
     <>
       <line x1="6" x2="6" y1="3" y2="15" />

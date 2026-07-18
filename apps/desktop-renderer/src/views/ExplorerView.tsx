@@ -7,6 +7,7 @@ import { useGitStatusStore, MARK_COLOR } from '../store/gitStatusStore.js';
 import { rpcResult } from '../bridge.js';
 import { useGlowPaths } from './useGlow.js';
 import { Ic } from './home-icons.js';
+import { setDragRef } from './dragRefs.js';
 
 interface Row {
   path: string;
@@ -247,6 +248,8 @@ export function ExplorerView(): React.JSX.Element {
                   data-testid={`tree-item-${row.path}`}
                   className={glowPaths.has(row.path) ? 'glow-pulse' : undefined}
                   title={row.path}
+                  draggable
+                  onDragStart={(e) => setDragRef(e, isDir ? `${row.path}/` : row.path)}
                   onClick={() => {
                     setSelection(row.path);
                     if (isDir) toggleExpand(row.path);

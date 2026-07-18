@@ -20,7 +20,12 @@ const MAX_ENTRIES = 200;
  * `fs.batch` watcher events refresh this tree live — agent-created files
  * appear as they are written and glow while the change is fresh (PIVOT-016).
  */
-export function HomeProjectTree(): React.JSX.Element {
+export function HomeProjectTree(props: {
+  /** Distinct testid when mounted outside Home (session Files pane, ADR-0024). */
+  testid?: string;
+  /** ADR-0024: hover “+” — attach a workspace-relative ref (dirs get a trailing /). */
+  onQuickAdd?: (rel: string) => void;
+}): React.JSX.Element {
   const app = useAppStore();
   const editor = useEditorStore();
   const glow = useGlowPaths();
@@ -54,6 +59,9 @@ export function HomeProjectTree(): React.JSX.Element {
     app.setProjectTool('files');
   };
 
+  const treeTestid = props.testid ?? 'home-project-tree';
+  const rowTestidPrefix = treeTestid === 'home-project-tree' ? 'home-tree' : treeTestid;
+
   const renderDir = (dir: string, depth: number): React.ReactNode => {
     const raw = dirs[dir];
     if (!raw) {
@@ -73,16 +81,26 @@ export function HomeProjectTree(): React.JSX.Element {
       const path = dir === '' ? entry.name : `${dir}/${entry.name}`;
       const isDir = entry.kind === 'dir';
       const isOpen = Boolean(expanded[path]);
+      const relPayload = isDir ? `${path}/` : path;
       return (
         <React.Fragment key={path}>
-          <button
+          <div
+            role="button"
+            tabIndex={0}
             className={`hm-tree-row ${glow.has(path) ? 'glow-pulse' : ''}`}
-            data-testid={`home-tree-${path}`}
+            data-testid={`${rowTestidPrefix}-${path}`}
             style={{ paddingLeft: 10 + depth * 12 }}
             title={path}
             draggable
-            onDragStart={(e) => setDragRef(e, isDir ? `${path}/` : path)}
+            onDragStart={(e) => setDragRef(e, relPayload)}
             onClick={(e) => (isDir ? toggleExpand(path) : openFile(path, e))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (isDir) toggleExpand(path);
+                else openFile(path);
+              }
+            }}
           >
             <span className={`hm-tree-caret ${isDir ? (isOpen ? 'open' : '') : 'none'}`}>
               {isDir ? <Ic name="chevron" size={11} /> : null}
@@ -97,7 +115,7 @@ export function HomeProjectTree(): React.JSX.Element {
             {!isDir && gitMarks[path] ? (
               <span
                 className="mono hm-tree-mark"
-                data-testid={`home-tree-mark-${path}`}
+                data-testid={`${rowTestidPrefix}-mark-${path}`}
                 style={{
                   color: MARK_COLOR[gitMarks[path]!],
                   fontSize: 9.5,
@@ -109,7 +127,22 @@ export function HomeProjectTree(): React.JSX.Element {
                 {gitMarks[path]}
               </span>
             ) : null}
-          </button>
+            {props.onQuickAdd ? (
+              <button
+                type="button"
+                className="hm-tree-add"
+                aria-label={`Attach ${path} to the conversation`}
+                data-testid={`${rowTestidPrefix}-add-${path}`}
+                title="Attach to the conversation"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onQuickAdd?.(relPayload);
+                }}
+              >
+                <Ic name="plus" size={11} />
+              </button>
+            ) : null}
+          </div>
           {isDir && isOpen ? renderDir(path, depth + 1) : null}
         </React.Fragment>
       );
@@ -117,7 +150,7 @@ export function HomeProjectTree(): React.JSX.Element {
   };
 
   return (
-    <div className="hm-tree" data-testid="home-project-tree">
+    <div className="hm-tree" data-testid={treeTestid}>
       {renderDir('', 0)}
     </div>
   );

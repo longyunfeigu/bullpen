@@ -1,0 +1,336 @@
+/* ADR-0024: Room context feeding — file/folder/image chips, the room-wide
+ * drop veil, the session-rail Files pane and the Sessions⇄Files tabs. */
+
+/* ---------------------------------------------- composer chips (fileRefs) */
+
+.file-context-attachments {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 0;
+}
+
+.file-context-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--fg-faint);
+  font-size: 10.5px;
+}
+
+.file-context-heading > span:first-child {
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+
+.file-context-clear {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--fg-faint);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.file-context-clear:hover {
+  color: var(--danger);
+  text-decoration: underline;
+}
+
+.file-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.file-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  min-height: 26px;
+  padding: 2px 6px 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: var(--bg-chip);
+  color: var(--fg);
+  font-size: 11px;
+}
+
+.file-ref-chip.kind-folder > .app-icon {
+  color: var(--warning);
+}
+
+.file-ref-chip.kind-image > .app-icon {
+  color: var(--info);
+}
+
+.file-ref-thumb {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.file-ref-name {
+  overflow: hidden;
+  max-width: 170px;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-ref-meta {
+  flex: none;
+  color: var(--fg-faint);
+  font-size: 9.5px;
+}
+
+.file-ref-remove {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-faint);
+  cursor: pointer;
+}
+
+.file-ref-remove:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* ------------------------------------------------ timeline sent refs */
+
+.rt-file-refs {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.rt-file-refs-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  opacity: 0.75;
+}
+
+.rt-file-refs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.file-ref-chip.sent {
+  min-height: 22px;
+  border-color: color-mix(in srgb, currentColor 25%, transparent);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: inherit;
+  font-size: 10.5px;
+}
+
+.file-ref-chip.sent .file-ref-name {
+  font-size: 10.5px;
+}
+
+/* ------------------------------------------------- room-wide drop veil */
+
+.tr-root {
+  position: relative;
+}
+
+.tr-dropveil {
+  position: absolute;
+  z-index: 60;
+  inset: 8px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 96px;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.tr-dropveil > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-input);
+  box-shadow: var(--shadow-card);
+  font-size: 12px;
+}
+
+/* @ picker anchored inside the mid-run reply card */
+
+.tr-ccard {
+  position: relative;
+}
+
+.tr-ccard .hm-menu.room-file-menu {
+  position: absolute;
+  z-index: 40;
+  bottom: calc(100% + 6px);
+  left: 8px;
+  right: 8px;
+}
+
+/* --------------------------------------------- session rail: tabs + pane */
+
+.sr-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--bg-chip);
+}
+
+.sr-tab {
+  position: relative;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 25px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sr-tab.active {
+  border-color: var(--border-strong);
+  background: var(--bg-input);
+  color: var(--fg);
+  font-weight: 650;
+}
+
+.sr-tab-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.sr-files-pane {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sr-files-project {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  padding: 2px 14px 8px;
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.sr-files-project strong {
+  overflow: hidden;
+  max-width: 55%;
+  flex: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sr-files-project > .app-icon {
+  align-self: center;
+  color: var(--fg-muted);
+}
+
+.sr-files-project small {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--fg-faint);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sr-files-search {
+  margin: 0 12px 8px;
+}
+
+.sr-files-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 0 6px 10px;
+}
+
+.sr-files-results {
+  display: grid;
+  gap: 1px;
+}
+
+.sr-files-result {
+  cursor: grab;
+}
+
+.sr-files-empty {
+  padding: 18px 14px;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+}
+
+.sr-files-tip {
+  display: flex;
+  gap: 7px;
+  margin: 0;
+  padding: 9px 14px 12px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.sr-files-tip > .app-icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--fg-faint);
+}
+
+/* hover “+” on tree rows (only rendered when a room can receive chips) */
+
+.hm-tree-add {
+  display: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-card);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.hm-tree-row:hover .hm-tree-add,
+.hm-tree-row:focus-visible .hm-tree-add {
+  display: grid;
+}
+
+.hm-tree-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

@@ -220,9 +220,8 @@
         <h1>Session 上下文附件 · 方案 D 终案 + 4 个来源方向</h1>
         <p>
           目标:在 Session 视图里能把<strong>文件、文件夹、图片</strong>作为上下文交给代理 ——
-          既支持拖拽,也要能看到项目里有什么。落点机制(chips / 粘贴 / 项目外→附件 / 发送闭环)已定,
-          <strong>现在二选一的只是拖源形态:方案 D(按需抽屉) vs 方案 B+D(常驻树)</strong>,
-          两张候选卡置顶;A / B / C / E 是来源方向,保留备查。
+          既支持拖拽,也要能看到项目里有什么。<strong>用户已拍板方案 B+D(常驻树融合,2026-07-18,
+          ADR-0024)</strong>,进入第一期实现;D(按需抽屉)落选,A / B / C / E 为来源方向,保留备查。
         </p>
       </header>
 
@@ -239,8 +238,8 @@
         <article class="card featured">
           <div class="kicker">
             <span class="letter">D</span>
-            <h2>混合终案 — A 的抽屉 + C 的落点</h2>
-            <span class="reco-badge">候选 1 · 按需抽屉</span>
+            <h2>混合方案 — A 的抽屉 + C 的落点</h2>
+            <span class="status-note">候选 1 · 未采用(抽屉形态落选)</span>
           </div>
           <p class="essence">
             第一期终案:<strong>@ 打开文件抽屉</strong>(树 + 搜索 + 会话改动,拖或点 ＋),
@@ -270,7 +269,7 @@
           <div class="kicker">
             <span class="letter" style="width: auto; padding: 0 9px">B+D</span>
             <h2>常驻树融合 — B 的 Files 页签 + D 的落点</h2>
-            <span class="reco-badge">候选 2 · 常驻树 · 应反馈新增</span>
+            <span class="reco-badge">已拍板 · 终案(2026-07-18 · ADR-0024)</span>
           </div>
           <p class="essence">
             与 D 的<strong>唯一分歧是拖源形态</strong>:左侧栏分成 Sessions / Files
