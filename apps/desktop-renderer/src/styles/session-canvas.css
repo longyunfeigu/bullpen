@@ -1127,15 +1127,17 @@ button.hm-board-now:hover {
 
 .session-action-dock.review-decision {
   min-height: 80px;
-  gap: 20px;
-  padding: 14px 24px;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  padding: 14px 16px;
 }
 
 .session-action-dock.review-decision .btn {
-  min-width: 142px;
   min-height: 44px;
   border-radius: 8px;
+  padding: 0 16px;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .session-action-dock.review-decision .quiet-danger {
@@ -1150,7 +1152,6 @@ button.hm-board-now:hover {
 }
 
 .session-action-dock.review-decision .session-approve {
-  min-width: 166px;
   background: var(--fg);
   color: var(--bg-editor);
 }
