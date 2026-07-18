@@ -54,11 +54,16 @@ test.describe('P4 review v2 + decorations (ADR-0013)', () => {
       await page.getByTestId('request-fix-note').fill('Use a clearer constant name here.');
       await page.getByTestId('request-fix-send').click();
 
-      // The feedback landed in the task room as a user message and starts a run.
+      // The feedback lands in the room as the user's note with the selected
+      // code attached as a structured review ref — the code-context rework
+      // replaced the old "Review feedback on <path>" prose message.
       await expect(page.getByTestId('task-room')).toBeVisible();
-      await expect(
-        page.getByTestId('tl-user').filter({ hasText: 'Review feedback on' }).first(),
-      ).toBeVisible({ timeout: 15000 });
+      const feedback = page
+        .getByTestId('tl-user')
+        .filter({ hasText: 'Use a clearer constant name here.' })
+        .first();
+      await expect(feedback).toBeVisible({ timeout: 15000 });
+      await expect(feedback.getByTestId('tl-code-context')).toBeVisible();
     } finally {
       await app.close();
     }

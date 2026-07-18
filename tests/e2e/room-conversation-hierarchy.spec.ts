@@ -42,7 +42,10 @@ test('task room prioritizes the conversation and folds execution metadata', asyn
     const positions = await Promise.all([user.boundingBox(), agent.boundingBox()]);
     expect(positions[0]).not.toBeNull();
     expect(positions[1]).not.toBeNull();
-    expect(positions[0]!.x).toBeLessThan(positions[1]!.x);
+    // Mockup-A sides (ADR-0014): the compact user request is right-aligned
+    // (max 72% width) while the agent answer owns the full reading surface
+    // from the left edge — so the user bubble always starts to the right.
+    expect(positions[0]!.x).toBeGreaterThan(positions[1]!.x);
 
     const presentation = await page.locator('.rt-col').evaluate((column) => {
       const pseudo = getComputedStyle(column, '::before');
@@ -86,7 +89,9 @@ test('task room prioritizes the conversation and folds execution metadata', asyn
     await expect(page.locator('[data-testid^="tl-tool-"]').first()).toBeVisible();
 
     await expect(page.getByTestId('review-bar-open')).toContainText('查看改动');
-    await expect(page.getByTestId('review-bar-accept')).toContainText('接受');
+    // Session-Canvas Action Dock (PIVOT-037): decision buttons carry the
+    // dock's English labels — Approve changes / Request changes / Rollback.
+    await expect(page.getByTestId('review-bar-accept')).toContainText('Approve changes');
     await page.getByTestId('review-bar-open').click();
     await expect(page.getByTestId('review-view')).toBeVisible();
     await page.getByTestId('review-close').click();
