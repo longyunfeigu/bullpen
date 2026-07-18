@@ -220,8 +220,9 @@
         <h1>Session 上下文附件 · 方案 D 终案 + 4 个来源方向</h1>
         <p>
           目标:在 Session 视图里能把<strong>文件、文件夹、图片</strong>作为上下文交给代理 ——
-          既支持拖拽,也要能看到项目里有什么。<strong>方案 D 是拍板中的混合终案</strong>(A 的抽屉 +
-          C 的落点机制,置顶);A / B / C / E 是它的四个来源方向,保留备查。
+          既支持拖拽,也要能看到项目里有什么。落点机制(chips / 粘贴 / 项目外→附件 / 发送闭环)已定,
+          <strong>现在二选一的只是拖源形态:方案 D(按需抽屉) vs 方案 B+D(常驻树)</strong>,
+          两张候选卡置顶;A / B / C / E 是来源方向,保留备查。
         </p>
       </header>
 
@@ -239,7 +240,7 @@
           <div class="kicker">
             <span class="letter">D</span>
             <h2>混合终案 — A 的抽屉 + C 的落点</h2>
-            <span class="reco-badge">推荐 · 待拍板</span>
+            <span class="reco-badge">候选 1 · 按需抽屉</span>
           </div>
           <p class="essence">
             第一期终案:<strong>@ 打开文件抽屉</strong>(树 + 搜索 + 会话改动,拖或点 ＋),
@@ -262,6 +263,35 @@
           <div class="open-row">
             <a class="open-link" href="./d-hybrid.html">打开方案 D</a>
             <small>d-hybrid.html</small>
+          </div>
+        </article>
+
+        <article class="card featured">
+          <div class="kicker">
+            <span class="letter" style="width: auto; padding: 0 9px">B+D</span>
+            <h2>常驻树融合 — B 的 Files 页签 + D 的落点</h2>
+            <span class="reco-badge">候选 2 · 常驻树 · 应反馈新增</span>
+          </div>
+          <p class="essence">
+            与 D 的<strong>唯一分歧是拖源形态</strong>:左侧栏分成 Sessions / Files
+            双页签,文件树<strong>常驻可见</strong>(边和代理聊边看目录,一次拖拽直达),不再需要抽屉;
+            落点机制与 D 完全一致 —— chips、粘贴截图、项目外复制进任务附件、发送后引用随消息进时间线。
+          </p>
+          <ul>
+            <li>树常驻:直接命中"看不到目录"的原始诉求;带会话改动徽标(+5 −2)</li>
+            <li>Sessions 页签带动态徽标 —— 在 Files 页签下也不会错过"需要你"的会话</li>
+            <li>@ 保持现有搜索拾取器(键盘路径);浏览交给常驻树,抽屉取消</li>
+            <li>树行悬停 ＋ 一键加入;拖到输入框或对话区任意位置均可</li>
+            <li>其余全部同 D:chips 统一、粘贴 → 缩略图、→ attachments/&lt;taskId&gt;/、发送闭环</li>
+            <li>代价:看树期间 Sessions 列表让位(徽标缓解);需一段 ADR 修订"无第二 Explorer"约束;树组件与 Home 树共用一份实现</li>
+          </ul>
+          <div class="tradeoff">
+            <span class="good">✓ 可见性最强;拖拽路径最短(无需先开抽屉);IDE 直觉</span>
+            <span class="cost">△ 侧栏在 Sessions/Files 间二选一;比 D 多一段 ADR 与页签状态管理</span>
+          </div>
+          <div class="open-row">
+            <a class="open-link" href="./bd-fusion.html">打开方案 B+D</a>
+            <small>bd-fusion.html</small>
           </div>
         </article>
 
@@ -294,7 +324,7 @@
           <div class="kicker">
             <span class="letter">B</span>
             <h2>会话内文件面板 — Sessions / Files 双页签</h2>
-            <span class="status-note">建议不采用</span>
+            <span class="status-note">树形态由 B+D 继承</span>
           </div>
           <p class="essence">
             左侧栏本身分成 Sessions 和 Files 两个页签:文件树<strong>常驻</strong>在会话旁边,任何行都能长途拖进输入框或对话区。
