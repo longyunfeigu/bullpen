@@ -141,7 +141,6 @@ function SessionTaskRow({
   now: number;
 }): React.JSX.Element {
   const app = useAppStore();
-  const taskStore = useTaskStore();
   const activity = useActivityStore((state) => state.perTask[task.id]);
   const glowTasks = useGlowTasks();
   const completion = app.sessionCompletionSignals.find((signal) => signal.taskId === task.id);
@@ -157,7 +156,7 @@ function SessionTaskRow({
   const live = task.external ? externalSession?.status === 'active' : running;
 
   const open = (): void => {
-    void taskStore.openTask(task.id);
+    void useTaskStore.getState().openTask(task.id);
     app.openTaskRoom(task.id);
   };
 
@@ -201,7 +200,7 @@ function SessionTaskRow({
           testid={`home-archive-${task.id}`}
           title="Archive session"
           armedTitle="Click again to archive"
-          onConfirm={() => void taskStore.archiveTask(task.id)}
+          onConfirm={() => void useTaskStore.getState().archiveTask(task.id)}
         />
       ) : null}
     </div>
@@ -266,10 +265,12 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export function SessionRail(): React.JSX.Element {
   const app = useAppStore();
   const workspaceStore = useWorkspaceStore();
-  const taskStore = useTaskStore();
+  // Subscribe to the task list only — the rail must not re-render on every
+  // streaming delta of whichever session is active.
+  const tasks = useTaskStore((s) => s.tasks);
   const terminalStore = useTerminalStore();
   const taskByTerminal = useExternalStore((state) => state.taskByTerminal);
-  const inbox = taskStore.tasks.filter((task) => !task.archived && needsAttention(task));
+  const inbox = tasks.filter((task) => !task.archived && needsAttention(task));
   const [recent, setRecent] = useState<RecentWorkspaceDto[]>([]);
   const [view, setViewState] = useState<RailView>(loadRailView);
   const [projectsPanelOpen, setProjectsPanelOpen] = useState(false);
@@ -295,8 +296,8 @@ export function SessionRail(): React.JSX.Element {
   };
 
   useEffect(() => {
-    taskStore.init();
-    void taskStore.refreshTasks();
+    useTaskStore.getState().init();
+    void useTaskStore.getState().refreshTasks();
     terminalStore.init();
     useExternalStore.getState().init();
     void rpcResult('workspace.recent', {}).then((result) => {
@@ -329,7 +330,7 @@ export function SessionRail(): React.JSX.Element {
   }, [addMenuOpen]);
 
   const allEntries = useMemo<SessionEntry[]>(() => {
-    const taskEntries: SessionEntry[] = taskStore.tasks
+    const taskEntries: SessionEntry[] = tasks
       .filter((task) => !task.archived)
       .map((task) => ({ key: `task:${task.id}`, kind: 'task', task }));
     const terminalEntries: SessionEntry[] = terminalStore.items
@@ -347,7 +348,7 @@ export function SessionRail(): React.JSX.Element {
         projectName: terminal.projectName,
       }));
     return [...terminalEntries.toReversed(), ...taskEntries];
-  }, [taskStore.tasks, terminalStore.items, taskByTerminal]);
+  }, [tasks, terminalStore.items, taskByTerminal]);
 
   // Search and Needs You always inspect the complete set. The default rail is
   // intentionally progressive so long histories stay lightweight.
@@ -494,7 +495,7 @@ export function SessionRail(): React.JSX.Element {
       if (!entry) return;
       event.preventDefault();
       if (entry.kind === 'task') {
-        void taskStore.openTask(entry.task.id);
+        void useTaskStore.getState().openTask(entry.task.id);
         app.openTaskRoom(entry.task.id);
       } else {
         app.openTerminalSession(entry.terminalId);
@@ -502,7 +503,7 @@ export function SessionRail(): React.JSX.Element {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [app, orderedEntries, taskStore]);
+  }, [app, orderedEntries]);
 
   const startSession = (projectPath?: string): void => {
     if (projectPath && workspaceStore.workspace?.path !== projectPath) {

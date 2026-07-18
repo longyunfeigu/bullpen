@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AskUserPromptDto,
   PermissionCardDto,
@@ -1204,49 +1204,63 @@ export function RoomTimeline({ task }: { task: TaskDto }): React.JSX.Element {
   }, [store.timeline.length, store.streaming?.text.length, store.streamingThinking?.text.length]);
 
   // Tool evidence stays available on demand, while repeated usage events are
-  // aggregated into one quiet run-details disclosure.
-  const runStartMs = store.timeline.length > 0 ? Date.parse(store.timeline[0]!.at) : Date.now();
-  const runEndMs =
-    store.timeline.length > 0
-      ? Date.parse(store.timeline[store.timeline.length - 1]!.at)
-      : runStartMs;
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let costUsd = 0;
-  let actionCount = 0;
-  for (const event of store.timeline) {
-    if (isLogRow(event)) actionCount += 1;
-    if (event.type !== 'agent.usage') continue;
-    const usage = (
-      event.payload as {
-        usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number | null };
+  // aggregated into one quiet run-details disclosure. Derived per timeline
+  // change, not per render: streaming deltas re-render this component many
+  // times a second and must not rebuild every event node (the streaming tail
+  // itself renders below, outside this memo).
+  const { grouped, runDurationMs, inputTokens, outputTokens, costUsd, actionCount } =
+    useMemo(() => {
+      const runStartMs = store.timeline.length > 0 ? Date.parse(store.timeline[0]!.at) : Date.now();
+      const runEndMs =
+        store.timeline.length > 0
+          ? Date.parse(store.timeline[store.timeline.length - 1]!.at)
+          : runStartMs;
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let costUsd = 0;
+      let actionCount = 0;
+      for (const event of store.timeline) {
+        if (isLogRow(event)) actionCount += 1;
+        if (event.type !== 'agent.usage') continue;
+        const usage = (
+          event.payload as {
+            usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number | null };
+          }
+        ).usage;
+        inputTokens += usage?.inputTokens ?? 0;
+        outputTokens += usage?.outputTokens ?? 0;
+        costUsd += usage?.costUsd ?? 0;
       }
-    ).usage;
-    inputTokens += usage?.inputTokens ?? 0;
-    outputTokens += usage?.outputTokens ?? 0;
-    costUsd += usage?.costUsd ?? 0;
-  }
-  const grouped: React.JSX.Element[] = [];
-  let logGroup: React.JSX.Element[] = [];
-  let logGroupKey = '';
-  const flushLog = (): void => {
-    if (logGroup.length > 0) {
-      grouped.push(<ActivityGroup key={`wl-${logGroupKey}`}>{logGroup}</ActivityGroup>);
-      logGroup = [];
-    }
-  };
-  for (const event of store.timeline) {
-    const node = eventNode(event, context, task, runStartMs, copy);
-    if (node === null) continue; // silent events never break a worklog
-    if (isLogRow(event)) {
-      if (logGroup.length === 0) logGroupKey = event.id;
-      logGroup.push(node);
-    } else {
+      const grouped: React.JSX.Element[] = [];
+      let logGroup: React.JSX.Element[] = [];
+      let logGroupKey = '';
+      const flushLog = (): void => {
+        if (logGroup.length > 0) {
+          grouped.push(<ActivityGroup key={`wl-${logGroupKey}`}>{logGroup}</ActivityGroup>);
+          logGroup = [];
+        }
+      };
+      for (const event of store.timeline) {
+        const node = eventNode(event, context, task, runStartMs, copy);
+        if (node === null) continue; // silent events never break a worklog
+        if (isLogRow(event)) {
+          if (logGroup.length === 0) logGroupKey = event.id;
+          logGroup.push(node);
+        } else {
+          flushLog();
+          grouped.push(node);
+        }
+      }
       flushLog();
-      grouped.push(node);
-    }
-  }
-  flushLog();
+      return {
+        grouped,
+        runDurationMs: Math.max(0, runEndMs - runStartMs),
+        inputTokens,
+        outputTokens,
+        costUsd,
+        actionCount,
+      };
+    }, [store.timeline, context, task, copy]);
 
   return (
     <div
@@ -1281,7 +1295,7 @@ export function RoomTimeline({ task }: { task: TaskDto }): React.JSX.Element {
             ) : null}
             <RunDetails
               actionCount={actionCount}
-              durationMs={Math.max(0, runEndMs - runStartMs)}
+              durationMs={runDurationMs}
               inputTokens={inputTokens}
               outputTokens={outputTokens}
               costUsd={costUsd}

@@ -1682,10 +1682,15 @@ export function TerminalRunStatusItem(): React.JSX.Element | null {
   const items = useTerminalStore((s) => s.items);
   useBlocksVersion((s) => s.versions);
   const [now, setNow] = useState(Date.now());
+  // Tick only while a command block is actually running; refresh immediately
+  // on start so a stale `now` can never yield a negative elapsed.
+  const hasRunningCommand = items.some((item) => item.blocks.runningBlock()?.kind === 'command');
   useEffect(() => {
+    if (!hasRunningCommand) return;
+    setNow(Date.now());
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [hasRunningCommand]);
   let target: { item: TermInstance; block: TermBlock } | null = null;
   for (const item of items) {
     const block = item.blocks.runningBlock();

@@ -641,7 +641,10 @@ export interface TimelineContext {
   taskState: string;
 }
 
-function TimelineCard({
+// Memoized: event objects are referentially stable in the store and `context`
+// is memoized per timeline change, so cards skip re-rendering during
+// streaming deltas and when unrelated events arrive.
+const TimelineCard = React.memo(function TimelineCard({
   event,
   context,
 }: {
@@ -1111,7 +1114,7 @@ function TimelineCard({
         </div>
       );
   }
-}
+});
 
 /** Cross-event context shared by every timeline consumer (panel + Task Room). */
 export function useTimelineContext(taskState: string, verificationCommands = 0): TimelineContext {
@@ -1191,6 +1194,20 @@ export function TimelineList({ taskState }: { taskState: string }): React.JSX.El
     if (el && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
   }, [store.timeline.length, store.streaming?.text.length]);
 
+  // Cards are derived per timeline change; streaming deltas re-render the
+  // list shell (for the live tail below) but must not rebuild every card.
+  const cards = React.useMemo(
+    () =>
+      store.timeline.map((event) => (
+        <TimelineCard
+          key={`${event.id}-${event.sequence}`}
+          event={event}
+          context={timelineContext}
+        />
+      )),
+    [store.timeline, timelineContext],
+  );
+
   return (
     <div
       ref={scrollRef}
@@ -1208,13 +1225,7 @@ export function TimelineList({ taskState }: { taskState: string }): React.JSX.El
         </div>
       ) : (
         <>
-          {store.timeline.map((event) => (
-            <TimelineCard
-              key={`${event.id}-${event.sequence}`}
-              event={event}
-              context={timelineContext}
-            />
-          ))}
+          {cards}
           {store.streamingThinking ? (
             <Card icon="bot" title="✦ Thinking…" testid="tl-thinking-live">
               <div className="text-muted" style={{ whiteSpace: 'pre-wrap', fontSize: 11.5 }}>

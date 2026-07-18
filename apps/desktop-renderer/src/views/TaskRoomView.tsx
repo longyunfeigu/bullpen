@@ -363,14 +363,17 @@ function ActivityStrip({
   const copy = roomCopyFor(taskText);
   const activity = useActivityStore((s) => s.perTask[taskId]);
   const streamingThinking = useTaskStore((s) => s.streamingThinking);
+  const current = activity?.current ?? null;
+  // The 1s elapsed tick only needs to run while an action is actually live;
+  // idle rooms render without a timer.
   const [, setTick] = useState(0);
   useEffect(() => {
+    if (!current) return;
     const timer = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [current]);
 
   const action = currentActionLine(activity);
-  const current = activity?.current ?? null;
   const elapsed = current
     ? Math.max(0, Math.round((Date.now() - Date.parse(current.at)) / 1000))
     : null;
