@@ -114,23 +114,28 @@
 
 | 任务 | 交付 | 依赖 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| M10-01 | 应用重启未完成任务扫描与恢复页 | M9 | NOT_STARTED |  |
-| M10-02 | Renderer/Worker/LSP/PTy crash injection | M6,M4 | NOT_STARTED |  |
-| M10-03 | DB corruption/migration backup/read-only mode | M2-03 | NOT_STARTED |  |
-| M10-04 | 支持包生成与脱敏预览 | M2-05 | NOT_STARTED |  |
-| M10-05 | 50 次 soak task runner | M9 | NOT_STARTED |  |
-| M10-06 | 无孤儿进程与资源清理测试 | M4-07,M6-02 | NOT_STARTED |  |
+| M10-01 | 应用重启未完成任务扫描与恢复页 | M9 | VERIFIED | INTERRUPTED 恢复入口（Home + AgentPanel Resume/Review/Roll back）+ 重启时孤儿 pending 权限在事件日志中取消；见 IMPLEMENTATION_STATUS.md M10 行 |
+| M10-02 | Renderer/Worker/LSP/PTy crash injection | M6,M4 | VERIFIED | m10-recovery.spec 3 E2E（E2E-020/022 + renderer crash）；worker 孤儿防护（port close + ppid watchdog） |
+| M10-03 | DB corruption/migration backup/read-only mode | M2-03 | VERIFIED | 启动安全模式（E2E m2-db-failure）+ 备份/校验（M2-03）+ disk-write-failure 单测 |
+| M10-04 | 支持包生成与脱敏预览 | M2-05 | VERIFIED | diagnostics.supportBundle 脱敏支持包 |
+| M10-05 | 50 次 soak task runner | M9 | VERIFIED | soak.spec 50-task run（opt-in），多次里程碑复跑（UX-ROOM-ENDING 亦过 50 laps） |
+| M10-06 | 无孤儿进程与资源清理测试 | M4-07,M6-02 | VERIFIED | 有序 will-quit teardown（gates → worker → DB last）；孤儿防护见 M10-02 |
 
 ## Milestone 11: 安全、性能、隐私与可访问性
 
+任务清单于 2026-07-18 按 **ADR-0025** 重定义：编号与 §16.4/16.5 + A11Y + PRIV 门槛锚定不变，
+「交付」改写为对现有代码（盘点基线 `e81b72e`）的差距收口，并显式纳入 pivot 新增面；
+新增 M11-07（隐私设置，原清单缺失项）。各项"已有底座"是现状记录，不是本任务交付物。
+
 | 任务 | 交付 | 依赖 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| M11-01 | Electron CSP/navigation/sandbox/fuses hardening | M2 | NOT_STARTED |  |
-| M11-02 | Secret scanning、日志/支持包脱敏 | M6-03,M10-04 | NOT_STARTED |  |
-| M11-03 | 50k files/10k events 性能 fixtures | M3,M6 | NOT_STARTED |  |
-| M11-04 | 虚拟化、背压、输出限制、取消优化 | M11-03 | NOT_STARTED |  |
-| M11-05 | 键盘、焦点、ARIA、缩放、accessible diff | M3,M8 | NOT_STARTED |  |
-| M11-06 | 安全与性能门槛报告 | M11 | NOT_STARTED |  |
+| M11-01 | Electron 硬化收口：接入 @electron/fuses（runAsNode/nodeCliInspect 关闭、asar 完整性、onlyLoadAppFromAsar）；立起 `npm run test:security` 双入口（vitest.security.config.ts + tests/security/playwright.config.ts），归拢散落于普通套件的遍历/符号链接/越界用例；CSP、外部导航、未知协议、恶意 Markdown 链接 e2e 矩阵（§16.4）；预览 iframe sandbox 与 element-picker 注入边界审计（ADR-0022）。已有底座：security.ts（will-navigate/webview/permission 拦截 + 外链 allowlist）、csp.ts 单测钉定、sandbox 三开关自 M1 | M2 | NOT_STARTED |  |
+| M11-02 | 秘密不可检出四路验收（§16.4：renderer heap snapshot、localStorage、普通日志、支持包中 API Key 均不可检出）；secret scanning 覆盖 pivot 新增秘密路径：Provider keychain + 非敏感 meta（ADR-0009 am.1）、外部 CLI 转录读取（ADR-0017）、预览截图与任务附件（ADR-0022/0024）；repo/CI 层扫描。已有底座：foundation/redact.ts 默认接入 logger、M10-04 脱敏支持包 | M6-03,M10-04,M11-01 | NOT_STARTED |  |
+| M11-03 | 性能 fixture 与 `test:perf` 入口：50k 文件 / 1GB 文本生成器（§16.5 参考负载）；vitest.perf.config.ts 使命令可运行并收拢已有 10k 用例；§16.5 harness：冷启动 p95、输入→绘制 p95、Quick Open/全局搜索首批、Timeline 新事件 p95、空闲内存基线。已有底座：10k 文件懒加载树（M3）、REPLAY-V3 10k-fact perf gate + 10k-event ledger e2e | M3,M6 | NOT_STARTED |  |
+| M11-04 | Room 壳虚拟化与背压：RoomTimeline 10k 事件窗口化（PIVOT-037 后唯一主表面，现无虚拟化；repo-clean `7421d2e` 的 memo 化只消除了逐 token 重建，不是窗口化）；常驻 Session Rail ticker / Live Board 事件背压；Agent/搜索/LSP 大输出 renderer 冻结 ≤500ms 门与取消路径复核（§16.5）。已有底座：Replay Explore 虚拟化、终端 scrollback 裁剪、gateway/搜索输出截断、流式 memo 化 | M11-03 | NOT_STARTED |  |
+| M11-05 | 新壳可访问性：核心流程 Home→Room→Session Canvas→审查 Dock 仅键盘完成（A11Y-001）；UI 缩放 80–200%（A11Y-003，现零实现）；流式 live region 审计（A11Y-004）；accessible diff 文本模式 + 逐变更导航（A11Y-005，现缺失）；颜色非唯一信号复核（A11Y-002）。已有底座：aria-\* 55 文件、aria-live 5 处、⌘1-9/⌘[⌘]、splitter ARIA range。依赖 M11-04：窗口化改变 timeline DOM/焦点语义，先虚拟化再审计 | M11-04 | NOT_STARTED |  |
+| M11-06 | 安全与性能门槛报告：§16.4/16.5 全项对照矩阵 + 依赖/许可证扫描（无未处置 Critical/High）+ 未达项分析与发布评审记录（如内存单项）；作为 M11 退出证据汇总 | M11-01..05,M11-07 | NOT_STARTED |  |
+| M11-07 | 隐私设置落地（PRIV-001..003，原清单缺失项，spec §14 M11 交付明确包含）：Privacy 开关接真实语义或诚实降级——现状 settings.privacy 两开关（默认 false）在 schema 与 SettingsView 之外零消费者，Crash reports 文案描述了不存在的 redacted preview（规则 9 挂账，见 ADR-0025）；开启分析前字段列表；崩溃上报独立 opt-in + 脱敏预览（复用 M10-04 脱敏）；本地数据位置展示、保留策略、一键删除历史/缓存 | M2-04,M10-04 | NOT_STARTED |  |
 
 ## Milestone 12: 安装、更新与 Stable
 
