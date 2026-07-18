@@ -77,6 +77,9 @@ const RULES = [
   {
     id: 'pi-only-in-adapter',
     check(path, spec) {
+      // Reading the SDK's package.json (version metadata for the About surface)
+      // executes no Pi code and is allowed anywhere; importing code modules is not.
+      if (spec.endsWith('/package.json')) return false;
       return spec.startsWith('@earendil-works/') && !path.startsWith('packages/agent-runtime-pi/');
     },
   },
@@ -132,8 +135,10 @@ const RULES = [
   },
 ];
 
+// The require branch matches aliased requires too (require_, requireX — the
+// createRequire idiom), so a renamed binding cannot slip past the rules.
 const IMPORT_RE =
-  /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|require\(\s*['"]([^'"]+)['"]\s*\)|import\s*['"]([^'"]+)['"]/g;
+  /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|\brequire\w*\(\s*['"]([^'"]+)['"]\s*\)|import\s*['"]([^'"]+)['"]/g;
 
 export function extractImports(content) {
   const specs = [];

@@ -19,6 +19,22 @@ describe('dependency boundary rules', () => {
     expect(violations[0]!.rule).toBe('pi-only-in-adapter');
   });
 
+  it('catches aliased requires (createRequire idiom) but allows package.json metadata reads', () => {
+    const violations = checkBoundaries([
+      {
+        path: 'apps/desktop-main/src/bad.ts',
+        content: "const sdk = require_('@earendil-works/pi-coding-agent');",
+      },
+      {
+        path: 'apps/desktop-main/src/ok.ts',
+        content: "const pkg = require_('@earendil-works/pi-coding-agent/package.json');",
+      },
+    ]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.path).toContain('bad.ts');
+    expect(violations[0]!.rule).toBe('pi-only-in-adapter');
+  });
+
   it('blocks electron and node builtins in the renderer', () => {
     const violations = checkBoundaries([
       {
