@@ -31,6 +31,7 @@ import { ProviderApiSchema, ProviderInfoSchema } from './providers.js';
 import { SkillDtoSchema, SkillSourceDtoSchema } from './skills.js';
 import {
   ExternalMemoryFileDtoSchema,
+  MemoryAgentsTreeDtoSchema,
   MemoryCandidateDtoSchema,
   MemoryOverviewDtoSchema,
   MemoryRuleDtoSchema,
@@ -1231,6 +1232,8 @@ export const CHANNELS = {
     z.object({ path: z.string(), content: z.string(), binary: z.boolean() }),
   ),
   // ---- Project memory (ADR-0028): shared rules source + external private memory ----
+  // IA v3 spine: agents at the top, each agent = global memory + per-project groups.
+  'memory.tree': ch('memory.tree', 1, z.object({}).strict(), MemoryAgentsTreeDtoSchema),
   'memory.overview': ch(
     'memory.overview',
     1,

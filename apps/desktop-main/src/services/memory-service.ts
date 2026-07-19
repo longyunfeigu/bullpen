@@ -20,6 +20,7 @@ import { errorMessage, productError, ProductFailure, type Logger } from '@pi-ide
 import type { SqlDatabase } from '@pi-ide/persistence';
 import type {
   ExternalMemoryFileDto,
+  MemoryAgentsTreeDto,
   MemoryCandidateDto,
   MemoryCandidateOrigin,
   MemoryOverviewDto,
@@ -120,6 +121,67 @@ export class MemoryService {
     this.recordTaskEvent = options.recordTaskEvent ?? null;
     this.now = options.now ?? (() => new Date());
     this.idFactory = options.idFactory ?? defaultRuleId;
+  }
+
+  // ─────────────────────────── agents tree (IA v3) ───────────────────────────
+
+  /**
+   * Panel spine: agents at the top; each agent = global memory + per-project
+   * groups. Claude's project list is the FULL set under ~/.claude/projects
+   * (matched Charter workspaces get their display name, foreign dirs keep the
+   * munged name); Charter's list is every opened workspace with rule/candidate
+   * counts (per-project detail loads lazily via memory.overview).
+   */
+  agentsTree(): MemoryAgentsTreeDto {
+    const workspaces = (
+      this.db
+        .prepare(
+          `SELECT id, canonical_path, display_name FROM workspaces ORDER BY last_opened_at DESC LIMIT 200`,
+        )
+        .all() as unknown as { id: string; canonical_path: string; display_name: string }[]
+    ).map((row) => ({ id: row.id, path: row.canonical_path, displayName: row.display_name }));
+
+    const external = this.discoverExternal
+      ? this.external.listAll(workspaces)
+      : { claudeGlobal: [], codexGlobal: [], claudeProjects: [] };
+
+    const candidateCounts = new Map(
+      (
+        this.db
+          .prepare(
+            `SELECT workspace_id, COUNT(*) AS n FROM memory_candidates WHERE status = 'pending' GROUP BY workspace_id`,
+          )
+          .all() as unknown as { workspace_id: string; n: number }[]
+      ).map((row) => [row.workspace_id, row.n]),
+    );
+
+    const charterProjects = workspaces.map((ws) => {
+      let ruleCount = 0;
+      let enabledCount = 0;
+      try {
+        const rules = listRules(this.loadModel(ws.path).model);
+        ruleCount = rules.length;
+        enabledCount = rules.filter((rule) => rule.enabled).length;
+      } catch (error) {
+        this.logger.warn('memory.tree.rules.failed', {
+          path: ws.path,
+          message: errorMessage(error),
+        });
+      }
+      return {
+        projectPath: ws.path,
+        displayName: ws.displayName,
+        ruleCount,
+        enabledCount,
+        candidateCount: candidateCounts.get(ws.id) ?? 0,
+      };
+    });
+
+    return {
+      claude: { global: external.claudeGlobal, projects: external.claudeProjects },
+      codex: { global: external.codexGlobal },
+      charter: { projects: charterProjects },
+    };
   }
 
   // ─────────────────────────── overview ───────────────────────────

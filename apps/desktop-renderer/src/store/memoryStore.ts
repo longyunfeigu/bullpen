@@ -1,22 +1,23 @@
 import { create } from 'zustand';
 import type {
-  ExternalMemoryFileDto,
+  MemoryAgentsTreeDto,
   MemoryCandidateDto,
   MemoryOverviewDto,
   MemorySyncTarget,
 } from '@pi-ide/ipc-contracts';
 import { onEvent, rpcResult } from '../bridge.js';
 import { okOrToast, useAppStore } from './appStore.js';
-import { useWorkspaceStore } from './workspaceStore.js';
 
 /**
- * Project memory (ADR-0028): the memory panel + distill cards. `refresh()`
- * re-reads .charter/rules.md through main, so hand edits show up on the next
- * pull; `memory.changed` broadcasts keep every open surface current.
+ * Project memory (ADR-0028, IA v3): the panel spine is `memory.tree`
+ * (agents → global + project groups); Charter project detail loads lazily via
+ * `memory.overview`. Every mutation names its project explicitly — the panel
+ * never depends on "the currently focused workspace".
  */
 interface MemoryStore {
-  overview: MemoryOverviewDto | null;
-  external: ExternalMemoryFileDto[];
+  tree: MemoryAgentsTreeDto | null;
+  /** Lazily loaded Charter project detail, keyed by projectPath. */
+  projectOverviews: Record<string, MemoryOverviewDto>;
   /** Pending candidates per task (distill cards in the Task Room). */
   taskCandidates: Record<string, MemoryCandidateDto[]>;
   /** projectPath owning each task's candidates (resolve calls need it). */
@@ -26,39 +27,44 @@ interface MemoryStore {
 
   init(): void;
   refresh(): Promise<void>;
+  refreshProject(projectPath: string): Promise<void>;
   refreshTask(taskId: string): Promise<void>;
-  addRule(text: string, group?: string): Promise<boolean>;
+  addRule(projectPath: string, text: string, group?: string): Promise<boolean>;
   updateRule(
+    projectPath: string,
     ruleId: string,
     patch: { text?: string; group?: string; enabled?: boolean },
   ): Promise<void>;
-  removeRule(ruleId: string): Promise<void>;
+  removeRule(projectPath: string, ruleId: string): Promise<void>;
   resolveCandidate(input: {
+    projectPath: string;
     candidateId: string;
     action: 'approve' | 'dismiss';
     editedText?: string;
-    projectPath?: string;
   }): Promise<boolean>;
-  setSyncEnabled(target: MemorySyncTarget, enabled: boolean): Promise<void>;
-  applySync(target?: MemorySyncTarget): Promise<void>;
-  resolveDrift(target: MemorySyncTarget, action: 'import' | 'overwrite' | 'stop'): Promise<void>;
-  scanImport(): Promise<{ text: string; source: 'claude-md' | 'agents-md' }[]>;
-  applyImport(items: { text: string; source: 'claude-md' | 'agents-md' }[]): Promise<number>;
+  setSyncEnabled(projectPath: string, target: MemorySyncTarget, enabled: boolean): Promise<void>;
+  applySync(projectPath: string, target?: MemorySyncTarget): Promise<void>;
+  resolveDrift(
+    projectPath: string,
+    target: MemorySyncTarget,
+    action: 'import' | 'overwrite' | 'stop',
+  ): Promise<void>;
+  scanImport(projectPath: string): Promise<{ text: string; source: 'claude-md' | 'agents-md' }[]>;
+  applyImport(
+    projectPath: string,
+    items: { text: string; source: 'claude-md' | 'agents-md' }[],
+  ): Promise<number>;
   readExternal(
     fileId: string,
   ): Promise<{ content: string; truncated: boolean; path: string; mtimeMs: number } | null>;
   writeExternal(fileId: string, content: string, expectedMtimeMs: number | null): Promise<boolean>;
   deleteExternal(fileId: string): Promise<string | null>;
-  promoteExternal(fileId: string): Promise<boolean>;
-}
-
-function currentProjectPath(): string | null {
-  return useWorkspaceStore.getState().workspace?.path ?? null;
+  promoteExternal(projectPath: string, fileId: string): Promise<boolean>;
 }
 
 export const useMemoryStore = create<MemoryStore>((set, get) => ({
-  overview: null,
-  external: [],
+  tree: null,
+  projectOverviews: {},
   taskCandidates: {},
   taskProjects: {},
   loaded: false,
@@ -76,23 +82,18 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   },
 
   async refresh() {
-    const projectPath = currentProjectPath();
-    // Global CLI files stay browsable without a project — '/' munges to a
-    // nonexistent Claude project dir, so only home-level files come back.
-    const externalPath = projectPath ?? '/';
-    const [overviewRes, externalRes] = await Promise.all([
-      projectPath ? rpcResult('memory.overview', { projectPath }) : Promise.resolve(null),
-      rpcResult('memory.external.list', { projectPath: externalPath }),
-    ]);
-    set({
-      ...(overviewRes === null
-        ? { overview: null }
-        : overviewRes.ok
-          ? { overview: overviewRes.data }
-          : {}),
-      ...(externalRes.ok ? { external: externalRes.data.files } : {}),
-      loaded: true,
-    });
+    const res = await rpcResult('memory.tree', {});
+    if (res.ok) set({ tree: res.data, loaded: true });
+    // Keep already-expanded Charter groups current.
+    for (const projectPath of Object.keys(get().projectOverviews)) {
+      void get().refreshProject(projectPath);
+    }
+  },
+
+  async refreshProject(projectPath) {
+    const res = await rpcResult('memory.overview', { projectPath });
+    if (!res.ok) return;
+    set({ projectOverviews: { ...get().projectOverviews, [projectPath]: res.data } });
   },
 
   async refreshTask(taskId) {
@@ -104,40 +105,32 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     });
   },
 
-  async addRule(text, group) {
-    const projectPath = get().overview?.projectPath ?? currentProjectPath();
-    if (!projectPath) return false;
+  async addRule(projectPath, text, group) {
     const res = await rpcResult('memory.rules.add', {
       projectPath,
       text,
       ...(group !== undefined ? { group } : {}),
     });
     if (!okOrToast(res)) return false;
-    await get().refresh();
+    await get().refreshProject(projectPath);
     return true;
   },
 
-  async updateRule(ruleId, patch) {
-    const projectPath = get().overview?.projectPath;
-    if (!projectPath) return;
+  async updateRule(projectPath, ruleId, patch) {
     const res = await rpcResult('memory.rules.update', { projectPath, ruleId, ...patch });
     if (!okOrToast(res)) return;
-    await get().refresh();
+    await get().refreshProject(projectPath);
   },
 
-  async removeRule(ruleId) {
-    const projectPath = get().overview?.projectPath;
-    if (!projectPath) return;
+  async removeRule(projectPath, ruleId) {
     const res = await rpcResult('memory.rules.remove', { projectPath, ruleId });
     if (!okOrToast(res)) return;
-    await get().refresh();
+    await get().refreshProject(projectPath);
   },
 
-  async resolveCandidate({ candidateId, action, editedText, projectPath }) {
-    const path = projectPath ?? get().overview?.projectPath ?? currentProjectPath();
-    if (!path) return false;
+  async resolveCandidate({ projectPath, candidateId, action, editedText }) {
     const res = await rpcResult('memory.candidates.resolve', {
-      projectPath: path,
+      projectPath,
       candidateId,
       action,
       ...(editedText !== undefined ? { editedText } : {}),
@@ -146,54 +139,45 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     if (action === 'approve') {
       useAppStore.getState().pushToast('success', 'Distilled into a project rule.');
     }
-    await get().refresh();
+    await get().refreshProject(projectPath);
     return true;
   },
 
-  async setSyncEnabled(target, enabled) {
-    const projectPath = get().overview?.projectPath;
-    if (!projectPath) return;
+  async setSyncEnabled(projectPath, target, enabled) {
     const res = await rpcResult('memory.sync.setEnabled', { projectPath, target, enabled });
     if (!okOrToast(res)) return;
-    await get().refresh();
+    await get().refreshProject(projectPath);
   },
 
-  async applySync(target) {
-    const projectPath = get().overview?.projectPath;
-    if (!projectPath) return;
+  async applySync(projectPath, target) {
     const res = await rpcResult('memory.sync.apply', {
       projectPath,
       ...(target !== undefined ? { target } : {}),
     });
     if (!okOrToast(res)) return;
-    await get().refresh();
+    await get().refreshProject(projectPath);
   },
 
-  async resolveDrift(target, action) {
-    const projectPath = get().overview?.projectPath;
-    if (!projectPath) return;
+  async resolveDrift(projectPath, target, action) {
     const res = await rpcResult('memory.sync.resolveDrift', { projectPath, target, action });
     if (!okOrToast(res)) return;
     if (action === 'import' && res.data.candidateId) {
       useAppStore.getState().pushToast('success', 'Hand edits moved to candidates for review.');
     }
-    await get().refresh();
+    await get().refreshProject(projectPath);
   },
 
-  async scanImport() {
-    const projectPath = get().overview?.projectPath;
-    if (!projectPath) return [];
+  async scanImport(projectPath) {
     const res = await rpcResult('memory.import.scan', { projectPath });
     if (!okOrToast(res)) return [];
     return res.data.items;
   },
 
-  async applyImport(items) {
-    const projectPath = get().overview?.projectPath;
-    if (!projectPath || items.length === 0) return 0;
+  async applyImport(projectPath, items) {
+    if (items.length === 0) return 0;
     const res = await rpcResult('memory.import.apply', { projectPath, items });
     if (!okOrToast(res)) return 0;
-    await get().refresh();
+    await get().refreshProject(projectPath);
     return res.data.added;
   },
 
@@ -218,16 +202,12 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     return res.data.backedUpTo;
   },
 
-  async promoteExternal(fileId) {
-    const projectPath = get().overview?.projectPath ?? currentProjectPath();
-    if (!projectPath) {
-      useAppStore.getState().pushToast('warning', 'Open a project first — rules are per-project.');
-      return false;
-    }
+  async promoteExternal(projectPath, fileId) {
     const res = await rpcResult('memory.external.promote', { projectPath, fileId });
     if (!okOrToast(res)) return false;
     useAppStore.getState().pushToast('success', 'Copied into rule candidates (one-way).');
     await get().refresh();
+    await get().refreshProject(projectPath);
     return true;
   },
 }));

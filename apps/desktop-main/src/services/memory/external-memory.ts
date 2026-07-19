@@ -32,6 +32,7 @@ import { isInsidePath, writeFileAtomicDurable } from './fs-utils.js';
 const READ_CAP = 512 * 1024;
 const SUMMARY_SCAN_BYTES = 4096;
 const MAX_MEMORY_NOTES = 200;
+const MAX_PROJECT_GROUPS = 100;
 
 interface KnownFile {
   absPath: string;
@@ -46,6 +47,20 @@ export interface ExternalMemoryStoreOptions {
   /** Backup directory for deletes (userData/memory/trash). */
   trashDir: string;
   now?: () => Date;
+}
+
+export interface KnownWorkspace {
+  path: string;
+  displayName: string;
+}
+
+/** One ~/.claude/projects/<munged>/memory group (IA v3). */
+export interface ClaudeProjectGroup {
+  key: string;
+  displayName: string;
+  /** Matched Charter project path; null = Claude-only directory. */
+  projectPath: string | null;
+  files: ExternalMemoryFileDto[];
 }
 
 function fail(code: string, userMessage: string, technicalMessage?: string): ProductFailure {
@@ -73,6 +88,74 @@ export class ExternalMemoryStore {
     this.collectClaudeProjectMemory(out, projectPath);
     this.collect(out, 'codex', 'global', 'instructions', join(this.home, '.codex', 'AGENTS.md'));
     return out;
+  }
+
+  /**
+   * IA v3 spine: global files per agent + EVERY Claude auto-memory project
+   * group under ~/.claude/projects (not just the focused project). Group dirs
+   * matching a known Charter workspace (by munged literal or realpath) show
+   * its display name; foreign dirs keep the raw munged name.
+   */
+  listAll(known: KnownWorkspace[]): {
+    claudeGlobal: ExternalMemoryFileDto[];
+    codexGlobal: ExternalMemoryFileDto[];
+    claudeProjects: ClaudeProjectGroup[];
+  } {
+    const claudeGlobal: ExternalMemoryFileDto[] = [];
+    this.collect(
+      claudeGlobal,
+      'claude',
+      'global',
+      'instructions',
+      join(this.home, '.claude', 'CLAUDE.md'),
+    );
+    const codexGlobal: ExternalMemoryFileDto[] = [];
+    this.collect(
+      codexGlobal,
+      'codex',
+      'global',
+      'instructions',
+      join(this.home, '.codex', 'AGENTS.md'),
+    );
+
+    const byMunged = new Map<string, KnownWorkspace>();
+    for (const ws of known) {
+      byMunged.set(claudeProjectDirName(ws.path), ws);
+      try {
+        byMunged.set(claudeProjectDirName(realpathSync(ws.path)), ws);
+      } catch {
+        // unresolvable path — literal key stands
+      }
+    }
+
+    const projectsRoot = join(this.home, '.claude', 'projects');
+    let dirNames: string[] = [];
+    try {
+      dirNames = readdirSync(projectsRoot);
+    } catch {
+      dirNames = [];
+    }
+    const claudeProjects: ClaudeProjectGroup[] = [];
+    for (const dirName of dirNames.sort()) {
+      if (claudeProjects.length >= MAX_PROJECT_GROUPS) break;
+      const files: ExternalMemoryFileDto[] = [];
+      this.collectMemoryDir(files, join(projectsRoot, dirName, 'memory'));
+      if (files.length === 0) continue;
+      const ws = byMunged.get(dirName) ?? null;
+      claudeProjects.push({
+        key: dirName,
+        displayName: ws?.displayName ?? dirName,
+        projectPath: ws?.path ?? null,
+        files,
+      });
+    }
+    // Matched Charter projects first, then Claude-only dirs; alpha within each.
+    claudeProjects.sort(
+      (a, b) =>
+        Number(b.projectPath !== null) - Number(a.projectPath !== null) ||
+        a.displayName.localeCompare(b.displayName),
+    );
+    return { claudeGlobal, codexGlobal, claudeProjects };
   }
 
   read(fileId: string): { content: string; truncated: boolean; path: string; mtimeMs: number } {
@@ -152,12 +235,18 @@ export class ExternalMemoryStore {
     } catch {
       // unopened path — munge the literal value, matching Claude's own cwd use
     }
-    const dir = join(this.home, '.claude', 'projects', claudeProjectDirName(real), 'memory');
+    this.collectMemoryDir(
+      out,
+      join(this.home, '.claude', 'projects', claudeProjectDirName(real), 'memory'),
+    );
+  }
+
+  private collectMemoryDir(out: ExternalMemoryFileDto[], dir: string): void {
     let names: string[];
     try {
       names = readdirSync(dir);
     } catch {
-      return; // no auto-memory for this project — honest empty state
+      return; // no auto-memory here — honest empty state
     }
     const noteNames = names
       .filter((name) => name.toLowerCase().endsWith('.md'))

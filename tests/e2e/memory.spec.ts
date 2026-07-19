@@ -69,7 +69,12 @@ test('memory: correction → distill card → rule → injected into the next ru
 
     await page.getByTestId('rail-view-memory').click();
     await expect(page.getByTestId('memory-view')).toBeVisible();
-    await expect(page.getByTestId('memory-rule-row').first()).toContainText('named exports only');
+    // IA v3: rules live under the Charter agent; the current project's group
+    // expands by default and its detail loads lazily.
+    await page.getByTestId('memory-nav-charter').click();
+    await expect(page.getByTestId('memory-rule-row').first()).toContainText('named exports only', {
+      timeout: 10000,
+    });
     await page.locator('.modal-close').click();
 
     // ---- the very next managed run carries the rule (injection recorded) ----
@@ -82,6 +87,7 @@ test('memory: correction → distill card → rule → injected into the next ru
     });
 
     await page.getByTestId('rail-view-memory').click();
+    await page.getByTestId('memory-nav-charter').click();
     await expect(page.getByTestId('memory-rule-row').first()).toContainText(
       /injected into \d+ task/,
       { timeout: 15000 },
@@ -101,9 +107,10 @@ test('memory: AGENTS.md sync — enable writes the block, hand edits drift, impo
     await page.getByTestId('surface-home').click();
     await expect(page.getByTestId('home-model')).toContainText(/mock/i, { timeout: 15000 });
 
-    // Add a rule through the panel.
+    // Add a rule through the panel (IA v3: Charter agent → current project group).
     await page.getByTestId('rail-view-memory').click();
     await expect(page.getByTestId('memory-view')).toBeVisible();
+    await page.getByTestId('memory-nav-charter').click();
     await page
       .getByTestId('memory-add-rule-input')
       .fill('Always run npm run check before pushing.');
@@ -112,8 +119,8 @@ test('memory: AGENTS.md sync — enable writes the block, hand edits drift, impo
       timeout: 10000,
     });
 
-    // Enable the AGENTS.md projection — the managed block appears on disk.
-    await page.getByTestId('memory-nav-sync').click();
+    // Enable the AGENTS.md projection — the managed block appears on disk
+    // (Distribution lines live inside the project group now).
     await page.getByTestId('memory-sync-toggle-agents-md').click();
     await expect(page.getByTestId('memory-sync-status-agents-md')).toContainText('synced', {
       timeout: 10000,
@@ -139,7 +146,6 @@ test('memory: AGENTS.md sync — enable writes the block, hand edits drift, impo
       timeout: 10000,
     });
     expect(readFileSync(agentsPath, 'utf8')).not.toContain('Sneaky hand-added');
-    await page.getByTestId('memory-nav-rules').click();
     await expect(page.getByTestId('memory-candidate').first()).toContainText(
       'Sneaky hand-added deploy convention',
     );
@@ -194,9 +200,9 @@ test('memory: external private memory (fake home) — discover, view, promote, a
       'Always verify the build output',
     );
 
-    // Promote copies (one-way) into shared-rule candidates.
+    // Promote copies (one-way) into that project's Charter rule candidates.
     await habits.getByTestId('memory-external-promote').click();
-    await page.getByTestId('memory-nav-rules').click();
+    await page.getByTestId('memory-nav-charter').click();
     const candidate = page.getByTestId('memory-candidate').first();
     await expect(candidate).toContainText('verify the build output');
     await candidate.getByTestId('memory-candidate-approve').click();

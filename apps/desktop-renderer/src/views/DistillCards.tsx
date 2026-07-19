@@ -38,7 +38,7 @@ export function DistillCards(props: { taskId: string }): React.JSX.Element | nul
       </div>
     );
   }
-  if (!candidate) return null;
+  if (!candidate || !projectPath) return null;
   const isHit = candidate.matchedRuleId !== null;
 
   return (
@@ -71,10 +71,10 @@ export function DistillCards(props: { taskId: string }): React.JSX.Element | nul
               onClick={() =>
                 void store
                   .resolveCandidate({
+                    projectPath,
                     candidateId: candidate.id,
                     action: 'approve',
                     ...(text !== null ? { editedText: text } : {}),
-                    ...(projectPath ? { projectPath } : {}),
                   })
                   .then((ok) => {
                     if (ok) setResolved('approved');
@@ -91,9 +91,9 @@ export function DistillCards(props: { taskId: string }): React.JSX.Element | nul
             onClick={() =>
               void store
                 .resolveCandidate({
+                  projectPath,
                   candidateId: candidate.id,
                   action: 'dismiss',
-                  ...(projectPath ? { projectPath } : {}),
                 })
                 .then(() => void store.refreshTask(props.taskId))
             }

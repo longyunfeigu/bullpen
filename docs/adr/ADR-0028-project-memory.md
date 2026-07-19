@@ -107,6 +107,30 @@ One source, three projections, plus managed (not merged) private memory:
 - E2E isolation mirrors skills: `PI_IDE_MEMORY_HOME` fake home; under
   `PI_IDE_E2E` without it, external discovery is off — tests can never scan the
   developer's real home.
+## Amendment (2026-07-19): IA v3 — agents are the top level
+
+First real-use feedback, two rounds. Round 1: the panel opened empty ("No
+project selected") because it implicitly followed the focused workspace — in a
+product where tasks are global citizens that binding is wrong. Round 2 rejected
+a projects-first left rail too: the user's mental model is **agent first** —
+"点 Claude Code 进去,先看它的全局 memory,二级才是 Project"。 Shipped as
+mocked in `docs/design/memory-ia-v3.html` (v2 kept for the record):
+
+- Left nav = agents (Claude Code / Codex / Charter). Each opens into a GLOBAL
+  section, then a PROJECTS second level (collapsible groups; the focused
+  project's group starts expanded, badge = pending candidates).
+- New channel `memory.tree` returns the spine in one round trip; Charter
+  project detail (rules/candidates/distribution) lazy-loads per group via the
+  existing `memory.overview`. Every mutation now names its project explicitly.
+- Claude's project list is the FULL set under `~/.claude/projects/*/memory`
+  (`ExternalMemoryStore.listAll`): groups matching a known workspace (munged
+  literal or realpath) show its display name and may Promote into that
+  project's rules; foreign dirs keep the raw munged name, browse/delete only.
+- Codex shows global AGENTS.md + an honest "no per-project auto-memory" note;
+  Charter shows an honest "no global rules by design" note, and each project
+  group carries rules + candidates + the Distribution lines (Charter runs /
+  CLAUDE.md / AGENTS.md with the same drift three-way).
+
 - Honest limits: (a) capture offers a card after every correction (v1) rather
   than the mock's "2nd similar correction" threshold — the card is quiet,
   single, and merges similar corrections with a ×N counter; a stricter

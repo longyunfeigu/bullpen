@@ -99,6 +99,43 @@ export const ExternalMemoryFileDtoSchema = z.object({
 });
 export type ExternalMemoryFileDto = z.infer<typeof ExternalMemoryFileDtoSchema>;
 
+/** One Claude auto-memory project group (IA v3: agent → global + projects). */
+export const MemoryClaudeProjectGroupSchema = z.object({
+  /** Stable group key = Claude's munged directory name. */
+  key: z.string(),
+  /** Charter workspace display name when matched; the raw dir name otherwise. */
+  displayName: z.string(),
+  /** Matched Charter project path; null = Claude knows it, Charter never opened it. */
+  projectPath: z.string().nullable(),
+  files: z.array(ExternalMemoryFileDtoSchema),
+});
+export type MemoryClaudeProjectGroup = z.infer<typeof MemoryClaudeProjectGroupSchema>;
+
+/** One Charter project row in the agents tree (rules live per project). */
+export const MemoryCharterProjectSchema = z.object({
+  projectPath: z.string(),
+  displayName: z.string(),
+  ruleCount: z.number().int().nonnegative(),
+  enabledCount: z.number().int().nonnegative(),
+  candidateCount: z.number().int().nonnegative(),
+});
+export type MemoryCharterProject = z.infer<typeof MemoryCharterProjectSchema>;
+
+/** IA v3 panel spine: agents are the top level, each = global layer + projects. */
+export const MemoryAgentsTreeDtoSchema = z.object({
+  claude: z.object({
+    global: z.array(ExternalMemoryFileDtoSchema),
+    projects: z.array(MemoryClaudeProjectGroupSchema),
+  }),
+  codex: z.object({
+    global: z.array(ExternalMemoryFileDtoSchema),
+  }),
+  charter: z.object({
+    projects: z.array(MemoryCharterProjectSchema),
+  }),
+});
+export type MemoryAgentsTreeDto = z.infer<typeof MemoryAgentsTreeDtoSchema>;
+
 /** Everything the memory panel needs for one project, in one round trip. */
 export const MemoryOverviewDtoSchema = z.object({
   projectPath: z.string(),

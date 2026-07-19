@@ -2,21 +2,25 @@ import React, { useEffect, useState } from 'react';
 import type {
   ExternalMemoryFileDto,
   MemoryCandidateDto,
+  MemoryCharterProject,
+  MemoryClaudeProjectGroup,
   MemoryOverviewDto,
   MemoryRuleDto,
   MemorySyncStateDto,
-  MemorySyncTarget,
 } from '@pi-ide/ipc-contracts';
 import { rpcResult } from '../bridge.js';
 import { useMemoryStore } from '../store/memoryStore.js';
+import { useWorkspaceStore } from '../store/workspaceStore.js';
 import '../styles/memory.css';
 
 /**
- * Memory (ADR-0028) — the rail's fifth destination, two layers in one place:
- * shared project rules (captured from review corrections, distributed to every
- * agent) and each CLI's private memory files (managed, never merged).
+ * Memory (ADR-0028, IA v3 — user-directed): agents are the top level.
+ * Claude Code / Codex / Charter each open into their GLOBAL memory first,
+ * then a per-project second level. Claude lists EVERY project it has
+ * auto-memory for (matched Charter projects by name, foreign dirs verbatim);
+ * Charter's "memory" is each project's distilled rules + distribution.
  */
-type MemorySection = 'rules' | 'sync' | 'claude' | 'codex' | 'charter';
+type MemoryAgent = 'claude' | 'codex' | 'charter';
 
 function when(iso: string | null): string {
   if (!iso) return '—';
@@ -55,7 +59,234 @@ function ConfirmButton(props: {
   );
 }
 
-function CandidateCard(props: { candidate: MemoryCandidateDto }): React.JSX.Element {
+/** One external memory file row. `promoteTo` = matched Charter project path. */
+function FileRow(props: {
+  file: ExternalMemoryFileDto;
+  promoteTo: string | null;
+}): React.JSX.Element {
+  const store = useMemoryStore();
+  const { file } = props;
+  const [mode, setMode] = useState<'closed' | 'view' | 'edit'>('closed');
+  const [content, setContent] = useState('');
+  const [mtime, setMtime] = useState<number | null>(null);
+  const [truncated, setTruncated] = useState(false);
+
+  const open = async (nextMode: 'view' | 'edit'): Promise<void> => {
+    const data = await store.readExternal(file.id);
+    if (!data) return;
+    setContent(data.content);
+    setMtime(data.mtimeMs);
+    setTruncated(data.truncated);
+    setMode(nextMode);
+  };
+
+  return (
+    <div className="mv-file" data-testid="memory-external-file">
+      <div className="mv-file-head">
+        <span className="label">{file.label}</span>
+        <span className="scope">{file.scope === 'global' ? 'global' : 'project'}</span>
+        {file.role === 'memory-index' ? <span className="scope">index</span> : null}
+        <span className="when">{when(file.updatedAt)}</span>
+      </div>
+      <div className="mv-file-summary">{file.summary}</div>
+      <div className="mv-file-path">{file.path}</div>
+      <div className="mv-file-actions">
+        {file.readable ? (
+          <>
+            <button className="mv-btn quiet" onClick={() => void open('view')}>
+              View
+            </button>
+            <button
+              className="mv-btn quiet"
+              data-testid="memory-external-edit"
+              onClick={() => void open('edit')}
+            >
+              Edit
+            </button>
+          </>
+        ) : (
+          <span className="mv-hint">too large or binary — view disabled</span>
+        )}
+        {file.role === 'memory' && file.readable && props.promoteTo ? (
+          <button
+            className="mv-btn"
+            data-testid="memory-external-promote"
+            onClick={() => void store.promoteExternal(props.promoteTo!, file.id)}
+          >
+            ↑ Promote to Charter rule
+          </button>
+        ) : null}
+        <ConfirmButton
+          label="Delete"
+          confirmLabel="Backup & delete?"
+          testid="memory-external-delete"
+          onConfirm={() => void store.deleteExternal(file.id)}
+        />
+      </div>
+      {mode === 'view' ? (
+        <>
+          <div className="mv-viewer" data-testid="memory-external-viewer">
+            {truncated ? '…(truncated view)\n' : ''}
+            {content}
+          </div>
+          <div className="mv-file-actions">
+            <button className="mv-btn quiet" onClick={() => setMode('closed')}>
+              Close
+            </button>
+          </div>
+        </>
+      ) : null}
+      {mode === 'edit' ? (
+        <div className="mv-editor">
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            data-testid="memory-external-editor"
+          />
+          <div className="foot">
+            <button
+              className="mv-btn primary"
+              data-testid="memory-external-save"
+              onClick={() =>
+                void store.writeExternal(file.id, content, mtime).then((ok) => {
+                  if (ok) setMode('closed');
+                })
+              }
+            >
+              Save
+            </button>
+            <button className="mv-btn quiet" onClick={() => setMode('closed')}>
+              Cancel
+            </button>
+            {truncated ? (
+              <span className="mv-hint">truncated — saving would lose the tail; view only</span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Collapsible project group (level 2). */
+function ProjGroup(props: {
+  title: string;
+  path: string | null;
+  meta: React.ReactNode;
+  current: boolean;
+  open: boolean;
+  onToggle: () => void;
+  rawName: boolean;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div className={`mv-proj ${props.open ? 'open' : ''}`} data-testid="memory-proj-group">
+      <button className="mv-proj-head" data-testid="memory-proj-head" onClick={props.onToggle}>
+        <span className="tri">▶</span>
+        <span className={`name ${props.rawName ? 'raw' : ''}`}>{props.title}</span>
+        {props.path ? <span className="path">{props.path}</span> : null}
+        {props.current ? <span className="cur">current</span> : null}
+        {props.meta}
+      </button>
+      {props.open ? <div className="mv-proj-body">{props.children}</div> : null}
+    </div>
+  );
+}
+
+// ───────────────────────── Claude Code ─────────────────────────
+
+function ClaudeView(props: {
+  global: ExternalMemoryFileDto[];
+  projects: MemoryClaudeProjectGroup[];
+  currentPath: string | null;
+}): React.JSX.Element {
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    const current = props.projects.find((group) => group.projectPath === props.currentPath);
+    return new Set(current ? [current.key] : []);
+  });
+  const toggle = (key: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  return (
+    <>
+      <div className="mv-sec">Global — applies to every project</div>
+      {props.global.length === 0 ? (
+        <div className="mv-empty">No global CLAUDE.md found (~/.claude/CLAUDE.md).</div>
+      ) : (
+        props.global.map((file) => <FileRow key={file.id} file={file} promoteTo={null} />)
+      )}
+      <div className="mv-sec">Projects — auto-memory per project</div>
+      {props.projects.length === 0 ? (
+        <div className="mv-empty" data-testid="memory-claude-empty">
+          Claude Code has no per-project auto-memory on this machine yet. Groups appear here as soon
+          as it writes them (~/.claude/projects/&lt;project&gt;/memory).
+        </div>
+      ) : (
+        props.projects.map((group) => (
+          <ProjGroup
+            key={group.key}
+            title={group.displayName}
+            path={group.projectPath}
+            rawName={group.projectPath === null}
+            current={group.projectPath !== null && group.projectPath === props.currentPath}
+            open={expanded.has(group.key)}
+            onToggle={() => toggle(group.key)}
+            meta={<span className="n">{group.files.length} memories</span>}
+          >
+            {group.projectPath === null ? (
+              <div className="mv-hint">
+                Claude knows this directory but it was never opened in Charter — browse and delete
+                only (there is no Charter project to promote into).
+              </div>
+            ) : null}
+            {group.files.map((file) => (
+              <FileRow key={file.id} file={file} promoteTo={group.projectPath} />
+            ))}
+          </ProjGroup>
+        ))
+      )}
+      <div className="mv-hint">
+        Read-only discovery over ~/.claude path conventions. Edits and deletes are explicit actions;
+        deletes back up first; Promote copies a note into that project's Charter rules (one-way).
+        Session transcripts are not memory and are not listed.
+      </div>
+    </>
+  );
+}
+
+// ───────────────────────── Codex ─────────────────────────
+
+function CodexView(props: { global: ExternalMemoryFileDto[] }): React.JSX.Element {
+  return (
+    <>
+      <div className="mv-sec">Global — applies to every project</div>
+      {props.global.length === 0 ? (
+        <div className="mv-empty">No global AGENTS.md found (~/.codex/AGENTS.md).</div>
+      ) : (
+        props.global.map((file) => <FileRow key={file.id} file={file} promoteTo={null} />)
+      )}
+      <div className="mv-sec">Projects</div>
+      <div className="mv-empty" data-testid="memory-codex-empty">
+        This Codex version keeps no per-project auto-memory — only the global AGENTS.md above.
+        Project-level AGENTS.md files are project files, managed under each project's Charter →
+        Distribution. If a future Codex adds a memory store, it appears here under the same
+        read-only rules.
+      </div>
+    </>
+  );
+}
+
+// ───────────────────────── Charter ─────────────────────────
+
+function CandidateCard(props: {
+  candidate: MemoryCandidateDto;
+  projectPath: string;
+}): React.JSX.Element {
   const store = useMemoryStore();
   const { candidate } = props;
   const [text, setText] = useState(candidate.text);
@@ -82,6 +313,7 @@ function CandidateCard(props: { candidate: MemoryCandidateDto }): React.JSX.Elem
           data-testid="memory-candidate-approve"
           onClick={() =>
             void store.resolveCandidate({
+              projectPath: props.projectPath,
               candidateId: candidate.id,
               action: 'approve',
               editedText: text,
@@ -94,7 +326,11 @@ function CandidateCard(props: { candidate: MemoryCandidateDto }): React.JSX.Elem
           className="mv-btn quiet"
           data-testid="memory-candidate-dismiss"
           onClick={() =>
-            void store.resolveCandidate({ candidateId: candidate.id, action: 'dismiss' })
+            void store.resolveCandidate({
+              projectPath: props.projectPath,
+              candidateId: candidate.id,
+              action: 'dismiss',
+            })
           }
         >
           {isHit ? 'Got it' : 'Not a rule'}
@@ -104,9 +340,9 @@ function CandidateCard(props: { candidate: MemoryCandidateDto }): React.JSX.Elem
   );
 }
 
-function RuleRow(props: { rule: MemoryRuleDto }): React.JSX.Element {
+function RuleRow(props: { rule: MemoryRuleDto; projectPath: string }): React.JSX.Element {
   const store = useMemoryStore();
-  const { rule } = props;
+  const { rule, projectPath } = props;
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(rule.text);
   return (
@@ -119,7 +355,7 @@ function RuleRow(props: { rule: MemoryRuleDto }): React.JSX.Element {
               <button
                 className="mv-btn primary"
                 onClick={() => {
-                  void store.updateRule(rule.id, { text });
+                  void store.updateRule(projectPath, rule.id, { text });
                   setEditing(false);
                 }}
               >
@@ -162,7 +398,7 @@ function RuleRow(props: { rule: MemoryRuleDto }): React.JSX.Element {
         <ConfirmButton
           label="Remove"
           confirmLabel="Really remove?"
-          onConfirm={() => void store.removeRule(rule.id)}
+          onConfirm={() => void store.removeRule(projectPath, rule.id)}
         />
         <div
           className={`mv-toggle ${rule.enabled ? 'on' : ''}`}
@@ -171,11 +407,11 @@ function RuleRow(props: { rule: MemoryRuleDto }): React.JSX.Element {
           aria-label={`Rule enabled: ${rule.enabled}`}
           tabIndex={0}
           data-testid="memory-rule-toggle"
-          onClick={() => void store.updateRule(rule.id, { enabled: !rule.enabled })}
+          onClick={() => void store.updateRule(projectPath, rule.id, { enabled: !rule.enabled })}
           onKeyDown={(e) => {
             if (e.key === ' ' || e.key === 'Enter') {
               e.preventDefault();
-              void store.updateRule(rule.id, { enabled: !rule.enabled });
+              void store.updateRule(projectPath, rule.id, { enabled: !rule.enabled });
             }
           }}
         />
@@ -184,60 +420,151 @@ function RuleRow(props: { rule: MemoryRuleDto }): React.JSX.Element {
   );
 }
 
-function RulesSection(props: { overview: MemoryOverviewDto }): React.JSX.Element {
+const SYNC_LINE_LABEL: Record<MemorySyncStateDto['target'], string> = {
+  'claude-md': 'CLAUDE.md',
+  'agents-md': 'AGENTS.md',
+};
+
+function SyncLine(props: { sync: MemorySyncStateDto; projectPath: string }): React.JSX.Element {
   const store = useMemoryStore();
-  const { overview } = props;
+  const { sync, projectPath } = props;
+  return (
+    <div className="mv-syncline-wrap" data-testid={`memory-sync-${sync.target}`}>
+      <div className="mv-syncline">
+        <span className="lab">{SYNC_LINE_LABEL[sync.target]}</span>
+        <span
+          className={`mv-status ${sync.status}`}
+          data-testid={`memory-sync-status-${sync.target}`}
+        >
+          {sync.status === 'ok'
+            ? '✓ synced'
+            : sync.status === 'drift'
+              ? '⚠ hand-edited'
+              : sync.status}
+        </span>
+        <span className="path">{sync.filePath}</span>
+        {sync.enabled && sync.status !== 'drift' ? (
+          <button
+            className="mv-btn quiet"
+            onClick={() => void store.applySync(projectPath, sync.target)}
+          >
+            Sync now
+          </button>
+        ) : null}
+        <div
+          className={`mv-toggle ${sync.enabled ? 'on' : ''}`}
+          role="switch"
+          aria-checked={sync.enabled}
+          aria-label={`Sync ${SYNC_LINE_LABEL[sync.target]}`}
+          tabIndex={0}
+          data-testid={`memory-sync-toggle-${sync.target}`}
+          onClick={() => void store.setSyncEnabled(projectPath, sync.target, !sync.enabled)}
+          onKeyDown={(e) => {
+            if (e.key === ' ' || e.key === 'Enter') {
+              e.preventDefault();
+              void store.setSyncEnabled(projectPath, sync.target, !sync.enabled);
+            }
+          }}
+        />
+      </div>
+      {sync.detail ? (
+        <div className="mv-hint" style={{ padding: '2px 0 4px' }}>
+          {sync.detail}
+        </div>
+      ) : null}
+      {sync.status === 'drift' ? (
+        <div className="mv-drift-actions" data-testid={`memory-drift-${sync.target}`}>
+          <button
+            className="mv-btn primary"
+            data-testid={`memory-drift-import-${sync.target}`}
+            onClick={() => void store.resolveDrift(projectPath, sync.target, 'import')}
+          >
+            Import hand edits as candidates
+          </button>
+          <button
+            className="mv-btn"
+            onClick={() => void store.resolveDrift(projectPath, sync.target, 'overwrite')}
+          >
+            Overwrite from rules source
+          </button>
+          <button
+            className="mv-btn quiet"
+            onClick={() => void store.resolveDrift(projectPath, sync.target, 'stop')}
+          >
+            Stop managing
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CharterProjectBody(props: { projectPath: string }): React.JSX.Element {
+  const store = useMemoryStore();
+  const overview = store.projectOverviews[props.projectPath];
   const [draft, setDraft] = useState('');
-  const groups = overview.groups.length > 0 ? overview.groups : [];
+  useEffect(() => {
+    void store.refreshProject(props.projectPath);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.projectPath]);
+
+  if (!overview) return <div className="mv-hint">Loading…</div>;
+  if (!overview.available) {
+    return (
+      <div className="mv-hint">
+        This folder is not an opened project anymore — open it under Projects to manage rules.
+      </div>
+    );
+  }
   return (
     <>
       <div className="mv-stats" data-testid="memory-stats">
         <span>
-          <b>{overview.stats.enabled}</b>enabled rules
+          <b>{overview.stats.enabled}</b>enabled
         </span>
         <span>
           <b>{overview.stats.injectedTasks7d}</b>tasks injected · 7d
         </span>
         <span>
-          <b>{overview.stats.hitsTotal}</b>slipped-again hits
+          <b>{overview.stats.hitsTotal}</b>slipped again
         </span>
         <span>
           <b>{overview.stats.candidates}</b>candidates
         </span>
       </div>
-
-      {overview.candidates.length > 0 ? (
-        <div className="mv-card" data-testid="memory-candidates">
-          <div className="mv-card-title">Candidates — captured from your corrections</div>
-          <div style={{ display: 'grid', gap: 9 }}>
-            {overview.candidates.map((candidate) => (
-              <CandidateCard key={candidate.id} candidate={candidate} />
-            ))}
-          </div>
-        </div>
-      ) : null}
-
+      {overview.candidates.map((candidate) => (
+        <CandidateCard key={candidate.id} candidate={candidate} projectPath={props.projectPath} />
+      ))}
       {overview.rules.length === 0 ? (
         <div className="mv-empty" data-testid="memory-rules-empty">
-          No rules yet. Reject a hunk or send a request-fix note during review and Charter will
-          offer to distill it — or add one below. Rules live in <code>.charter/rules.md</code> and
-          ride every managed run.
+          No rules yet. Reject a hunk or send a request-fix note during review and Charter offers to
+          distill it — or add one below.
         </div>
       ) : (
-        groups.map((group) => (
-          <div key={group}>
-            <div className="mv-group-head">{group}</div>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {overview.rules
-                .filter((rule) => rule.group === group)
-                .map((rule) => (
-                  <RuleRow key={rule.id} rule={rule} />
-                ))}
-            </div>
+        overview.groups.map((group) => (
+          <div key={group} style={{ display: 'grid', gap: 8 }}>
+            {overview.groups.length > 1 ? <div className="mv-group-head">{group}</div> : null}
+            {overview.rules
+              .filter((rule) => rule.group === group)
+              .map((rule) => (
+                <RuleRow key={rule.id} rule={rule} projectPath={props.projectPath} />
+              ))}
           </div>
         ))
       )}
-
+      <div className="mv-sec" style={{ paddingTop: 2 }}>
+        Distribution
+      </div>
+      <div className="mv-syncline-wrap">
+        <div className="mv-syncline">
+          <span className="lab">Charter runs</span>
+          <span className="mv-status ok">always on</span>
+          <span className="mv-hint">preamble + every run &amp; reply</span>
+        </div>
+      </div>
+      {overview.sync.map((sync) => (
+        <SyncLine key={sync.target} sync={sync} projectPath={props.projectPath} />
+      ))}
       <div className="mv-add-rule">
         <textarea
           placeholder="New rule, e.g. “Named exports only; never default export.”"
@@ -250,7 +577,7 @@ function RulesSection(props: { overview: MemoryOverviewDto }): React.JSX.Element
           data-testid="memory-add-rule"
           disabled={draft.trim().length === 0}
           onClick={() => {
-            void store.addRule(draft.trim()).then((ok) => {
+            void store.addRule(props.projectPath, draft.trim()).then((ok) => {
               if (ok) setDraft('');
             });
           }}
@@ -259,11 +586,9 @@ function RulesSection(props: { overview: MemoryOverviewDto }): React.JSX.Element
         </button>
       </div>
       <div className="mv-hint">
-        Stored in <code>{overview.rulesFilePath}</code> — hand edits are safe and git-shareable;
-        provenance and counters stay on this machine.{' '}
+        Stored in <code>{overview.rulesFilePath}</code> — hand edits safe, git-shareable.{' '}
         <button
           className="mv-btn quiet"
-          style={{ marginLeft: 6 }}
           onClick={() => void rpcResult('app.revealPath', { path: overview.rulesFilePath })}
         >
           Reveal in Finder
@@ -273,379 +598,96 @@ function RulesSection(props: { overview: MemoryOverviewDto }): React.JSX.Element
   );
 }
 
-const SYNC_LABEL: Record<MemorySyncTarget, { name: string; how: string }> = {
-  'claude-md': {
-    name: 'Claude Code · CLAUDE.md',
-    how: 'Managed block holds one import line (@.charter/rules.md) — your prose stays untouched.',
-  },
-  'agents-md': {
-    name: 'Codex · AGENTS.md',
-    how: 'AGENTS.md has no import semantics — the managed block carries the rendered rule list.',
-  },
-};
-
-function SyncCard(props: { sync: MemorySyncStateDto }): React.JSX.Element {
-  const store = useMemoryStore();
-  const { sync } = props;
-  const meta = SYNC_LABEL[sync.target];
-  return (
-    <div className="mv-card" data-testid={`memory-sync-${sync.target}`}>
-      <div className="mv-sync-head">
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="name">{meta.name}</div>
-          <div className="path">{sync.filePath}</div>
-        </div>
-        <span
-          className={`mv-status ${sync.status}`}
-          data-testid={`memory-sync-status-${sync.target}`}
-        >
-          {sync.status === 'ok'
-            ? `✓ synced ${sync.lastSyncedAt ? when(sync.lastSyncedAt) : ''}`
-            : sync.status === 'drift'
-              ? '⚠ hand-edited'
-              : sync.status}
-        </span>
-        <div
-          className={`mv-toggle ${sync.enabled ? 'on' : ''}`}
-          role="switch"
-          aria-checked={sync.enabled}
-          aria-label={`Sync ${meta.name}`}
-          tabIndex={0}
-          data-testid={`memory-sync-toggle-${sync.target}`}
-          onClick={() => void store.setSyncEnabled(sync.target, !sync.enabled)}
-          onKeyDown={(e) => {
-            if (e.key === ' ' || e.key === 'Enter') {
-              e.preventDefault();
-              void store.setSyncEnabled(sync.target, !sync.enabled);
-            }
-          }}
-        />
-      </div>
-      <div className="mv-sync-detail">{meta.how}</div>
-      {sync.detail ? <div className="mv-sync-detail">{sync.detail}</div> : null}
-      {sync.status === 'drift' ? (
-        <div className="mv-drift-actions" data-testid={`memory-drift-${sync.target}`}>
-          <button
-            className="mv-btn primary"
-            data-testid={`memory-drift-import-${sync.target}`}
-            onClick={() => void store.resolveDrift(sync.target, 'import')}
-          >
-            Import hand edits as candidates
-          </button>
-          <button
-            className="mv-btn"
-            onClick={() => void store.resolveDrift(sync.target, 'overwrite')}
-          >
-            Overwrite from rules source
-          </button>
-          <button
-            className="mv-btn quiet"
-            onClick={() => void store.resolveDrift(sync.target, 'stop')}
-          >
-            Stop managing this file
-          </button>
-        </div>
-      ) : sync.enabled ? (
-        <div className="mv-drift-actions">
-          <button className="mv-btn quiet" onClick={() => void store.applySync(sync.target)}>
-            Sync now
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ReverseImportCard(): React.JSX.Element {
-  const store = useMemoryStore();
-  const [items, setItems] = useState<{ text: string; source: 'claude-md' | 'agents-md' }[] | null>(
-    null,
-  );
-  const [picked, setPicked] = useState<Set<number>>(new Set());
-  return (
-    <div className="mv-card" data-testid="memory-import">
-      <div className="mv-card-title">Reverse import — existing conventions</div>
-      <div className="mv-hint" style={{ marginBottom: 8 }}>
-        Scan hand-written CLAUDE.md / AGENTS.md (outside the managed block) for bullet conventions
-        and bring them in as candidates — so there is never a fourth memory to maintain.
-      </div>
-      {items === null ? (
-        <button
-          className="mv-btn"
-          data-testid="memory-import-scan"
-          onClick={() =>
-            void store.scanImport().then((found) => {
-              setItems(found);
-              setPicked(new Set(found.map((_, index) => index)));
-            })
-          }
-        >
-          Scan for conventions
-        </button>
-      ) : items.length === 0 ? (
-        <div className="mv-hint">
-          Nothing new found — existing rules and candidates already cover it.
-        </div>
-      ) : (
-        <>
-          {items.map((item, index) => (
-            <label className="mv-import-item" key={`${item.source}-${index}`}>
-              <input
-                type="checkbox"
-                checked={picked.has(index)}
-                onChange={(e) => {
-                  const next = new Set(picked);
-                  if (e.target.checked) next.add(index);
-                  else next.delete(index);
-                  setPicked(next);
-                }}
-              />
-              <span className="from">
-                {item.source === 'claude-md' ? 'CLAUDE.md' : 'AGENTS.md'}
-              </span>
-              <span>{item.text}</span>
-            </label>
-          ))}
-          <div className="mv-row-actions" style={{ marginTop: 8 }}>
-            <button
-              className="mv-btn primary"
-              data-testid="memory-import-apply"
-              disabled={picked.size === 0}
-              onClick={() => {
-                const selected = items.filter((_, index) => picked.has(index));
-                void store.applyImport(selected).then(() => setItems(null));
-              }}
-            >
-              Import {picked.size} as candidates
-            </button>
-            <button className="mv-btn quiet" onClick={() => setItems(null)}>
-              Cancel
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function SyncSection(props: { overview: MemoryOverviewDto }): React.JSX.Element {
-  return (
-    <>
-      <div className="mv-card">
-        <div className="mv-sync-head">
-          <div style={{ flex: 1 }}>
-            <div className="name">Charter · managed runs</div>
-          </div>
-          <span className="mv-status ok">always on</span>
-        </div>
-        <div className="mv-sync-detail">
-          Enabled rules ride every managed run as a preamble block and refresh on every reply — no
-          project file involved. Rule changes reach the very next turn.
-        </div>
-      </div>
-      {props.overview.sync.map((sync) => (
-        <SyncCard key={sync.target} sync={sync} />
-      ))}
-      <ReverseImportCard />
-      <div className="mv-hint">
-        Writes are atomic and visible in git diff. A hand-edited managed block is never overwritten
-        silently — you choose import / overwrite / stop.
-      </div>
-    </>
-  );
-}
-
-function FileRow(props: { file: ExternalMemoryFileDto }): React.JSX.Element {
-  const store = useMemoryStore();
-  const { file } = props;
-  const [mode, setMode] = useState<'closed' | 'view' | 'edit'>('closed');
-  const [content, setContent] = useState('');
-  const [mtime, setMtime] = useState<number | null>(null);
-  const [truncated, setTruncated] = useState(false);
-
-  const open = async (nextMode: 'view' | 'edit'): Promise<void> => {
-    const data = await store.readExternal(file.id);
-    if (!data) return;
-    setContent(data.content);
-    setMtime(data.mtimeMs);
-    setTruncated(data.truncated);
-    setMode(nextMode);
-  };
-
-  return (
-    <div className="mv-file" data-testid="memory-external-file">
-      <div className="mv-file-head">
-        <span className="label">{file.label}</span>
-        <span className="scope">{file.scope === 'global' ? 'global' : 'this project'}</span>
-        {file.role === 'memory-index' ? <span className="scope">index</span> : null}
-        <span className="when">{when(file.updatedAt)}</span>
-      </div>
-      <div className="mv-file-summary">{file.summary}</div>
-      <div className="mv-file-path">{file.path}</div>
-      <div className="mv-file-actions">
-        {file.readable ? (
-          <>
-            <button className="mv-btn quiet" onClick={() => void open('view')}>
-              View
-            </button>
-            <button
-              className="mv-btn quiet"
-              data-testid="memory-external-edit"
-              onClick={() => void open('edit')}
-            >
-              Edit
-            </button>
-          </>
-        ) : (
-          <span className="mv-hint">too large or binary — view disabled</span>
-        )}
-        {file.role === 'memory' && file.readable ? (
-          <button
-            className="mv-btn"
-            data-testid="memory-external-promote"
-            onClick={() => void store.promoteExternal(file.id)}
-          >
-            ↑ Promote to shared rule
-          </button>
-        ) : null}
-        <ConfirmButton
-          label="Delete"
-          confirmLabel="Backup & delete?"
-          testid="memory-external-delete"
-          onConfirm={() => void store.deleteExternal(file.id)}
-        />
-      </div>
-      {mode === 'view' ? (
-        <div className="mv-viewer" data-testid="memory-external-viewer">
-          {truncated ? '…(truncated view)\n' : ''}
-          {content}
-        </div>
-      ) : null}
-      {mode === 'edit' ? (
-        <div className="mv-editor">
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            data-testid="memory-external-editor"
-          />
-          <div className="foot">
-            <button
-              className="mv-btn primary"
-              data-testid="memory-external-save"
-              onClick={() =>
-                void store.writeExternal(file.id, content, mtime).then((ok) => {
-                  if (ok) setMode('closed');
-                })
-              }
-            >
-              Save
-            </button>
-            <button className="mv-btn quiet" onClick={() => setMode('closed')}>
-              Cancel
-            </button>
-            {truncated ? (
-              <span className="mv-hint">truncated — saving would lose the tail; view only</span>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-      {mode === 'view' ? (
-        <div className="mv-file-actions">
-          <button className="mv-btn quiet" onClick={() => setMode('closed')}>
-            Close
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ExternalSection(props: {
-  agent: 'claude' | 'codex';
-  files: ExternalMemoryFileDto[];
-  overview: MemoryOverviewDto;
+function CharterView(props: {
+  projects: MemoryCharterProject[];
+  currentPath: string | null;
 }): React.JSX.Element {
-  const projectSync = props.overview.sync.find(
-    (sync) => sync.target === (props.agent === 'claude' ? 'claude-md' : 'agents-md'),
-  );
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    const current = props.projects.find((project) => project.projectPath === props.currentPath);
+    return new Set(current ? [current.projectPath] : []);
+  });
+  const toggle = (key: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   return (
     <>
-      <div className="mv-hint">
-        Discovered read-only from {props.agent === 'claude' ? '~/.claude' : '~/.codex'} path
-        conventions. Charter writes only on your explicit action, backs up before delete, and never
-        touches session transcripts. Promote copies a note into shared-rule candidates — one-way.
+      <div className="mv-sec">Global</div>
+      <div className="mv-empty">
+        Charter has no global rules by design — every rule belongs to a project (stored in that
+        project's <code>.charter/rules.md</code>, git-shareable). Its working memory is the task
+        ledger, already in the product.
       </div>
-      {props.files.length === 0 ? (
-        <div className="mv-empty" data-testid={`memory-${props.agent}-empty`}>
-          {props.agent === 'codex'
-            ? 'This Codex version keeps no auto-memory directory — only AGENTS.md files were looked for, and none exist yet. If a future version adds a memory store, it will appear here under the same read-only rules.'
-            : 'No Claude Code memory found for this machine/project yet. Files appear here as soon as Claude Code writes them.'}
-        </div>
+      <div className="mv-sec">Projects — rules distilled from your reviews</div>
+      {props.projects.length === 0 ? (
+        <div className="mv-empty">No projects opened yet.</div>
       ) : (
-        props.files.map((file) => <FileRow key={file.id} file={file} />)
+        props.projects.map((project) => (
+          <ProjGroup
+            key={project.projectPath}
+            title={project.displayName}
+            path={project.projectPath}
+            rawName={false}
+            current={project.projectPath === props.currentPath}
+            open={expanded.has(project.projectPath)}
+            onToggle={() => toggle(project.projectPath)}
+            meta={
+              <>
+                {project.candidateCount > 0 ? (
+                  <span className="badge" data-testid="memory-proj-candidates">
+                    {project.candidateCount}
+                  </span>
+                ) : null}
+                <span className="n">{project.ruleCount} rules</span>
+              </>
+            }
+          >
+            <CharterProjectBody projectPath={project.projectPath} />
+          </ProjGroup>
+        ))
       )}
-      {projectSync ? (
-        <div className="mv-card">
-          <div className="mv-card-title">
-            Project-level {props.agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md'}
-          </div>
-          <div className="mv-sync-detail">
-            {projectSync.filePath} —{' '}
-            {projectSync.enabled
-              ? `managed block ${projectSync.status === 'ok' ? 'in sync with the rules source' : projectSync.status}`
-              : 'not managed (enable under Sync & distribution)'}
-          </div>
-        </div>
-      ) : null}
     </>
   );
 }
 
-function CharterSection(props: { overview: MemoryOverviewDto | null }): React.JSX.Element {
-  return (
-    <>
-      <div className="mv-card">
-        <div className="mv-sync-detail" style={{ fontSize: 13 }}>
-          <b>Charter has no hidden private memory.</b> Its long-term memory is the shared project
-          rules (injected into every managed run); its working memory is the task ledger — timeline,
-          evidence and replay — which the product already keeps. ⌘K search covers rules, private
-          memory files and the ledger.
-        </div>
-      </div>
-      {props.overview ? (
-        <div className="mv-hint">
-          Rules source: <code>{props.overview.rulesFilePath}</code>
-          {props.overview.rulesFileExists ? '' : ' (created on first rule)'}
-        </div>
-      ) : null}
-    </>
-  );
-}
+// ───────────────────────── shell ─────────────────────────
 
 export function MemoryView(): React.JSX.Element {
   const store = useMemoryStore();
-  const [section, setSection] = useState<MemorySection>('rules');
+  const currentPath = useWorkspaceStore((s) => s.workspace?.path ?? null);
+  const [agent, setAgent] = useState<MemoryAgent>('claude');
   useEffect(() => {
     store.init();
     void store.refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const overview = store.overview;
-  const claudeFiles = store.external.filter((file) => file.agent === 'claude');
-  const codexFiles = store.external.filter((file) => file.agent === 'codex');
-  const candidateCount = overview?.candidates.length ?? 0;
+  const tree = store.tree;
+  const claudeCount = tree
+    ? tree.claude.global.length +
+      tree.claude.projects.reduce((sum, group) => sum + group.files.length, 0)
+    : 0;
+  const codexCount = tree?.codex.global.length ?? 0;
+  const charterCandidates = tree
+    ? tree.charter.projects.reduce((sum, project) => sum + project.candidateCount, 0)
+    : 0;
 
   const navItem = (
-    id: MemorySection,
+    id: MemoryAgent,
+    logo: string,
     label: string,
-    extra?: React.ReactNode,
+    extra: React.ReactNode,
   ): React.JSX.Element => (
     <button
-      className={`mv-nav-item ${section === id ? 'active' : ''}`}
+      className={`mv-nav-item ${agent === id ? 'active' : ''}`}
       data-testid={`memory-nav-${id}`}
-      onClick={() => setSection(id)}
+      onClick={() => setAgent(id)}
     >
+      <span className="mv-agent-logo">{logo}</span>
       <span>{label}</span>
       {extra}
     </button>
@@ -653,73 +695,42 @@ export function MemoryView(): React.JSX.Element {
 
   return (
     <div className="mv-root" data-testid="memory-view">
-      <nav className="mv-nav" aria-label="Memory sections">
-        <div className="mv-nav-group">Shared — Charter distributes</div>
+      <nav className="mv-nav" aria-label="Memory agents">
+        <div className="mv-nav-group">Agents</div>
+        {navItem('claude', '✳', 'Claude Code', <span className="mv-nav-count">{claudeCount}</span>)}
+        {navItem('codex', '▣', 'Codex', <span className="mv-nav-count">{codexCount}</span>)}
         {navItem(
-          'rules',
-          'Project rules',
-          candidateCount > 0 ? (
+          'charter',
+          '◆',
+          'Charter',
+          charterCandidates > 0 ? (
             <span className="mv-nav-badge" data-testid="memory-nav-candidates">
-              {candidateCount}
+              {charterCandidates}
             </span>
           ) : (
-            <span className="mv-nav-count">{overview?.rules.length ?? 0}</span>
+            <span className="mv-nav-count">
+              {tree?.charter.projects.reduce((sum, project) => sum + project.ruleCount, 0) ?? 0}
+            </span>
           ),
         )}
-        {navItem('sync', 'Sync & distribution')}
-        <div className="mv-nav-group">Private — managed, never merged</div>
-        {navItem(
-          'claude',
-          'Claude Code',
-          <span className="mv-nav-count">{claudeFiles.length}</span>,
-        )}
-        {navItem('codex', 'Codex', <span className="mv-nav-count">{codexFiles.length}</span>)}
-        {navItem('charter', 'Charter ledger')}
       </nav>
       <main className="mv-main">
         <div className="mv-main-inner">
-          {!overview || !overview.available ? (
-            section === 'claude' || section === 'codex' ? (
-              <ExternalSectionNoProject
-                agent={section}
-                files={section === 'claude' ? claudeFiles : codexFiles}
-              />
-            ) : (
-              <div className="mv-empty" data-testid="memory-no-project">
-                Open a project first — rules and memories are per-project. Global CLI files are
-                still browsable under Claude Code / Codex.
-              </div>
-            )
-          ) : section === 'rules' ? (
-            <RulesSection overview={overview} />
-          ) : section === 'sync' ? (
-            <SyncSection overview={overview} />
-          ) : section === 'claude' ? (
-            <ExternalSection agent="claude" files={claudeFiles} overview={overview} />
-          ) : section === 'codex' ? (
-            <ExternalSection agent="codex" files={codexFiles} overview={overview} />
+          {!tree ? (
+            <div className="mv-hint">Loading…</div>
+          ) : agent === 'claude' ? (
+            <ClaudeView
+              global={tree.claude.global}
+              projects={tree.claude.projects}
+              currentPath={currentPath}
+            />
+          ) : agent === 'codex' ? (
+            <CodexView global={tree.codex.global} />
           ) : (
-            <CharterSection overview={overview} />
+            <CharterView projects={tree.charter.projects} currentPath={currentPath} />
           )}
         </div>
       </main>
     </div>
-  );
-}
-
-/** Global CLI files remain reachable without an open project. */
-function ExternalSectionNoProject(props: {
-  agent: 'claude' | 'codex';
-  files: ExternalMemoryFileDto[];
-}): React.JSX.Element {
-  return (
-    <>
-      <div className="mv-hint">No project selected — showing global files only.</div>
-      {props.files
-        .filter((file) => file.scope === 'global')
-        .map((file) => (
-          <FileRow key={file.id} file={file} />
-        ))}
-    </>
   );
 }

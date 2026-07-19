@@ -298,6 +298,27 @@ describe('MemoryService (ADR-0028)', () => {
     expect(gated.externalList(project)).toEqual([]);
   });
 
+  it('agentsTree lists agents → global + project groups with charter rule counts', () => {
+    // Charter side: one rule + one pending candidate for the workspace.
+    service.addRuleFromInput({ projectPath: project, text: 'Rule A' });
+    service.captureCorrection({ taskId: 't1', kind: 'request-fix', text: CORRECTION });
+    // Claude side: global file + this project's memory dir (munged realpath).
+    const home = join(dir, 'home');
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(join(home, '.claude', 'CLAUDE.md'), '# global\n');
+
+    const tree = service.agentsTree();
+    expect(tree.claude.global).toHaveLength(1);
+    expect(tree.codex.global).toHaveLength(0);
+    expect(tree.charter.projects).toHaveLength(1);
+    expect(tree.charter.projects[0]).toMatchObject({
+      projectPath: project,
+      ruleCount: 1,
+      enabledCount: 1,
+      candidateCount: 1,
+    });
+  });
+
   it('external promote lands as a candidate bound to the project', () => {
     mkdirSync(join(dir, 'home', '.claude'), { recursive: true });
     writeFileSync(

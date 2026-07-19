@@ -6,6 +6,7 @@ import type { MemoryService } from '../services/memory-service.js';
 export function registerMemoryHandlers(memory: MemoryService, logger: Logger): void {
   registerHandlers(
     {
+      'memory.tree': async () => memory.agentsTree(),
       'memory.overview': async ({ projectPath }) => memory.overview(projectPath),
       'memory.rules.add': async ({ projectPath, text, group, enabled, source }) => ({
         rule: memory.addRuleFromInput({

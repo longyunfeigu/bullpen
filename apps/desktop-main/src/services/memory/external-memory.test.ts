@@ -129,6 +129,35 @@ describe('ExternalMemoryStore (ADR-0028)', () => {
     expect(() => store.delete('deadbeef00000000')).toThrow(ProductFailure);
   });
 
+  it('listAll discovers every Claude project group, resolving known workspaces by munge', () => {
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(join(home, '.claude', 'CLAUDE.md'), '# global\n');
+    // Known workspace → matched group with its display name.
+    const knownDir = claudeMemoryDir();
+    mkdirSync(knownDir, { recursive: true });
+    writeFileSync(join(knownDir, 'a.md'), 'known note\n');
+    // Foreign dir Claude knows but Charter never opened → raw munged name.
+    const foreign = join(home, '.claude', 'projects', '-Users-nobody-legacy-app', 'memory');
+    mkdirSync(foreign, { recursive: true });
+    writeFileSync(join(foreign, 'b.md'), 'foreign note\n');
+    // A projects dir without memory/ is not a group.
+    mkdirSync(join(home, '.claude', 'projects', '-Users-empty-proj'), { recursive: true });
+
+    const tree = store.listAll([{ path: project, displayName: 'my-project' }]);
+    expect(tree.claudeGlobal).toHaveLength(1);
+    expect(tree.claudeProjects).toHaveLength(2);
+    // Matched groups sort before foreign ones.
+    expect(tree.claudeProjects[0]).toMatchObject({
+      displayName: 'my-project',
+      projectPath: project,
+    });
+    expect(tree.claudeProjects[0]?.files[0]?.label).toBe('a.md');
+    expect(tree.claudeProjects[1]).toMatchObject({
+      displayName: '-Users-nobody-legacy-app',
+      projectPath: null,
+    });
+  });
+
   it('promote strips frontmatter and caps the body', () => {
     const memDir = claudeMemoryDir();
     mkdirSync(memDir, { recursive: true });
