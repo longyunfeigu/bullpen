@@ -223,18 +223,32 @@
   .mem-rule.off .rt { color: var(--fg-faint); }
   .mem-rule.cand { border-color: #d3bd82; border-left: 4px solid var(--warn); }
   .mem-rule.cand .cand-tag { font: 640 10px/1 var(--font-mono); color: var(--warn); letter-spacing: .06em; }
+  .proj { border: 1px solid var(--border-soft); border-radius: 11px; background: var(--bg-card); padding: 10px 13px; }
+  .proj.drift { border-left: 4px solid var(--warn); }
+  .proj .p-head { display: flex; align-items: center; gap: 10px; }
+  .proj .p-logo { width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--border); display: grid; place-items: center; font-size: 13px; flex: none; background: var(--bg-input); }
+  .proj .p-name { flex: 1; }
+  .proj .p-name b { font: 640 13px/1.4 var(--font-display); display: block; }
+  .proj .p-name small { color: var(--fg-faint); font-size: 11px; line-height: 1.5; display: block; }
+  .proj .p-state { font: 600 10.5px/1 var(--font-mono); border-radius: 999px; padding: 3px 9px; flex: none; }
+  .proj .p-state.ok { color: var(--success); background: #e9efe4; }
+  .proj .p-state.warn { color: var(--warn); background: #f6ecd2; }
+  .proj .p-block { margin: 9px 0 0 36px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-input); padding: 7px 11px; font: 10.5px/1.75 var(--font-mono); color: var(--fg-muted); white-space: pre-wrap; }
+  .proj .p-block mark { background: #f3e6c3; color: var(--warn); border-radius: 3px; padding: 0 3px; }
+  .proj .p-foot { margin: 8px 0 0 36px; font-size: 11px; color: var(--fg-faint); display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
 </style>
 <section id="f1">
   <div class="sec-head">
     <h2>① 项目记忆 · 审查即学习</h2>
     <div class="prov"><span class="both">⭐⭐ 双提名 · PM #1 + 用户 #5</span><span class="freq">全部任务自动受益 · 用户纠正 3-8 次/天</span><span>规模 M(1-2 周)</span></div>
-    <p>「agent 第三次给我写 default export——我们项目一律具名导出。前两次我都在审查里让它改了,可下个任务它又忘。」你在审查门里的每次驳回、每条批注、每个被拒的计划,都是决策级高信号:一键沉淀成项目规则,之后每个任务自动带上;每条规则可溯源、可停用、能看到这周挡下几次。同一个错误,不教第二遍。</p>
+    <p>「agent 第三次给我写 default export——我们项目一律具名导出。前两次我都在审查里让它改了,可下个任务它又忘。」你在审查门里的每次驳回、每条批注、每个被拒的计划,都是决策级高信号:一键沉淀成项目规则,之后每个任务自动带上;每条规则可溯源、可停用、能看到这周挡下几次。同一个错误,不教第二遍。<b>Ⓒ 视图</b>展示多 agent 规划:同一份规则源如何分发给 Charter/Pi、Claude Code 与 Codex——统一「项目约定层」;<b>Ⓑ 视图</b>同时升格为 Session Rail 的第五个 Tab「记忆」:共享规则之外,把 Claude Code / Codex 的私有记忆文件也收进同一个地方查看、编辑、清理、升格——管理但不合并。</p>
   </div>
   <div class="stage">
     <div>
       <div class="seg" id="f1seg" style="margin-bottom:12px">
         <button class="on" data-v="a">Ⓐ 捕获时刻 — 审查返工中</button>
-        <button data-v="b">Ⓑ 记忆中枢 — 管理与观测</button>
+        <button data-v="b">Ⓑ 记忆 Tab — 共享规则 + 各家私有</button>
+        <button data-v="c">Ⓒ 分发与同步 — 多 agent</button>
       </div>
 
       <!-- A: capture moment in review -->
@@ -282,23 +296,41 @@
         </div>
       </div>
 
-      <!-- B: memory hub -->
-      <div class="win" id="f1b" style="display:none">
-        <div class="win-title"><span class="dots"><i></i><i></i><i></i></span> 项目记忆 — charter-app</div>
-        <div class="mem-stats">
-          <span><b>13</b>条启用规则</span>
-          <span><b>41</b>本周注入任务</span>
-          <span><b>9</b>本周挡下的返工</span>
-          <span style="margin-left:auto;align-self:center"><button class="btn sm">新建规则…</button></span>
-        </div>
-        <div class="mem-body">
-          <nav class="mem-nav">
-            <a class="on">全部 <small>13</small></a>
-            <a>代码约定 <small>6</small></a>
-            <a>命令与验证 <small>4</small></a>
-            <a>边界 <small>3</small></a>
-            <a style="color:var(--warn)">候选待批 <small>2</small></a>
-          </nav>
+      <!-- B: memory tab (rail 5th icon) -->
+      <div class="win" id="f1b" style="display:none;width:1020px">
+        <div class="win-title"><span class="dots"><i></i><i></i><i></i></span> Charter — 「记忆」· Session Rail 新增的第五个 Tab</div>
+        <div class="app-body" style="min-height:520px">
+          <div class="abar">
+            <i title="Sessions">▤</i>
+            <i title="Inbox">◎<span class="bdg">2</span></i>
+            <i title="Projects">▦</i>
+            <i title="Search ⌘K">⌕</i>
+            <i class="on" title="记忆">◈</i>
+            <span class="sp"></span>
+            <i title="Editor">⌨</i>
+            <i title="Settings">⚙</i>
+          </div>
+          <div class="rail" style="width:206px">
+            <div class="grp">共享 — Charter 分发</div>
+            <div class="row sel" data-mv="shared"><span class="t">项目规则 · charter-app</span><small>13</small></div>
+            <div class="grp">各家私有 — 只管理不合并</div>
+            <div class="row" data-mv="claude"><span class="t">✳ Claude Code</span><small>9</small></div>
+            <div class="row" data-mv="codex"><span class="t">▣ Codex</span><small>1</small></div>
+            <div class="row" data-mv="charter"><span class="t">◆ Charter 任务台账</span><small>→</small></div>
+          </div>
+          <div class="main">
+
+          <!-- shared rules view -->
+          <div id="memShared">
+          <div class="mem-stats">
+            <span><b>13</b>条启用规则</span>
+            <span><b>41</b>本周注入任务</span>
+            <span><b>9</b>本周挡下的返工</span>
+            <span style="margin-left:auto;align-self:center"><button class="btn sm">新建规则…</button></span>
+          </div>
+          <div style="display:flex;gap:6px;padding:10px 18px 0;background:var(--bg-input);font-size:11px">
+            <span class="chip" style="background:var(--bg-active);color:var(--fg)">全部 13</span><span class="chip">代码约定 6</span><span class="chip">命令与验证 4</span><span class="chip">边界 3</span><span class="chip" style="color:var(--warn);border-color:#d3bd82">候选待批 2</span>
+          </div>
           <div class="mem-list">
             <div class="mem-rule cand">
               <div class="rt"><span class="cand-tag">候选 · 来自昨天的返工批注</span><br>PR 描述里必须引用 issue 号(如 <code style="font:11px var(--font-mono)">#142</code>)。
@@ -332,6 +364,137 @@
             </div>
             <div style="font-size:11px;color:var(--fg-faint);padding:2px 4px">规则存于项目内 <code style="font:10.5px var(--font-mono)">.charter/rules.md</code>,可随 git 提交与队友共享;每条规则的出处链接回原任务,在 Replay 里可回答「agent 为什么相信这条约定」。</div>
           </div>
+          </div><!-- /memShared -->
+
+          <!-- claude private memory view -->
+          <div id="memClaude" style="display:none">
+          <div class="mem-stats"><span style="align-self:center;font-size:11.5px;color:var(--fg-muted)">按 Claude Code 已知路径约定<b style="font-size:11.5px;display:inline">只读发现</b>;仅在你显式操作时写入,删除前自动备份。</span><span style="margin-left:auto;align-self:center"><button class="btn sm">在 Finder 中显示</button></span></div>
+          <div class="mem-list">
+            <div class="mem-rule">
+              <div class="rt"><code style="font:11px var(--font-mono)">~/.claude/CLAUDE.md</code> — 你的手写全局说明,对所有项目生效。
+                <div class="meta"><span class="src">全局</span><span>更新 12 天前</span></div>
+              </div>
+              <div style="display:flex;gap:5px;flex:none"><button class="btn ghost sm">查看</button><button class="btn ghost sm">编辑</button></div>
+            </div>
+            <div class="mem-rule">
+              <div class="rt"><code style="font:11px var(--font-mono)">memory/MEMORY.md</code> — Claude 自动记忆的索引页(本项目)。
+                <div class="meta"><span class="src">本项目 · 自动记忆</span><span>更新 昨天</span></div>
+              </div>
+              <div style="display:flex;gap:5px;flex:none"><button class="btn ghost sm">查看</button></div>
+            </div>
+            <div class="mem-rule">
+              <div class="rt">「部署前要先跑 release:verify,产物只认 dist/……」<code style="font:10.5px var(--font-mono)">memory/deploy-process.md</code>
+                <div class="meta"><span class="src">本项目 · 自动记忆</span><span>更新 2 天前</span></div>
+              </div>
+              <div style="display:flex;gap:5px;flex:none" id="promoteA"><button class="btn ghost sm">编辑</button><button class="btn ghost sm">删除</button><button class="btn primary sm" data-promote>↑ 升格为共享规则</button></div>
+            </div>
+            <div class="mem-rule">
+              <div class="rt">「REST 错误统一走 AppError 包装,不裸抛……」<code style="font:10.5px var(--font-mono)">memory/api-conventions.md</code>
+                <div class="meta"><span class="src">本项目 · 自动记忆</span><span>更新 5 天前</span></div>
+              </div>
+              <div style="display:flex;gap:5px;flex:none"><button class="btn ghost sm">编辑</button><button class="btn ghost sm">删除</button><button class="btn primary sm" data-promote>↑ 升格为共享规则</button></div>
+            </div>
+            <div style="font-size:11px;color:var(--fg-faint);padding:2px 4px">升格 = 把这条<b style="font-size:11px;display:inline">复制</b>进共享规则候选区(原文件不动,单向);会话转录(jsonl)是对话记录不是记忆,不在此管理。Charter 永不后台改写这些文件。</div>
+          </div>
+          </div><!-- /memClaude -->
+
+          <!-- codex private memory view -->
+          <div id="memCodex" style="display:none">
+          <div class="mem-list" style="padding-top:14px">
+            <div class="mem-rule">
+              <div class="rt"><code style="font:11px var(--font-mono)">~/.codex/AGENTS.md</code> — 你的手写全局说明,对所有项目生效。
+                <div class="meta"><span class="src">全局</span><span>更新 20 天前</span></div>
+              </div>
+              <div style="display:flex;gap:5px;flex:none"><button class="btn ghost sm">查看</button><button class="btn ghost sm">编辑</button></div>
+            </div>
+            <div class="mem-rule">
+              <div class="rt"><code style="font:11px var(--font-mono)">AGENTS.md</code>(本项目)— 含 Charter 托管区块,由 Ⓒ 的同步维护。
+                <div class="meta"><span class="src">本项目</span><span class="hit">✓ 与规则源一致</span></div>
+              </div>
+              <div style="display:flex;gap:5px;flex:none"><button class="btn ghost sm">查看</button></div>
+            </div>
+            <div style="border:1px dashed var(--border-strong);border-radius:10px;padding:10px 13px;font-size:12px;color:var(--fg-muted);background:var(--bg-card)">此版本的 Codex 没有自动记忆目录——诚实空态:只发现以上两个文件。若未来版本引入记忆存储,按同样的「只读发现」规则接入。</div>
+          </div>
+          </div><!-- /memCodex -->
+
+          <!-- charter memory view -->
+          <div id="memCharter" style="display:none">
+          <div class="mem-list" style="padding-top:14px">
+            <div style="border:1px solid var(--border-soft);border-radius:10px;background:var(--bg-card);padding:11px 14px;font-size:12.5px;line-height:1.65;color:var(--fg-muted)"><b style="color:var(--fg)">Charter/Pi 没有暗藏的私有记忆。</b>它的长期记忆就是左侧的「共享项目规则」(每次任务注入);过程记忆是任务台账——时间线、证据、回放,本来就在产品里,这里只是给个入口。</div>
+            <div class="mem-rule">
+              <div class="rt">任务台账 · 128 个任务 · 42 MB
+                <div class="meta"><span class="src">时间线 + 证据 + 回放</span></div>
+              </div>
+              <div style="display:flex;gap:5px;flex:none"><button class="btn ghost sm">打开 History</button><button class="btn ghost sm">Replay 检索</button></div>
+            </div>
+            <div style="font-size:11px;color:var(--fg-faint);padding:2px 4px">⌘K 的搜索域随本 Tab 扩展:共享规则、各家私有记忆文件、任务台账——「我记得让 Claude 记过一个部署口令」一搜即达。</div>
+          </div>
+          </div><!-- /memCharter -->
+
+          </div><!-- /main -->
+        </div><!-- /app-body -->
+      </div>
+
+      <!-- C: distribution & sync -->
+      <div class="win" id="f1c" style="display:none">
+        <div class="win-title"><span class="dots"><i></i><i></i><i></i></span> 项目记忆 — 分发与同步 · charter-app</div>
+        <div style="background:var(--bg-input);padding:16px 18px;display:grid;gap:11px">
+          <div style="display:flex;align-items:center;gap:11px;border:1px solid var(--border-strong);border-radius:11px;background:var(--bg-card);padding:10px 14px">
+            <span style="font-size:15px">◉</span>
+            <div style="flex:1">
+              <b style="font:640 13px/1.4 var(--font-display)">唯一事实源 · <code class="mono" style="font-size:11.5px">.charter/rules.md</code></b>
+              <div style="font-size:11px;color:var(--fg-faint);margin-top:2px">13 条启用规则,规则文本+启用状态随 git 共享;命中计数与出处链接存本地,不进仓库</div>
+            </div>
+            <button class="btn sm">在 Editor 打开</button>
+          </div>
+          <div style="text-align:center;color:var(--fg-faint);font-size:11px">│ 同一份规则,三个投影 ▼</div>
+
+          <div class="proj">
+            <div class="p-head">
+              <span class="p-logo">◆</span>
+              <div class="p-name"><b>Charter · Pi 任务</b><small>每次任务启动注入 preamble 的 <code style="font:10px var(--font-mono)">&lt;project_rules&gt;</code> 区块 — 与技能注入同一条内建通道</small></div>
+              <span class="p-state ok">始终开启</span>
+            </div>
+            <div class="p-foot">近 7 天注入 41 个任务 · 规则变更对下一次运行立即生效 · 不落任何项目文件</div>
+          </div>
+
+          <div class="proj">
+            <div class="p-head">
+              <span class="p-logo">✳</span>
+              <div class="p-name"><b>Claude Code · CLAUDE.md</b><small>托管区块只写一行 import(Claude Code 原生 @ 引用),正文永不触碰</small></div>
+              <span class="p-state ok">✓ 已同步 · 2 分钟前</span>
+              <div class="toggle on" style="transform:scale(.86)"></div>
+            </div>
+            <div class="p-block">&lt;!-- charter:rules:begin — Charter 托管,勿手改 --&gt;
+@.charter/rules.md
+&lt;!-- charter:rules:end --&gt;</div>
+            <div class="p-foot">区块外你手写的 CLAUDE.md 内容 Charter 只读不写 · 每次写入原子落盘,git diff 可见</div>
+          </div>
+
+          <div class="proj drift" id="codexProj">
+            <div class="p-head">
+              <span class="p-logo">▣</span>
+              <div class="p-name"><b>Codex · AGENTS.md</b><small>AGENTS.md 无 import 语义 — 托管区块内渲染规则全文</small></div>
+              <span class="p-state warn" id="codexState">⚠ 托管区块被手改</span>
+              <div class="toggle on" style="transform:scale(.86)"></div>
+            </div>
+            <div class="p-block" id="codexBlock">&lt;!-- charter:rules:begin --&gt;
+- 导出一律使用具名导出;禁止 default export。
+- 测试一律用 vitest,不引入 jest。
+<mark>- 提交前先跑 npm run check ← 手改新增,规则源里没有</mark>
+…(其余 10 条)
+&lt;!-- charter:rules:end --&gt;</div>
+            <div class="p-foot" id="codexActions"><span>上次同步后区块被手改(hash 不符),不会静默覆盖:</span>
+              <button class="btn primary sm" id="driftImport">导入手改为候选规则</button>
+              <button class="btn ghost sm">用规则源覆盖</button>
+              <button class="btn ghost sm">停止托管此文件</button>
+            </div>
+          </div>
+
+          <div style="border:1px dashed var(--border-strong);border-radius:10px;padding:9px 13px;font-size:12px;color:var(--fg-muted);display:flex;gap:9px;align-items:center">
+            <span>⇄</span><span style="flex:1"><b style="color:var(--fg)">反向导入(首次启用):</b>扫描到现有 CLAUDE.md 含 6 条约定、AGENTS.md 含 4 条(重合 3)——解析进候选区人工确认,避免出现第四套记忆。</span><button class="btn sm">查看并导入…</button>
+          </div>
+          <div style="font-size:11px;color:var(--fg-faint)">边界:只统一「项目约定」这一层;各 CLI 的私有记忆(<code style="font:10px var(--font-mono)">~/.claude</code> 自动记忆、<code style="font:10px var(--font-mono)">~/.codex/sessions</code>)Charter 不读不写。</div>
         </div>
       </div>
     </div>
@@ -341,20 +504,23 @@
       <div class="note"><b>为什么竞品抄不走。</b>竞品从聊天流里抓记忆,信号噪杂;Charter 的捕获点长在审查门上——驳回 hunk / request-fix 批注 / 计划拒绝是决策级信号,规则质量一个量级;且每条带出处进证据台账与 Replay receipt,可溯源、可撤销。</div>
       <div class="note"><b>粘性 · 数据沉淀型。</b>规则库随使用增值,换工具即归零——这是留存曲线拉平后仍不流失的根因;同时直接补掉业界对照自评的「沉淀环」缺口。</div>
       <div class="note"><b>防 drift 设计。</b>「本周生效 N 次 / 0 次命中」让每条规则的价值可观测——比手写 CLAUDE.md 强的正是这点;0 命中规则可提示归档。</div>
+      <div class="note"><b>多 agent 一环(Ⓒ)。</b>单源三投影:Charter/Pi 走 preamble;CLAUDE.md 托管区块一行 @import;AGENTS.md 渲染写实。托管区块外内容永不触碰;写入原子、git 可见;区块被手改时不静默覆盖,给「导入/覆盖/停止托管」三选。实现前核对两家 CLI 当时版本的 memory 惯例。</div>
+      <div class="note"><b>私有记忆管理(Ⓑ)。</b>「记忆」成为 Session Rail 第五个 Tab,两层:共享规则(Charter 分发)+ 各家私有(只管理不合并)。私有层只做四件事:查看 / 编辑 / 删除(先备份)/ <b>升格</b>——把某条私有记忆复制进共享候选区,单向,不反向写入。发现机制复用技能系统对 <code style="font:10.5px var(--font-mono)">~/.claude</code>、<code style="font:10.5px var(--font-mono)">~/.codex</code> 的既有只读扫描惯例;找不到就给诚实空态,绝不后台改写。</div>
       <div class="note q">捕获触发的克制度:mock 按「同类纠正第 2 次起才弹卡、每任务最多 1 张」处理;要不要更保守(只进候选区、从不弹卡)?</div>
       <div class="note q">规则文件放项目内 <code style="font:10.5px var(--font-mono)">.charter/rules.md</code>(可 git 共享)还是应用数据目录?mock 按项目内。</div>
+      <div class="note q">同步到 CLAUDE.md / AGENTS.md 默认开还是关?mock 按「默认关,首次开启前预览将写入的区块」——沉淀环要对外部 agent 生效依赖这个开关。</div>
+      <div class="note q">「记忆」作为 rail 第五个独立 Tab(mock 如此)还是并进 Projects 面板?独立 Tab 高频可达,但 rail 图标位是稀缺资源。</div>
+      <div class="note q">编辑私有记忆文件时,CLI 可能同时在写——mock 按沿用 Editor 既有的 dirty-guard/外部变更冲突语义,可接受吗?</div>
     </div>
   </div>
 </section>
 <script>
 (() => {
   const segBtns = document.querySelectorAll('#f1seg button');
-  const a = document.getElementById('f1a'), b = document.getElementById('f1b');
+  const views = { a: document.getElementById('f1a'), b: document.getElementById('f1b'), c: document.getElementById('f1c') };
   segBtns.forEach(btn => btn.addEventListener('click', () => {
     segBtns.forEach(x => x.classList.toggle('on', x === btn));
-    const showA = btn.dataset.v === 'a';
-    a.style.display = showA ? '' : 'none';
-    b.style.display = showA ? 'none' : '';
+    Object.entries(views).forEach(([k, el]) => { el.style.display = k === btn.dataset.v ? '' : 'none'; });
   }));
   const distill = document.getElementById('distill');
   document.getElementById('dOk').addEventListener('click', () => {
@@ -365,6 +531,23 @@
     document.getElementById('newRule').style.display = '';
   });
   document.getElementById('dNo').addEventListener('click', () => { distill.style.display = 'none'; });
+  document.getElementById('driftImport').addEventListener('click', () => {
+    const proj = document.getElementById('codexProj'), state = document.getElementById('codexState');
+    proj.classList.remove('drift');
+    state.className = 'p-state ok';
+    state.textContent = '✓ 已同步 · 手改已入候选区';
+    document.getElementById('codexBlock').innerHTML = '&lt;!-- charter:rules:begin --&gt;\n- 导出一律使用具名导出;禁止 default export。\n- 测试一律用 vitest,不引入 jest。\n…(其余 10 条)\n&lt;!-- charter:rules:end --&gt;';
+    document.getElementById('codexActions').innerHTML = '✓ 手改内容已进入候选区(切到 Ⓑ 的「候选待批」可见)· 区块已按规则源重写,新 hash 已记录。';
+  });
+  document.querySelectorAll('#f1b .rail .row').forEach(r => r.addEventListener('click', () => {
+    document.querySelectorAll('#f1b .rail .row').forEach(x => x.classList.toggle('sel', x === r));
+    ['Shared', 'Claude', 'Codex', 'Charter'].forEach(k => {
+      document.getElementById('mem' + k).style.display = (k.toLowerCase() === r.dataset.mv) ? '' : 'none';
+    });
+  }));
+  document.querySelectorAll('#f1b [data-promote]').forEach(b => b.addEventListener('click', () => {
+    b.parentElement.innerHTML = '<span style="font:600 11px/1.8 var(--font-mono);color:var(--success)">✓ 已复制为共享规则候选(候选区 +1)</span>';
+  }));
 })();
 </script>
 

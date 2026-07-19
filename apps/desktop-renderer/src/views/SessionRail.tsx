@@ -934,6 +934,15 @@ export function SessionRail(): React.JSX.Element {
         >
           <Ic name="search" size={16} />
         </button>
+        <button
+          className={`sr-activity-item ${app.overlay === 'memory' ? 'active' : ''}`}
+          data-testid="rail-view-memory"
+          aria-label="Memory"
+          title="Memory — project rules & agent memories"
+          onClick={() => app.setOverlay('memory')}
+        >
+          <Ic name="archive" size={16} />
+        </button>
         <span className="sr-activity-spacer" />
         <button
           className="sr-activity-item"

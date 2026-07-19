@@ -79,6 +79,13 @@ export const SettingsSchema = z.object({
       consoleToAgent: z.enum(['auto', 'manual', 'off']).default('auto'),
     })
     .prefault({}),
+  memory: z
+    .object({
+      /** ADR-0028: offer a distill card after review corrections (request-fix /
+       * plan changes). Off = corrections are never captured as candidates. */
+      captureEnabled: z.boolean().default(true),
+    })
+    .prefault({}),
   models: z
     .object({
       defaultProviderId: z.string().nullable().default(null),

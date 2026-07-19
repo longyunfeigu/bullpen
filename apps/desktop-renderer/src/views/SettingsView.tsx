@@ -1298,6 +1298,29 @@ export function SettingsView(): React.JSX.Element {
                 />
               </Row>
             </div>
+            <div className="st-card">
+              <Row
+                label="Capture review corrections as rule candidates"
+                hint="Request-fix notes and plan pushback offer a distill card (ADR-0028); nothing is captured when off"
+              >
+                <Toggle
+                  checked={settings.memory.captureEnabled}
+                  onChange={(v) => set({ memory: { captureEnabled: v } })}
+                />
+              </Row>
+              <Row
+                label="Project rules & agent memories"
+                hint="Shared rules, CLAUDE.md / AGENTS.md sync and private CLI memory live in Memory"
+              >
+                <button
+                  className="btn"
+                  data-testid="settings-open-memory"
+                  onClick={() => useAppStore.getState().setOverlay('memory')}
+                >
+                  Open Memory
+                </button>
+              </Row>
+            </div>
             <SkillsBlock />
           </>
         ) : null}

@@ -20,7 +20,7 @@ import {
   type SessionNoticeTone,
 } from './sessionAttention.js';
 
-export type OverlayKind = 'none' | 'settings' | 'diagnostics' | 'about';
+export type OverlayKind = 'none' | 'settings' | 'diagnostics' | 'about' | 'memory';
 /** Contextual tools owned by the active Session. These replace the old
  * app-level workspace shell. */
 export type SessionTool = 'summary' | 'diff' | 'file' | 'preview' | 'terminal' | 'review';

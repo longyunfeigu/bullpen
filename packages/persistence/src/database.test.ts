@@ -117,18 +117,26 @@ describe('persistence database', () => {
     db.close();
   });
 
-  it('upgrades an existing v3 database with conversation-reference snapshots', () => {
+  it('upgrades an existing v3 database with conversation refs and project memory', () => {
     const before = open(MIGRATIONS.slice(0, 3));
     before.db.close();
 
     const upgraded = open(MIGRATIONS);
-    expect(upgraded.appliedVersions).toEqual([4]);
-    const table = upgraded.db
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_conversation_references'",
-      )
-      .get() as { name: string } | undefined;
-    expect(table?.name).toBe('task_conversation_references');
+    expect(upgraded.appliedVersions).toEqual([4, 5]);
+    const names = (
+      upgraded.db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('task_conversation_references', 'memory_candidates', 'memory_rule_stats', 'memory_rule_injections', 'memory_sync_state') ORDER BY name",
+        )
+        .all() as { name: string }[]
+    ).map((row) => row.name);
+    expect(names).toEqual([
+      'memory_candidates',
+      'memory_rule_injections',
+      'memory_rule_stats',
+      'memory_sync_state',
+      'task_conversation_references',
+    ]);
     upgraded.db.close();
   });
 });

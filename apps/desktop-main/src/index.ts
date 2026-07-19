@@ -41,6 +41,8 @@ import { registerM9Handlers } from './ipc/m9-handlers.js';
 import { SecretService } from './services/secret-service.js';
 import { SkillStore } from './services/skill-store.js';
 import { registerSkillsHandlers } from './ipc/skills-handlers.js';
+import { MemoryService } from './services/memory-service.js';
+import { registerMemoryHandlers } from './ipc/memory-handlers.js';
 import { ModelCatalogService } from './services/model-catalog.js';
 import { AgentHost } from './services/agent-host.js';
 import { TaskService } from './services/task-service.js';
@@ -559,6 +561,24 @@ if (!gotLock) {
       skillStoreRef = skillStore;
       skillStore.startWatching();
       registerSkillsHandlers(skillStore, logger.child('ipc'));
+      // ADR-0028: project memory — shared rules source, review-correction
+      // capture, managed-block sync, external private-memory management.
+      // E2E only discovers an explicitly supplied fake home (PI_IDE_MEMORY_HOME).
+      const memoryHome = process.env.PI_IDE_MEMORY_HOME;
+      const memoryService = new MemoryService({
+        db: state.db,
+        logger: logger.child('memory'),
+        trashDir: joinPath(paths.memoryDir, 'trash'),
+        ...(memoryHome ? { homeDir: memoryHome } : {}),
+        discoverExternal: !process.env.PI_IDE_E2E || Boolean(memoryHome),
+        broadcast: (payload) => broadcast('memory.changed', payload),
+        captureEnabled: () => settings.effective.memory.captureEnabled,
+        // Deferred: taskServiceRef is assigned right below.
+        recordTaskEvent: (taskId, type, payload) => {
+          taskServiceRef?.recordEvent(taskId, type, payload);
+        },
+      });
+      registerMemoryHandlers(memoryService, logger.child('ipc'));
       const taskService = new TaskService(
         state.db,
         agentHostRef,
@@ -569,6 +589,8 @@ if (!gotLock) {
         logger.child('tasks'),
       );
       taskServiceRef = taskService;
+      // ADR-0028: preamble <project_rules> + review-correction capture.
+      taskService.attachMemoryHooks(memoryService);
       taskService.markOrphanedRunsInterrupted();
       // ADR-0009 am.2: fire-and-forget cleanup of finished tasks' worktrees.
       void taskService.sweepWorktreeOrphans();

@@ -233,4 +233,59 @@ CREATE INDEX idx_task_conversation_refs_source
   ON task_conversation_references(source_task_id);
 `,
   },
+  {
+    version: 5,
+    name: 'project-memory',
+    // ADR-0028: project memory. Rule text + enabled state live in the shared
+    // .charter/rules.md file; these tables hold the machine-local halves only:
+    // captured-but-unapproved candidates, per-rule provenance/observation
+    // counters, and the managed-block sync state for CLAUDE.md / AGENTS.md.
+    up: `
+CREATE TABLE memory_candidates (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  text TEXT NOT NULL,
+  origin_json TEXT NOT NULL,
+  similar_count INTEGER NOT NULL DEFAULT 1,
+  matched_rule_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  resolved_rule_id TEXT,
+  resolved_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_memory_candidates_ws ON memory_candidates(workspace_id, status, created_at);
+
+CREATE TABLE memory_rule_stats (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  rule_id TEXT NOT NULL,
+  source_task_id TEXT,
+  source_label TEXT,
+  created_at TEXT NOT NULL,
+  hit_count INTEGER NOT NULL DEFAULT 0,
+  last_hit_at TEXT,
+  PRIMARY KEY (workspace_id, rule_id)
+);
+
+CREATE TABLE memory_rule_injections (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  rule_id TEXT NOT NULL,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  injected_at TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, rule_id, task_id)
+);
+CREATE INDEX idx_memory_injections_ws ON memory_rule_injections(workspace_id, injected_at);
+
+CREATE TABLE memory_sync_state (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  target TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  managed_block_hash TEXT,
+  last_synced_at TEXT,
+  status TEXT NOT NULL DEFAULT 'off',
+  detail TEXT,
+  PRIMARY KEY (workspace_id, target)
+);
+`,
+  },
 ];

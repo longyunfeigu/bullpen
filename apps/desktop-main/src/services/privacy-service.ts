@@ -138,6 +138,12 @@ const HISTORY_TABLES_CHILD_FIRST = [
   'task_conversation_references',
   'agent_sessions',
   'task_events',
+  // ADR-0028: task-derived memory history (injections FK tasks; candidates/
+  // stats are machine-local observations). The rules FILE (.charter/rules.md)
+  // is a project file and is deliberately never touched by clear-history.
+  'memory_rule_injections',
+  'memory_candidates',
+  'memory_rule_stats',
   'tasks',
 ];
 

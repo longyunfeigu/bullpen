@@ -28,6 +28,13 @@ function setup() {
     'INSERT INTO task_events (id, task_id, sequence, type, payload_json, created_at) VALUES (?,?,?,?,?,?)',
   ).run('e1', 't1', 1, 'user.message', '{}', now);
   db.prepare('INSERT INTO blobs (hash, size, created_at) VALUES (?,?,?)').run('abc', 2, now);
+  // ADR-0028: task-derived memory rows must not block clear-history (FK on tasks).
+  db.prepare(
+    'INSERT INTO memory_rule_injections (workspace_id, rule_id, task_id, injected_at) VALUES (?,?,?,?)',
+  ).run('ws1', 'r-1', 't1', now);
+  db.prepare(
+    "INSERT INTO memory_candidates (id, workspace_id, text, origin_json, created_at, updated_at) VALUES ('mc1','ws1','x','{}',?,?)",
+  ).run(now, now);
   return { paths, db, userData };
 }
 

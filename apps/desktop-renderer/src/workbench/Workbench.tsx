@@ -5,6 +5,7 @@ import { onEvent, platform, rpcResult } from '../bridge.js';
 import { runInitsOnce } from './init.js';
 import { CommandPalette } from './CommandPalette.js';
 import { SettingsView } from '../views/SettingsView.js';
+import { MemoryView } from '../views/MemoryView.js';
 import { DiagnosticsView } from '../views/DiagnosticsView.js';
 import { Ic } from '../views/home-icons.js';
 import { SessionRail } from '../views/SessionRail.js';
@@ -324,6 +325,7 @@ export function Workbench(): React.JSX.Element {
             </div>
             <div className="modal-body">
               {overlay === 'settings' ? <SettingsView /> : null}
+              {overlay === 'memory' ? <MemoryView /> : null}
               {overlay === 'diagnostics' ? <DiagnosticsView /> : null}
               {overlay === 'about' && appInfo ? (
                 <div style={{ padding: 20, lineHeight: 1.9 }}>

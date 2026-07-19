@@ -155,6 +155,18 @@ const TASK_SELECT =
  * Task engine (spec §6): persistence-backed state machine, immutable event log,
  * run orchestration against the AgentHost, tool audit projection.
  */
+/** ADR-0028: project-memory hooks (injected post-construction, optional). */
+export interface TaskMemoryHooks {
+  /** <project_rules> block for a managed run's preamble; null when empty. */
+  projectRulesBlock(taskId: string): string | null;
+  /** A review correction happened (request-fix steer / plan change request). */
+  captureCorrection(input: {
+    taskId: string;
+    kind: 'request-fix' | 'plan-changes';
+    text: string;
+  }): void;
+}
+
 export class TaskService {
   private readonly sequences = createSequenceAllocator();
   private readonly sessionRefs = new Map<string, RuntimeSessionRef>();
@@ -210,6 +222,9 @@ export class TaskService {
 
   /** ADR-0022: replay receipt hash for the PR draft (injected post-construction). */
   private receiptProvider: ((taskId: string) => string | null) | null = null;
+
+  /** ADR-0028: project memory (injected post-construction; absent in some tests). */
+  private memory: TaskMemoryHooks | null = null;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -595,6 +610,14 @@ export class TaskService {
       // propose_plan resolves with the feedback and the model revises (v+1).
       const reason = (input.reason ?? '').trim() || 'Please revise the plan.';
       const feedback = formatPromptWithCodeContext(reason, input.codeRefs ?? []);
+      // ADR-0028: plan pushback is a decision-grade correction too.
+      if (input.reason?.trim()) {
+        this.memory?.captureCorrection({
+          taskId: input.taskId,
+          kind: 'plan-changes',
+          text: input.reason.trim(),
+        });
+      }
       this.planRecords.set(input.taskId, {
         plan: record.plan,
         status: 'none',
@@ -1116,6 +1139,11 @@ export class TaskService {
   /** ADR-0022: inject the replay receipt hasher (wired after ReplayService exists). */
   setReceiptProvider(provider: (taskId: string) => string | null): void {
     this.receiptProvider = provider;
+  }
+
+  /** ADR-0028: inject project-memory hooks (preamble rules + correction capture). */
+  attachMemoryHooks(hooks: TaskMemoryHooks): void {
+    this.memory = hooks;
   }
 
   /** ADR-0024: the task's context-attachment directory (outside any workspace
@@ -2412,6 +2440,9 @@ export class TaskService {
     this.setState(taskId, task.state === 'READY' ? 'EXPLORING' : 'IN_PROGRESS');
 
     const refreshedSkills = createdSession ? '' : this.skills.preambleBlock();
+    // ADR-0028: reused sessions keep their original preamble, so rules
+    // distilled since then would be invisible — refresh them per run too.
+    const refreshedRules = createdSession ? null : (this.memory?.projectRulesBlock(taskId) ?? null);
     this.host.startRun(taskId, {
       sessionRef: ref,
       runId,
@@ -2424,6 +2455,7 @@ export class TaskService {
         ...(refreshedSkills
           ? [`<skill_catalog_refresh>\n${refreshedSkills}\n</skill_catalog_refresh>`]
           : []),
+        ...(refreshedRules ? [refreshedRules] : []),
         formatPromptWithFileContext(
           formatPromptWithCodeContext(
             this.skills.expandCommand(runtimeText),
@@ -2459,6 +2491,9 @@ export class TaskService {
         ? null
         : 'Before your FIRST file modification, call propose_plan with your step-by-step plan and wait for the decision. The user may edit the plan or request changes — follow the version returned in the tool result, and keep step statuses current with update_plan.';
     const skillsBlock = this.skills.preambleBlock();
+    // ADR-0028: distilled project rules ride every managed run (never throws;
+    // reads the project's current .charter/rules.md and records the injection).
+    const rulesBlock = this.memory?.projectRulesBlock(task.id) ?? null;
     return [
       // PIVOT-008/ADR-0009: product identity — internal harness/vendor names
       // must never leak into the agent's self-description.
@@ -2472,6 +2507,7 @@ export class TaskService {
       // ADR-0015: enabled, model-invocable skills (loading goes through the
       // audited load_skill tool; explicit-only skills stay out of this list).
       ...(skillsBlock ? [skillsBlock] : []),
+      ...(rulesBlock ? [rulesBlock] : []),
       `Task: ${task.title}`,
     ].join('\n');
   }
@@ -2496,6 +2532,11 @@ export class TaskService {
     // ADR-0016: a reply may re-point the task's model/effort for the next turn.
     // Applied BEFORE the message so a failed switch rejects the send loudly.
     if (model) await this.applyModelOverride(taskId, model);
+    // ADR-0028: a review request-fix (steer carrying review-origin code refs)
+    // is a decision-grade correction — capture it as a rule candidate.
+    if (text.trim().length > 0 && attachments?.codeRefs?.some((ref) => ref.origin === 'review')) {
+      this.memory?.captureCorrection({ taskId, kind: 'request-fix', text });
+    }
     const runId = this.runsByTask.get(taskId);
     const task = this.getTask(taskId);
     if (runId && isRunningState(task.state as TaskState)) {
@@ -2511,10 +2552,13 @@ export class TaskService {
       // ADR-0019: active-session replies also receive the current linked
       // catalog; explicit commands are expanded from the same live revision.
       const currentSkills = this.skills.preambleBlock();
+      // ADR-0028: rules distilled mid-run reach the very next turn.
+      const currentRules = this.memory?.projectRulesBlock(taskId) ?? null;
       const expanded = [
         ...(currentSkills
           ? [`<skill_catalog_refresh>\n${currentSkills}\n</skill_catalog_refresh>`]
           : []),
+        ...(currentRules ? [currentRules] : []),
         formatPromptWithFileContext(
           formatPromptWithCodeContext(this.skills.expandCommand(text), attachments?.codeRefs ?? []),
           attachments?.fileRefs ?? [],

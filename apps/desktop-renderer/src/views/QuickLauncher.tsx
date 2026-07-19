@@ -10,7 +10,7 @@ import { presentedMeta } from './labels.js';
 
 interface Entry {
   id: string;
-  group: 'Actions' | 'Tasks' | 'Files' | 'Projects';
+  group: 'Actions' | 'Tasks' | 'Files' | 'Projects' | 'Memory';
   icon: string;
   label: string;
   sub?: string;
@@ -32,6 +32,7 @@ export function QuickLauncher(): React.JSX.Element | null {
   const [recent, setRecent] = useState<RecentWorkspaceDto[]>([]);
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [files, setFiles] = useState<string[]>([]);
+  const [memoryHits, setMemoryHits] = useState<{ id: string; label: string; sub: string }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -48,8 +49,31 @@ export function QuickLauncher(): React.JSX.Element | null {
           if (res.ok) setTasks(res.data.tasks);
         },
       );
+      // ADR-0028: rules + external memory files join the search domain.
+      void Promise.all([
+        rpcResult('memory.overview', { projectPath: workspace.path }),
+        rpcResult('memory.external.list', { projectPath: workspace.path }),
+      ]).then(([overview, external]) => {
+        const hits: { id: string; label: string; sub: string }[] = [];
+        if (overview.ok && overview.data.available) {
+          for (const rule of overview.data.rules) {
+            hits.push({ id: `rule-${rule.id}`, label: rule.text, sub: 'Project rule' });
+          }
+        }
+        if (external.ok) {
+          for (const file of external.data.files) {
+            hits.push({
+              id: `memfile-${file.id}`,
+              label: `${file.label} — ${file.summary}`,
+              sub: file.path,
+            });
+          }
+        }
+        setMemoryHits(hits);
+      });
     } else {
       setTasks([]);
+      setMemoryHits([]);
     }
     setTimeout(() => inputRef.current?.focus(), 0);
   }, [open, workspace]);
@@ -107,6 +131,13 @@ export function QuickLauncher(): React.JSX.Element | null {
         // Settings is an overlay — opening it must not yank you to the Editor.
         run: () => useAppStore.getState().setOverlay('settings'),
       },
+      {
+        id: 'action-memory',
+        group: 'Actions',
+        icon: 'archive',
+        label: 'Open Memory (project rules & agent memories)',
+        run: () => useAppStore.getState().setOverlay('memory'),
+      },
     ];
     list.push(...actions.filter((a) => matches(a.label)));
 
@@ -136,6 +167,17 @@ export function QuickLauncher(): React.JSX.Element | null {
           run: () => openWorkspaceFile(path),
         });
       }
+      // ADR-0028: "I remember Claude noted a deploy password…" — one search away.
+      for (const hit of memoryHits.filter((h) => matches(h.label)).slice(0, 4)) {
+        list.push({
+          id: hit.id,
+          group: 'Memory',
+          icon: 'archive',
+          label: hit.label.length > 72 ? `${hit.label.slice(0, 72)}…` : hit.label,
+          sub: hit.sub,
+          run: () => useAppStore.getState().setOverlay('memory'),
+        });
+      }
     }
 
     for (const r of recent.filter((r) => matches(r.displayName)).slice(0, 5)) {
@@ -155,7 +197,7 @@ export function QuickLauncher(): React.JSX.Element | null {
       });
     }
     return list;
-  }, [query, tasks, files, recent, surface, workspace]);
+  }, [query, tasks, files, recent, memoryHits, surface, workspace]);
 
   useEffect(() => {
     setIndex((i) => Math.min(i, Math.max(0, entries.length - 1)));

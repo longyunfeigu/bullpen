@@ -860,6 +860,15 @@ function eventNode(
         </div>
       );
     }
+    case 'memory.distilled': {
+      // ADR-0028: a correction from this task became a project rule (receipt).
+      const text = typeof payload.text === 'string' ? payload.text : '';
+      return (
+        <div key={event.id} className="rt-note" data-testid="tl-memory-distilled">
+          Distilled into a project rule: “{text}” — future tasks carry it automatically.
+        </div>
+      );
+    }
     case 'run.failed': {
       const error = payload.error as { userMessage?: string; code?: string } | undefined;
       return (

@@ -8,6 +8,7 @@ import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useEditorStore } from '../store/editorStore.js';
 import { StateBadge } from './AgentPanel.js';
 import { RoomTimeline } from './RoomTimeline.js';
+import { DistillCards } from './DistillCards.js';
 import { ConfirmDangerButton, ModelEffortControl } from './ui.js';
 import { Ic } from './home-icons.js';
 import {
@@ -327,6 +328,9 @@ export function TaskRoomView(): React.JSX.Element {
           {running && !task.external ? (
             <ActivityStrip taskId={task.id} taskText={`${task.title}\n${task.goalMd}`} />
           ) : null}
+          {/* ADR-0028: distill card — a captured review correction offers to
+              become a project rule, inline where the correction happened. */}
+          {task.external ? null : <DistillCards taskId={task.id} />}
           {task.external ? null : <RoomComposer key={task.id} task={task} running={running} />}
         </div>
         <SessionSplitHandle taskId={task.id} containerRef={canvasBodyRef} />

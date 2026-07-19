@@ -13,6 +13,8 @@ export interface AppPaths {
   logsDir: string;
   /** Managed skills store (ADR-0015) — imported SKILL.md folders live here. */
   skillsDir: string;
+  /** Project-memory scratch (ADR-0028) — external-memory delete backups live here. */
+  memoryDir: string;
 }
 
 export function createAppPaths(userData: string): AppPaths {
@@ -26,6 +28,7 @@ export function createAppPaths(userData: string): AppPaths {
     backupsDir: join(userData, 'backups'),
     logsDir: join(userData, 'logs'),
     skillsDir: join(userData, 'skills'),
+    memoryDir: join(userData, 'memory'),
   };
   for (const dir of [
     paths.secretsDir,
@@ -34,6 +37,7 @@ export function createAppPaths(userData: string): AppPaths {
     paths.backupsDir,
     paths.logsDir,
     paths.skillsDir,
+    paths.memoryDir,
   ]) {
     mkdirSync(dir, { recursive: true });
   }

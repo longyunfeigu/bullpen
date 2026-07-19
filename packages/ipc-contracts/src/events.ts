@@ -36,6 +36,14 @@ export const EVENT_CHANNELS = {
     1,
     z.object({ reason: z.string(), revision: z.number().int().nonnegative() }),
   ),
+  /** ADR-0028: project memory changed (rules / candidates / sync / external
+   * files) — renderers refetch the overview. projectPath null = global scope
+   * (e.g. an external CLI's home-level file changed). */
+  'memory.changed': ev(
+    'memory.changed',
+    1,
+    z.object({ projectPath: z.string().nullable(), reason: z.string() }),
+  ),
   'workspace.changed': ev(
     'workspace.changed',
     1,

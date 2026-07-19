@@ -29,6 +29,14 @@ import {
 } from './replay.js';
 import { ProviderApiSchema, ProviderInfoSchema } from './providers.js';
 import { SkillDtoSchema, SkillSourceDtoSchema } from './skills.js';
+import {
+  ExternalMemoryFileDtoSchema,
+  MemoryCandidateDtoSchema,
+  MemoryOverviewDtoSchema,
+  MemoryRuleDtoSchema,
+  MemorySyncStateDtoSchema,
+  MemorySyncTargetSchema,
+} from './memory.js';
 import { CodeContextRefsSchema } from './code-context.js';
 import { FileContextRefsSchema, MAX_ATTACHMENT_IMAGE_BYTES } from './file-context.js';
 
@@ -1221,6 +1229,195 @@ export const CHANNELS = {
     1,
     z.object({ id: z.string().min(1).max(200), relPath: z.string().max(1024).optional() }).strict(),
     z.object({ path: z.string(), content: z.string(), binary: z.boolean() }),
+  ),
+  // ---- Project memory (ADR-0028): shared rules source + external private memory ----
+  'memory.overview': ch(
+    'memory.overview',
+    1,
+    z.object({ projectPath: z.string().min(1).max(4000) }).strict(),
+    MemoryOverviewDtoSchema,
+  ),
+  'memory.rules.add': ch(
+    'memory.rules.add',
+    1,
+    z
+      .object({
+        projectPath: z.string().min(1).max(4000),
+        text: z.string().min(1).max(4000),
+        group: z.string().max(120).optional(),
+        enabled: z.boolean().optional(),
+        source: z
+          .object({
+            taskId: z.string().max(200).nullable(),
+            label: z.string().max(400).nullable(),
+          })
+          .optional(),
+      })
+      .strict(),
+    z.object({ rule: MemoryRuleDtoSchema }),
+  ),
+  'memory.rules.update': ch(
+    'memory.rules.update',
+    1,
+    z
+      .object({
+        projectPath: z.string().min(1).max(4000),
+        ruleId: z.string().min(1).max(200),
+        text: z.string().min(1).max(4000).optional(),
+        group: z.string().max(120).optional(),
+        enabled: z.boolean().optional(),
+      })
+      .strict()
+      .refine(
+        (value) =>
+          value.text !== undefined || value.group !== undefined || value.enabled !== undefined,
+      ),
+    z.object({ rule: MemoryRuleDtoSchema }),
+  ),
+  'memory.rules.remove': ch(
+    'memory.rules.remove',
+    1,
+    z
+      .object({ projectPath: z.string().min(1).max(4000), ruleId: z.string().min(1).max(200) })
+      .strict(),
+    z.object({ removed: z.boolean() }),
+  ),
+  // Distill-card data source: pending candidates captured from this task's
+  // review corrections (request-fix / plan changes).
+  'memory.candidates.forTask': ch(
+    'memory.candidates.forTask',
+    1,
+    z.object({ taskId: z.string().min(1).max(200) }).strict(),
+    z.object({
+      candidates: z.array(MemoryCandidateDtoSchema),
+      projectPath: z.string().nullable(),
+    }),
+  ),
+  'memory.candidates.resolve': ch(
+    'memory.candidates.resolve',
+    1,
+    z
+      .object({
+        projectPath: z.string().min(1).max(4000),
+        candidateId: z.string().min(1).max(200),
+        action: z.enum(['approve', 'dismiss']),
+        /** Approve may carry the user's edited rule text (distill card is editable). */
+        editedText: z.string().min(1).max(4000).optional(),
+        group: z.string().max(120).optional(),
+      })
+      .strict(),
+    z.object({ rule: MemoryRuleDtoSchema.nullable() }),
+  ),
+  'memory.sync.setEnabled': ch(
+    'memory.sync.setEnabled',
+    1,
+    z
+      .object({
+        projectPath: z.string().min(1).max(4000),
+        target: MemorySyncTargetSchema,
+        enabled: z.boolean(),
+      })
+      .strict(),
+    z.object({ sync: z.array(MemorySyncStateDtoSchema) }),
+  ),
+  'memory.sync.apply': ch(
+    'memory.sync.apply',
+    1,
+    z
+      .object({
+        projectPath: z.string().min(1).max(4000),
+        target: MemorySyncTargetSchema.optional(),
+      })
+      .strict(),
+    z.object({ sync: z.array(MemorySyncStateDtoSchema) }),
+  ),
+  // Drift is never overwritten silently: import = hand-edit becomes a candidate
+  // then the block is rewritten; overwrite = rewrite now; stop = disable target.
+  'memory.sync.resolveDrift': ch(
+    'memory.sync.resolveDrift',
+    1,
+    z
+      .object({
+        projectPath: z.string().min(1).max(4000),
+        target: MemorySyncTargetSchema,
+        action: z.enum(['import', 'overwrite', 'stop']),
+      })
+      .strict(),
+    z.object({ sync: z.array(MemorySyncStateDtoSchema), candidateId: z.string().nullable() }),
+  ),
+  // Reverse import (first-run): parse existing CLAUDE.md / AGENTS.md bullet
+  // conventions outside our managed block into approvable candidates.
+  'memory.import.scan': ch(
+    'memory.import.scan',
+    1,
+    z.object({ projectPath: z.string().min(1).max(4000) }).strict(),
+    z.object({
+      items: z.array(z.object({ text: z.string(), source: z.enum(['claude-md', 'agents-md']) })),
+    }),
+  ),
+  'memory.import.apply': ch(
+    'memory.import.apply',
+    1,
+    z
+      .object({
+        projectPath: z.string().min(1).max(4000),
+        items: z
+          .array(
+            z.object({
+              text: z.string().min(1).max(4000),
+              source: z.enum(['claude-md', 'agents-md']),
+            }),
+          )
+          .max(200),
+      })
+      .strict(),
+    z.object({ added: z.number().int().nonnegative() }),
+  ),
+  // External private memory: discovery returns opaque ids; read/write/delete/
+  // promote accept ONLY those ids (no caller-supplied paths reach the fs).
+  'memory.external.list': ch(
+    'memory.external.list',
+    1,
+    z.object({ projectPath: z.string().min(1).max(4000) }).strict(),
+    z.object({ files: z.array(ExternalMemoryFileDtoSchema) }),
+  ),
+  'memory.external.read': ch(
+    'memory.external.read',
+    1,
+    z.object({ fileId: z.string().min(1).max(200) }).strict(),
+    z.object({
+      content: z.string(),
+      truncated: z.boolean(),
+      path: z.string(),
+      mtimeMs: z.number(),
+    }),
+  ),
+  'memory.external.write': ch(
+    'memory.external.write',
+    1,
+    z
+      .object({
+        fileId: z.string().min(1).max(200),
+        content: z.string().max(1024 * 1024),
+        /** Optimistic concurrency: reject when the file changed since read (CLI may write concurrently). */
+        expectedMtimeMs: z.number().nullable().optional(),
+      })
+      .strict(),
+    z.object({ file: ExternalMemoryFileDtoSchema }),
+  ),
+  'memory.external.delete': ch(
+    'memory.external.delete',
+    1,
+    z.object({ fileId: z.string().min(1).max(200) }).strict(),
+    z.object({ backedUpTo: z.string() }),
+  ),
+  'memory.external.promote': ch(
+    'memory.external.promote',
+    1,
+    z
+      .object({ projectPath: z.string().min(1).max(4000), fileId: z.string().min(1).max(200) })
+      .strict(),
+    z.object({ candidate: MemoryCandidateDtoSchema }),
   ),
   'lsp.status': ch(
     'lsp.status',
