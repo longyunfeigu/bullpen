@@ -46,6 +46,39 @@ describe('IPC channel registry', () => {
     ).toBe(false);
   });
 
+  it('screenshot.saveToAssets takes exactly one watcher path or PNG bytes (ADR-0036)', () => {
+    expect(
+      validateChannelRequest('screenshot.saveToAssets', {
+        source: { kind: 'path', path: '/Users/u/Desktop/Screenshot.png' },
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateChannelRequest('screenshot.saveToAssets', {
+        source: { kind: 'bytes', dataBase64: 'iVBORw0KGgo=', name: 'annotated.png' },
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateChannelRequest('screenshot.saveToAssets', {
+        source: { kind: 'path', path: '' },
+      }).ok,
+    ).toBe(false);
+    // strict(): no smuggling extra fields past the schema.
+    expect(
+      validateChannelRequest('screenshot.saveToAssets', {
+        source: { kind: 'path', path: '/x.png', overwrite: true },
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('screenshot.read takes a bounded path and nothing else (ADR-0036)', () => {
+    expect(validateChannelRequest('screenshot.read', { path: '/Users/u/Desktop/s.png' }).ok).toBe(
+      true,
+    );
+    expect(validateChannelRequest('screenshot.read', { path: '' }).ok).toBe(false);
+    expect(validateChannelRequest('screenshot.read', { path: 'a'.repeat(2001) }).ok).toBe(false);
+    expect(validateChannelRequest('screenshot.read', { path: '/x.png', raw: true }).ok).toBe(false);
+  });
+
   it('accepts at most three conversation references when creating a task', () => {
     const base = {
       title: 'Use prior context',

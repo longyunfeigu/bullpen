@@ -41,6 +41,7 @@ import {
 } from './memory.js';
 import { CodeContextRefsSchema, ExternalInjectRefSchema } from './code-context.js';
 import { FileContextRefsSchema, MAX_ATTACHMENT_IMAGE_BYTES } from './file-context.js';
+import { ScreenshotAssetSourceSchema, ScreenshotCaptureSchema } from './screenshots.js';
 
 const SettingsStateSchema = z.object({
   effective: SettingsSchema,
@@ -1191,6 +1192,32 @@ export const CHANNELS = {
       })
       .strict(),
     z.object({ path: z.string() }),
+  ),
+  /** ADR-0036: full bytes of a watcher-seen screenshot (annotator base image).
+   * Paths the watcher never announced are rejected — this is not a general
+   * file-read channel. */
+  'screenshot.read': ch(
+    'screenshot.read',
+    1,
+    z.object({ path: z.string().min(1).max(2000) }).strict(),
+    z.object({ dataBase64: z.string(), mime: z.string(), sizeBytes: z.number().int() }),
+  ),
+  /** ADR-0036: copy a screenshot (watcher-seen path, or annotated PNG bytes)
+   * into the project's assets/screenshots/ — never overwrites, atomic write.
+   * The relPath return feeds `external.injectContext` file refs directly. */
+  'screenshot.saveToAssets': ch(
+    'screenshot.saveToAssets',
+    1,
+    z.object({ source: ScreenshotAssetSourceSchema }).strict(),
+    z.object({ relPath: z.string(), name: z.string() }),
+  ),
+  /** ADR-0036: recent captures (ring buffer) — lets a renderer that mounted
+   * after the event catch up deterministically. */
+  'screenshot.recent': ch(
+    'screenshot.recent',
+    1,
+    z.object({}).strict(),
+    z.object({ captures: z.array(ScreenshotCaptureSchema) }),
   ),
   'models.list': ch(
     'models.list',

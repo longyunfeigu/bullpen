@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DocumentDtoSchema, FsChangeSchema } from './documents.js';
 import { WorkspaceDtoSchema } from './dto.js';
 import { TaskDtoSchema, TaskStateSchema, TimelineEventDtoSchema } from './agent-dto.js';
+import { ScreenshotCaptureSchema } from './screenshots.js';
 
 export interface EventChannelDef<S extends z.ZodType = z.ZodType> {
   name: string;
@@ -161,6 +162,9 @@ export const EVENT_CHANNELS = {
       ),
     }),
   ),
+  /** ADR-0036: a fresh OS screenshot landed in the watched directory — the
+   * renderer shows the quick card. Zero side effects until the user acts. */
+  'screenshot.captured': ev('screenshot.captured', 1, ScreenshotCaptureSchema),
   'git.changed': ev('git.changed', 1, z.object({ reason: z.string() })),
   'task.event': ev(
     'task.event',

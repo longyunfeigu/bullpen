@@ -61,6 +61,8 @@ import { PreviewService } from './services/preview-service.js';
 import { ExternalSessionService } from './services/external-session-service.js';
 import { ExternalLaunchIntents } from './services/external-launch-intents.js';
 import { registerExternalHandlers } from './ipc/external-handlers.js';
+import { ScreenshotWatcher } from './services/screenshot-watcher.js';
+import { registerScreenshotHandlers } from './ipc/screenshot-handlers.js';
 import { buildSupportBundle } from './services/support-bundle.js';
 import {
   clearHistory,
@@ -97,6 +99,7 @@ let taskServiceRef: TaskService | null = null;
 let externalSessionsRef: ExternalSessionService | null = null;
 let externalLaunchIntents: ExternalLaunchIntents | null = null;
 let skillStoreRef: SkillStore | null = null;
+let screenshotWatcherRef: ScreenshotWatcher | null = null;
 export function getM5(): M5Services | null {
   return m5Ref;
 }
@@ -638,6 +641,22 @@ if (!gotLock) {
       // ADR-0024: out-of-project image imports for context-feeding chips.
       registerContextAttachmentHandlers(taskService, logger.child('ipc'));
 
+      // ADR-0036: screenshot quick card — watch the OS screenshot directory.
+      // E2E never watches the developer's real Desktop: it either supplies an
+      // explicit directory (PI_IDE_SCREENSHOT_DIR, deterministic always-true
+      // probe) or the feature stays off. Non-mac hosts are override-only too.
+      const screenshotDirOverride = process.env.PI_IDE_SCREENSHOT_DIR;
+      if (screenshotDirOverride || (process.platform === 'darwin' && !process.env.PI_IDE_E2E)) {
+        screenshotWatcherRef = new ScreenshotWatcher({
+          logger: logger.child('screenshots'),
+          broadcast: (capture) => broadcast('screenshot.captured', capture),
+          dir: screenshotDirOverride ?? null,
+          ...(screenshotDirOverride ? { isScreenshot: async () => true } : {}),
+        });
+        void screenshotWatcherRef.start();
+        registerScreenshotHandlers(screenshotWatcherRef, workspaceHost, logger.child('ipc'));
+      }
+
       // ADR-0017: external CLI agent sessions (claude/codex in user terminals).
       externalSessionsRef = new ExternalSessionService(
         m4.terminals,
@@ -835,6 +854,7 @@ if (!gotLock) {
     if (cleanupDone) return;
     event.preventDefault();
     skillStoreRef?.dispose();
+    screenshotWatcherRef?.dispose();
     externalSessionsRef?.dispose(); // before terminals: sessions close into review while the DB is open
     taskServiceRef?.shutdown();
     m4Ref?.dispose();

@@ -9,6 +9,7 @@ import { MemoryView } from '../views/MemoryView.js';
 import { DiagnosticsView } from '../views/DiagnosticsView.js';
 import { Ic } from '../views/home-icons.js';
 import { SessionRail } from '../views/SessionRail.js';
+import { ScreenshotQuickCard } from '../views/ScreenshotQuickCard.js';
 import type { BottomTab, SideBarView } from '@pi-ide/ipc-contracts';
 import { useTaskStore } from '../store/taskStore.js';
 import { stepZoom, ZOOM_DEFAULT } from '../views/ui-zoom.js';
@@ -400,6 +401,9 @@ export function Workbench(): React.JSX.Element {
           </article>
         ))}
       </div>
+
+      {/* ADR-0036: fresh OS screenshots pop the quick card here. */}
+      <ScreenshotQuickCard />
 
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
