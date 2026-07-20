@@ -144,16 +144,19 @@ test.describe('External Session identity and presence', () => {
         await expect(row).not.toHaveAttribute('data-reply', 'true');
         await row.click();
         await expect(row).toHaveClass(/selected/);
-        await expect(page.getByTestId('external-agent-input')).toBeEnabled();
+        await expect(page.getByTestId('external-terminal-host')).toBeVisible();
         await page.locator('.toast button[aria-label="Dismiss"]').evaluateAll((buttons) => {
           for (const button of buttons) (button as HTMLButtonElement).click();
         });
 
-        // Exercise the exact in-Session path from the report: the host sees the
-        // submitted Enter, observes non-structured PTY output, then emits only a
-        // presence edge after 1.8s of quiet.
-        await page.getByTestId('external-agent-input').fill('finish this observed turn');
-        await page.getByTestId('external-agent-send').click();
+        // Exercise the exact in-Session path from the report — ADR-0030: the
+        // CLI's own input line is the room's only composer, so the turn is
+        // typed straight into the session terminal. The host sees the
+        // submitted Enter, observes non-structured PTY output, then emits only
+        // a presence edge after the quiet window.
+        await page.getByTestId('external-terminal-host').locator('.xterm').click();
+        await page.keyboard.type('finish this observed turn');
+        await page.keyboard.press('Enter');
         await expect(page.getByTestId('external-terminal-host')).toContainText(
           'observed-reply-complete',
           { timeout: 10_000 },

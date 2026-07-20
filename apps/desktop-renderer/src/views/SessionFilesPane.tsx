@@ -1,25 +1,31 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { useTaskStore } from '../store/taskStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
-import { HomeProjectTree } from './HomeProjectTree.js';
+import { ProjectTree, type ProjectTreeHandle } from './ProjectTree.js';
 import { setDragRef } from './dragRefs.js';
 import { addFileRefWithToast, refFromRel } from './roomFileRefs.js';
 import { Ic } from './home-icons.js';
 
 /**
- * ADR-0024 (mock B+D): the persistent Files pane in the session rail — the
- * drag source for context feeding. Browsing reuses the lazy project tree;
- * searching routes through search.files and returns flat draggable rows.
+ * ADR-0024 (mock B+D) + ADR-0029: the persistent Files pane in the session
+ * rail — the one project tree. It is both the drag source for context feeding
+ * and, since the Files tool column retired, the canonical file manager
+ * (create/rename/delete via the tree's context menu, plus the actions here).
+ * Searching routes through search.files and returns flat draggable rows.
  * The hover “+” lands a chip directly in the open room's composer.
  */
 export function SessionFilesPane(): React.JSX.Element {
   const workspace = useWorkspaceStore((s) => s.workspace);
+  const showIgnored = useWorkspaceStore((s) => s.showIgnored);
+  const setShowIgnored = useWorkspaceStore((s) => s.setShowIgnored);
+  const refreshAll = useWorkspaceStore((s) => s.refreshAll);
   const roomTaskId = useAppStore((s) => s.taskRoomTaskId);
   const task = useTaskStore((s) => (roomTaskId ? s.tasks.find((t) => t.id === roomTaskId) : null));
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<string[]>([]);
+  const treeRef = useRef<ProjectTreeHandle>(null);
 
   const sameProject = Boolean(task && workspace && task.projectPath === workspace.path);
   const quickAddTaskId = task && sameProject && !task.external ? task.id : null;
@@ -47,10 +53,18 @@ export function SessionFilesPane(): React.JSX.Element {
   if (!workspace) {
     return (
       <div className="sr-files-empty" data-testid="session-files-empty">
-        Pick a project to browse its files.
+        <p>Pick a project to browse its files.</p>
+        <button
+          className="btn primary"
+          onClick={() => void useWorkspaceStore.getState().openViaDialog()}
+        >
+          Open Folder…
+        </button>
       </div>
     );
   }
+
+  const searching = Boolean(query.trim());
 
   return (
     <div className="sr-files-pane" data-testid="session-files-pane">
@@ -58,6 +72,39 @@ export function SessionFilesPane(): React.JSX.Element {
         <Ic name="folder" size={13} />
         <strong>{workspace.displayName}</strong>
         <small className="mono">{workspace.path}</small>
+        {searching ? null : (
+          <span className="sr-files-actions">
+            <button
+              type="button"
+              className="sr-files-action"
+              title="New File"
+              aria-label="New File"
+              data-testid="explorer-new-file"
+              onClick={() => treeRef.current?.startCreate('file')}
+            >
+              <Ic name="plus" size={12} />
+            </button>
+            <button
+              type="button"
+              className="sr-files-action"
+              title="Refresh"
+              aria-label="Refresh"
+              onClick={() => refreshAll()}
+            >
+              ↺
+            </button>
+            <button
+              type="button"
+              className={`sr-files-action ${showIgnored ? 'active' : ''}`}
+              title={showIgnored ? 'Hide ignored' : 'Show ignored'}
+              aria-label="Toggle ignored files"
+              aria-pressed={showIgnored}
+              onClick={() => setShowIgnored(!showIgnored)}
+            >
+              <Ic name="eye" size={12} />
+            </button>
+          </span>
+        )}
       </div>
       <label className="sr-search-box sr-files-search">
         <Ic name="search" size={13} />
@@ -69,8 +116,8 @@ export function SessionFilesPane(): React.JSX.Element {
           onChange={(event) => setQuery(event.currentTarget.value)}
         />
       </label>
-      <div className="sr-files-scroll">
-        {query.trim() ? (
+      <div className={`sr-files-scroll ${searching ? '' : 'sr-files-tree-host'}`}>
+        {searching ? (
           <div className="sr-files-results" data-testid="session-files-results">
             {results.map((path) => (
               <div
@@ -101,10 +148,7 @@ export function SessionFilesPane(): React.JSX.Element {
             ) : null}
           </div>
         ) : (
-          <HomeProjectTree
-            testid="session-files-tree"
-            {...(quickAdd ? { onQuickAdd: quickAdd } : {})}
-          />
+          <ProjectTree ref={treeRef} {...(quickAdd ? { onQuickAdd: quickAdd } : {})} />
         )}
       </div>
       <p className="sr-files-tip">

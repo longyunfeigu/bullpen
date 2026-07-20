@@ -23,17 +23,17 @@ test('context feeding walk: Files pane, chips, drop veil, sent refs', async () =
 
     // 1 — the Files tab with the persistent tree.
     await page.getByTestId('rail-tab-files').click();
-    await expect(page.getByTestId('session-files-tree')).toBeVisible();
+    await expect(page.getByTestId('explorer')).toBeVisible();
     await page.screenshot({ path: `${OUT}/ctx-1-files-pane.png` });
 
     // 2 — chips on the composer (folder + file via quick-add).
-    const srcRow = page.getByTestId('session-files-tree-src');
+    const srcRow = page.getByTestId('tree-item-src');
     await srcRow.hover();
-    await page.getByTestId('session-files-tree-add-src').click();
+    await page.getByTestId('tree-add-src').click();
     await srcRow.click();
-    const indexRow = page.getByTestId('session-files-tree-src/index.ts');
+    const indexRow = page.getByTestId('tree-item-src/index.ts');
     await indexRow.hover();
-    await page.getByTestId('session-files-tree-add-src/index.ts').click();
+    await page.getByTestId('tree-add-src/index.ts').click();
     await expect(page.getByTestId('room-file-refs')).toContainText('src/index.ts');
     await page.screenshot({ path: `${OUT}/ctx-2-chips.png` });
 

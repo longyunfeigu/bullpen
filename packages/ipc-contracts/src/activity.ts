@@ -301,6 +301,27 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
         diffstat: { additions, deletions },
       };
     }
+    case 'external.contextInjected': {
+      const source = str(p.cli);
+      const path = cleanPath(str(p.path));
+      const range =
+        typeof p.startLine === 'number' && typeof p.endLine === 'number'
+          ? p.startLine === p.endLine
+            ? ` L${p.startLine}`
+            : ` L${p.startLine}–${p.endLine}`
+          : '';
+      return {
+        ...base,
+        source: source === 'claude' || source === 'codex' ? source : 'external',
+        captureGrade: str(p.captureGrade) === 'structured' ? 'structured' : 'observed',
+        evidenceKinds: ['terminal'] as const,
+        kind: 'user',
+        label: `Context placed in ${source || 'the CLI'}'s input line · ${str(p.kind) === 'selection' ? 'selection' : 'file'} ${path}${range}`,
+        status: 'info',
+        paths: path ? [path] : [],
+        author: 'user',
+      };
+    }
     case 'external.observation': {
       const source = str(p.cli);
       const kindValue = str(p.kind, 'system');

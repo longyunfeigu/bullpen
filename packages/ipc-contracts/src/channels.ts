@@ -38,7 +38,7 @@ import {
   MemorySyncStateDtoSchema,
   MemorySyncTargetSchema,
 } from './memory.js';
-import { CodeContextRefsSchema } from './code-context.js';
+import { CodeContextRefsSchema, ExternalInjectRefSchema } from './code-context.js';
 import { FileContextRefsSchema, MAX_ATTACHMENT_IMAGE_BYTES } from './file-context.js';
 
 const SettingsStateSchema = z.object({
@@ -531,22 +531,24 @@ export const CHANNELS = {
       ),
     }),
   ),
-  /** Resume a known external CLI in a product-selected terminal. */
+  /** Resume a known external CLI in a product-selected terminal. A settled
+   * source task continues as a NEW task — the response carries the task that
+   * actually owns the revived session. */
   'external.resumeSession': ch(
     'external.resumeSession',
-    1,
+    2,
     z.object({ taskId: z.string(), terminalId: z.string() }).strict(),
-    z.object({ terminalId: z.string(), cli: z.string() }),
+    z.object({ terminalId: z.string(), cli: z.string(), taskId: z.string() }),
   ),
-  /** Send a structured turn to the live Claude/Codex CLI that owns a Session. */
-  'external.message': ch(
-    'external.message',
+  /** ADR-0030: insert a context reference into the CLI's own input line.
+   * Bracketed paste, no Enter — the user reviews and submits it themselves. */
+  'external.injectContext': ch(
+    'external.injectContext',
     1,
     z
       .object({
         taskId: z.string().min(1),
-        text: z.string().min(1).max(20000),
-        codeRefs: CodeContextRefsSchema,
+        ref: ExternalInjectRefSchema,
       })
       .strict(),
     z.object({ delivered: z.boolean(), terminalId: z.string() }),

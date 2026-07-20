@@ -78,6 +78,7 @@ test.describe('site shots batch 2', () => {
       await page.setViewportSize({ width: 1440, height: 900 });
 
       await shoot('editor', async () => {
+        await page.getByTestId('rail-tab-files').click();
         await page.getByTestId('tree-item-src').click();
         await page.getByTestId('tree-item-src/index.ts').click();
         await expect(page.getByTestId('tab-src/index.ts')).toBeVisible();

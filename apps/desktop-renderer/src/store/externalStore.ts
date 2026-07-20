@@ -255,8 +255,22 @@ export const useExternalStore = create<ExternalStore>((set, get) => ({
       useTerminalStore.setState({ active: terminalId });
       const result = await rpcResult('external.resumeSession', { taskId: task.id, terminalId });
       if (!okOrToast(result)) return;
-      useAppStore.getState().pushToast('success', `Resumed the previous ${external.cli} session.`);
+      // A settled source task continues as a NEW task (fresh baseline, same
+      // CLI conversation) — follow the session to where it actually lives.
+      const continuedAs = result.data.taskId !== task.id ? result.data.taskId : null;
+      useAppStore
+        .getState()
+        .pushToast(
+          'success',
+          continuedAs
+            ? `Continuing the ${external.cli} conversation as a new session.`
+            : `Resumed the previous ${external.cli} session.`,
+        );
       await useTaskStore.getState().refreshTasks();
+      if (continuedAs) {
+        void useTaskStore.getState().openTask(continuedAs);
+        useAppStore.getState().openTaskRoom(continuedAs);
+      }
     } finally {
       set({ resumingTaskId: null });
     }

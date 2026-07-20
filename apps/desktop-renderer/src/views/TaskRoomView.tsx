@@ -175,7 +175,8 @@ export function TaskRoomView(): React.JSX.Element {
   };
 
   // ADR-0024: tree drags and OS files land anywhere in the room — no aiming
-  // at the composer. External sessions keep their own terminal semantics.
+  // at the composer. External rooms route drops through the terminal column
+  // instead: the reference lands in the CLI's own input line (ADR-0030).
   const acceptsRoomDrops = !task.external;
   const roomDropHandlers = acceptsRoomDrops
     ? {
@@ -318,7 +319,7 @@ export function TaskRoomView(): React.JSX.Element {
             /* ADR-0017: the conversation with an external agent IS its terminal —
                it takes the timeline+composer's place; everything else is the
                same room (rail, peek, review bar). */
-            <ExternalTerminalColumn key={task.id} task={task} />
+            <ExternalTerminalColumn key={task.id} task={task} sameProject={sameProject} />
           ) : (
             <>
               {/* Mockup A (ADR-0014): mode/model/effort live in the composer foot. */}

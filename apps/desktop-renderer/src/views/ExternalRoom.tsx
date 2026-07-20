@@ -1,21 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { TaskDto } from '@pi-ide/ipc-contracts';
-import { rpcResult } from '../bridge.js';
+import { pathForDroppedFile, rpcResult } from '../bridge.js';
 import { okOrToast, useAppStore } from '../store/appStore.js';
 import { useExternalStore, type ExternalSessionFile } from '../store/externalStore.js';
 import { useTerminalStore, mountTerminal } from './TerminalPanel.js';
-import { EMPTY_CODE_CONTEXT_REFS, useDraftStore } from '../store/draftStore.js';
-import { CodeContextAttachments } from './CodeContextAttachments.js';
+import { hasDragRef, readDragRef } from './dragRefs.js';
 import { Ic } from './home-icons.js';
 
 /**
  * ADR-0017 — the center column of an external CLI session's Task Room: the
  * session's real terminal (same xterm instance as the dock, PTY uninterrupted)
- * in the place where the timeline + composer normally live. The conversation
- * with this agent happens in the terminal; the room adds the product's
- * accounting around it (rail, peek, review).
+ * in the place where the timeline + composer normally live. ADR-0030: the
+ * CLI's own input line is the room's only conversation entry — context feeding
+ * (file drags, code selections) lands inside that input line as an unsent
+ * reference instead of flowing through a second product composer.
  */
-export function ExternalTerminalColumn({ task }: { task: TaskDto }): React.JSX.Element {
+export function ExternalTerminalColumn({
+  task,
+  sameProject,
+}: {
+  task: TaskDto;
+  sameProject: boolean;
+}): React.JSX.Element {
   const external = task.external!;
   const session = useExternalStore((s) => s.sessions[task.id]);
   const termStore = useTerminalStore();
@@ -33,6 +39,10 @@ export function ExternalTerminalColumn({ task }: { task: TaskDto }): React.JSX.E
   const hostRef = useRef<HTMLDivElement>(null);
   const follow = useExternalStore((s) => s.follow[task.id] ?? true);
   const lastDelta = useExternalStore((s) => s.lastDelta);
+  // 'drag' veils follow the pointer; 'ended' sticks after a drop on a dead
+  // session until the user resumes or dismisses it.
+  const [dragOver, setDragOver] = useState(false);
+  const [endedPrompt, setEndedPrompt] = useState(false);
 
   useEffect(() => {
     useExternalStore.getState().init();
@@ -68,12 +78,35 @@ export function ExternalTerminalColumn({ task }: { task: TaskDto }): React.JSX.E
     return () => observer.disconnect();
   }, [item]);
 
+  const acceptsDrag = (e: React.DragEvent): boolean =>
+    hasDragRef(e) || e.dataTransfer.types.includes('Files');
+
   return (
     <div
       className="tr-extcol"
       data-testid="external-terminal-column"
       data-task-id={task.id}
       data-terminal-id={external.terminalId}
+      onDragOver={(e) => {
+        if (!acceptsDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = live ? 'copy' : 'none';
+        setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        const next = e.relatedTarget as Node | null;
+        if (!next || !e.currentTarget.contains(next)) setDragOver(false);
+      }}
+      onDrop={(e) => {
+        if (!acceptsDrag(e)) return;
+        e.preventDefault();
+        setDragOver(false);
+        if (!live) {
+          setEndedPrompt(true);
+          return;
+        }
+        void injectDroppedRefs(task.id, sameProject, e).then(() => item?.term.focus());
+      }}
     >
       <div className="tr-exthead">
         <span className={`tr-extdot ${live ? 'live' : ''}`} />
@@ -112,91 +145,131 @@ export function ExternalTerminalColumn({ task }: { task: TaskDto }): React.JSX.E
           </span>
         )}
       </div>
-      {item ? (
-        <div ref={hostRef} className="tr-exthost" data-testid="external-terminal-host" />
-      ) : (
-        <div className="tr-extgone" data-testid="external-terminal-gone">
-          <div className="tr-extgone-title">
-            {live
-              ? 'The session terminal lives in another surface.'
-              : superseded
-                ? 'This session is over — its terminal moved on to a newer session.'
-                : 'This session is over.'}
+      <div className="tr-extbody">
+        {item ? (
+          <div ref={hostRef} className="tr-exthost" data-testid="external-terminal-host" />
+        ) : (
+          <div className="tr-extgone" data-testid="external-terminal-gone">
+            <div className="tr-extgone-title">
+              {live
+                ? 'The session terminal lives in another surface.'
+                : superseded
+                  ? 'This session is over — its terminal moved on to a newer session.'
+                  : 'This session is over.'}
+            </div>
+            <div className="tr-extgone-body">
+              {(session?.files.length ?? task.changedFiles ?? 0) > 0
+                ? `${session?.files.length ?? task.changedFiles} file${(session?.files.length ?? task.changedFiles) === 1 ? '' : 's'} changed — use the rail to peek, or Review to close out.`
+                : 'No tracked file changes.'}
+            </div>
           </div>
-          <div className="tr-extgone-body">
-            {(session?.files.length ?? task.changedFiles ?? 0) > 0
-              ? `${session?.files.length ?? task.changedFiles} file${(session?.files.length ?? task.changedFiles) === 1 ? '' : 's'} changed — use the rail to peek, or Review to close out.`
-              : 'No tracked file changes.'}
+        )}
+        {dragOver && live ? (
+          <div className="tr-extdropveil" data-testid="external-drop-veil" aria-hidden>
+            <span>
+              <Ic name="file" size={14} />
+              Drop to place an @reference in {external.cli}&rsquo;s input line — nothing is sent
+              until you press Enter there
+            </span>
           </div>
-        </div>
-      )}
-      <ExternalContextComposer task={task} live={live} />
+        ) : null}
+        {(dragOver && !live) || endedPrompt ? (
+          <div className="tr-extendveil" data-testid="external-ended-veil">
+            <div className="tr-extendveil-card">
+              <div className="tr-extendveil-title">
+                This session has ended — resume it to keep feeding context.
+              </div>
+              <div className="tr-extendveil-body">
+                Resume restarts {external.cli} in the same terminal and reconnects the conversation.
+              </div>
+              <div className="tr-extendveil-row">
+                <button
+                  type="button"
+                  data-testid="external-resume-from-drop"
+                  onClick={() => {
+                    setEndedPrompt(false);
+                    void useExternalStore.getState().resumeTask(task);
+                  }}
+                >
+                  ↻ Resume this Session
+                </button>
+                {endedPrompt ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    data-testid="external-ended-veil-dismiss"
+                    onClick={() => setEndedPrompt(false)}
+                  >
+                    Not now
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-function ExternalContextComposer(props: { task: TaskDto; live: boolean }): React.JSX.Element {
-  const input = useDraftStore((state) => state.drafts[props.task.id] ?? '');
-  const codeRefs = useDraftStore(
-    (state) => state.codeRefs[props.task.id] ?? EMPTY_CODE_CONTEXT_REFS,
-  );
-  const [sending, setSending] = useState(false);
-  const send = async (): Promise<void> => {
-    if (sending || !props.live) return;
-    const text =
-      input.trim() ||
-      (codeRefs.length > 0 ? 'Use the attached code selection as context for this turn.' : '');
-    if (!text) return;
-    setSending(true);
-    const result = await rpcResult('external.message', {
-      taskId: props.task.id,
-      text,
-      codeRefs,
-    });
-    setSending(false);
-    if (!okOrToast(result)) return;
-    useDraftStore.getState().clearDraft(props.task.id);
-    useDraftStore.getState().clearCodeRefs(props.task.id);
-  };
-  return (
-    <div className="tr-external-composer" data-testid="external-context-composer">
-      <CodeContextAttachments taskId={props.task.id} refs={codeRefs} />
-      <div className="tr-external-composer-row">
-        <textarea
-          rows={1}
-          data-testid="external-agent-input"
-          value={input}
-          disabled={!props.live || sending}
-          placeholder={
-            props.live
-              ? `Reply to ${props.task.external?.cli ?? 'agent'} or add selected code context…`
-              : 'Resume this Session to continue…'
-          }
-          onChange={(event) => useDraftStore.getState().setDraft(props.task.id, event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <button
-          type="button"
-          className={`hm-send ${input.trim() || codeRefs.length > 0 ? 'ready' : ''}`}
-          data-testid="external-agent-send"
-          disabled={!props.live || sending || (!input.trim() && codeRefs.length === 0)}
-          aria-label="Send to external agent"
-          onClick={() => void send()}
-        >
-          <Ic name="arrowUp" size={15} strokeWidth={2} />
-        </button>
-      </div>
-      <span className="tr-external-composer-note">
-        Sent through the Session’s live {props.task.external?.cli ?? 'agent'} terminal · code
-        selections are frozen snapshots
-      </span>
-    </div>
-  );
+/**
+ * ADR-0030 — drop → `@path` in the CLI's own input line. Internal tree drags
+ * carry a workspace-relative ref (directories end in "/"); OS drops are
+ * relativized by the main process. Out-of-project items are skipped with an
+ * explanation: the CLI's @-references are project-relative by contract.
+ */
+async function injectDroppedRefs(
+  taskId: string,
+  sameProject: boolean,
+  e: React.DragEvent,
+): Promise<void> {
+  const toast = useAppStore.getState().pushToast;
+  const rel = readDragRef(e);
+  if (rel) {
+    if (!sameProject) {
+      toast('warning', 'Open this task’s project to reference its files by path.');
+      return;
+    }
+    await injectFileRef(taskId, rel);
+    return;
+  }
+  const items = Array.from(e.dataTransfer.items ?? []).filter((entry) => entry.kind === 'file');
+  const dropped: Array<{ abs: string; isDirectory: boolean }> = [];
+  for (const entry of items) {
+    const file = entry.getAsFile();
+    if (!file) continue;
+    const abs = pathForDroppedFile(file);
+    if (!abs) continue;
+    const dirEntry = typeof entry.webkitGetAsEntry === 'function' ? entry.webkitGetAsEntry() : null;
+    dropped.push({ abs, isDirectory: dirEntry?.isDirectory ?? false });
+  }
+  if (dropped.length === 0) return;
+  const res = await rpcResult('workspace.relativize', {
+    paths: dropped.slice(0, 50).map((d) => d.abs),
+  });
+  if (!okOrToast(res)) return;
+  const byAbs = new Map(dropped.map((d) => [d.abs, d]));
+  for (const inside of res.data.inside) {
+    const isDirectory = byAbs.get(inside.abs)?.isDirectory ?? false;
+    await injectFileRef(taskId, isDirectory ? `${inside.rel}/` : inside.rel);
+  }
+  if (res.data.outside.length > 0) {
+    toast(
+      'warning',
+      `${res.data.outside.length} item(s) outside the project were skipped — @-references are project-relative (move the file into the project first).`,
+    );
+  }
+}
+
+/** One `@path` mention → the CLI's input line (trailing "/" marks a folder). */
+async function injectFileRef(taskId: string, rel: string): Promise<boolean> {
+  const isFolder = rel.endsWith('/');
+  const path = isFolder ? rel.slice(0, -1) : rel;
+  const result = await rpcResult('external.injectContext', {
+    taskId,
+    ref: { kind: 'file', path, isFolder },
+  });
+  return okOrToast(result);
 }
 
 /**

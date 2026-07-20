@@ -340,6 +340,14 @@ function MonacoPane({
       {!active ? (
         <div className="empty-state" style={{ position: 'absolute', inset: 0 }}>
           <div className="text-muted">No file open in this group</div>
+          <button
+            className="btn"
+            data-testid="editor-empty-browse-files"
+            style={{ marginTop: 10 }}
+            onClick={() => useAppStore.getState().setRailView('files')}
+          >
+            Browse project files
+          </button>
         </div>
       ) : null}
     </div>

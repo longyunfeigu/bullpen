@@ -5,7 +5,7 @@ import { openWorkspaceInfo, WorkspaceWatcher, type FsChange } from '@pi-ide/work
 import type { ChangeSet } from '@pi-ide/change-service';
 import {
   formatPromptWithCodeContext,
-  type CodeContextRefDto,
+  type ExternalInjectRefDto,
   type TaskWorktreeDto,
 } from '@pi-ide/ipc-contracts';
 import { broadcast } from '../broadcast.js';
@@ -20,6 +20,14 @@ import { TypedLineTracker } from './typed-line-tracker.js';
 const IGNORED_SEGMENTS = ['node_modules', '.git'];
 const IGNORED_BASENAMES = ['.DS_Store'];
 const IGNORED_PREFIXES = ['.pi-ide-chg.'];
+/**
+ * Third-party CLI atomic-write temp files — Claude Code writes
+ * `name.tmp.<pid>.<hex>` then renames it over the target, so the temp path
+ * lives for milliseconds. Accounting it turns every external write into a
+ * phantom second file (live-board tile, diff badge). End-anchored and
+ * shape-specific so real files that merely contain ".tmp." survive.
+ */
+const ATOMIC_WRITE_TMP = /\.tmp\.\d+\.[0-9a-f]+$/i;
 const MAX_TERMINAL_REPLAY_BYTES = 2 * 1024 * 1024;
 const TERMINAL_EVENT_CHARS = 12_000;
 // 1s of true quiet is enough: interactive TUIs animate a spinner continuously
@@ -53,6 +61,7 @@ export function isAccountablePath(relativePath: string): boolean {
   const base = parts[parts.length - 1] ?? '';
   if (IGNORED_BASENAMES.includes(base)) return false;
   if (IGNORED_PREFIXES.some((p) => base.startsWith(p))) return false;
+  if (ATOMIC_WRITE_TMP.test(base)) return false;
   return true;
 }
 
@@ -137,6 +146,18 @@ export function externalResumeCommand(cli: string, sessionId?: string | null): s
   if (cli === 'claude') return id ? `claude --resume ${id}` : 'claude --continue';
   if (cli === 'codex') return id ? `codex resume ${id}` : 'codex resume --last';
   return null;
+}
+
+/**
+ * ADR-0030 — the exact PTY payload for one injected context reference. File
+ * refs become `@path` mentions (trailing "/" for folders, trailing space so
+ * the user keeps typing); selections carry the serialized frozen snapshot.
+ * Never contains a CR: injection must land in the input line unsent.
+ */
+export function externalInjectText(ref: ExternalInjectRefDto): string {
+  return ref.kind === 'file'
+    ? `@${ref.path}${ref.isFolder ? '/' : ''} `
+    : `${formatPromptWithCodeContext('', [ref.code])}\n`;
 }
 
 /**
@@ -300,7 +321,21 @@ export class ExternalSessionService {
     // it: their text is known exactly and set by the writer itself.
     if (session.suppressInputCapture === 0) {
       const committed = session.typedLine.feed(data);
-      if (committed) session.lastUserLine = committed;
+      if (committed) {
+        session.lastUserLine = committed;
+        // ADR-0030: with no product composer, the first prompt the user types
+        // into the CLI is what names the session. Placeholder-guarded, so a
+        // launch-intent or resumed title is never overwritten.
+        try {
+          const task = this.tasks.getTask(session.taskId);
+          if (task.title === `${session.cli} · external session`) {
+            const title = externalTitleFromPrompt(committed);
+            if (title) this.tasks.setExternalTitle(session.taskId, title);
+          }
+        } catch {
+          // A vanished task must never break the PTY input path.
+        }
+      }
     }
     if (session.structuredStream) return;
     if (!/[\r\n]/.test(data)) return;
@@ -776,25 +811,31 @@ export class ExternalSessionService {
 
   /**
    * User-invoked continuation of an ended Claude/Codex TUI. The command is a
-   * fixed product mapping (never renderer-controlled shell text). Accounting
-   * resumes against the SAME task baseline; detection confirms the CLI really
-   * started before this RPC succeeds.
+   * fixed product mapping (never renderer-controlled shell text). Unsettled
+   * tasks (REVIEW_READY/INTERRUPTED/FAILED) resume against the SAME task
+   * baseline; a settled round (ACCEPTED/ROLLED_BACK/CANCELLED) is a closed
+   * record, so the same CLI conversation continues as a NEW task on a fresh
+   * entry snapshot — mirroring "a follow-up is a new task" for managed runs.
+   * Detection confirms the CLI really started before this RPC succeeds.
    */
-  async resume(taskId: string, terminalId: string): Promise<{ terminalId: string; cli: string }> {
-    const task = this.tasks.getTask(taskId);
-    const external = task.external;
-    if (!external) {
+  async resume(
+    taskId: string,
+    terminalId: string,
+  ): Promise<{ terminalId: string; cli: string; taskId: string }> {
+    const source = this.tasks.getTask(taskId);
+    const sourceExternal = source.external;
+    if (!sourceExternal) {
       throw new ProductFailure(
         productError('EXTERNAL_SESSION_REQUIRED', {
           userMessage: 'This task is not an external terminal session.',
         }),
       );
     }
-    const command = externalResumeCommand(external.cli, external.sessionId ?? null);
+    const command = externalResumeCommand(sourceExternal.cli, sourceExternal.sessionId ?? null);
     if (!command) {
       throw new ProductFailure(
         productError('EXTERNAL_RESUME_UNSUPPORTED', {
-          userMessage: `${external.cli} does not have a supported session-resume command.`,
+          userMessage: `${sourceExternal.cli} does not have a supported session-resume command.`,
         }),
       );
     }
@@ -814,7 +855,7 @@ export class ExternalSessionService {
         }),
       );
     }
-    const expectedCwd = external.cwd ?? task.projectPath;
+    const expectedCwd = sourceExternal.cwd ?? source.projectPath;
     if (terminal.cwd !== expectedCwd) {
       throw new ProductFailure(
         productError('EXTERNAL_RESUME_CWD_MISMATCH', {
@@ -823,12 +864,57 @@ export class ExternalSessionService {
       );
     }
 
+    const settled = ['ACCEPTED', 'ROLLED_BACK', 'CANCELLED'].includes(source.state);
+    let task = source;
+    let external = sourceExternal;
+    if (settled) {
+      let snapshotRef: string | null = null;
+      if (source.gitBaseline) {
+        try {
+          snapshotRef = await new GitService(source.projectPath).snapshotTree();
+        } catch (e) {
+          this.logger.warn('continuation snapshot failed; degrading to first-seen baselines', {
+            terminalId,
+            error: errorMessage(e),
+          });
+        }
+      }
+      task = await this.tasks.createExternalTask({
+        cli: sourceExternal.cli,
+        terminalId,
+        cwd: expectedCwd,
+        projectPath: source.projectPath,
+        worktree: source.worktree && !source.worktree.missing ? source.worktree : null,
+        snapshotRef,
+        title: source.title,
+      });
+      if (sourceExternal.sessionId && isSafeCliSessionId(sourceExternal.sessionId)) {
+        this.tasks.setExternalSessionId(task.id, sourceExternal.sessionId);
+      }
+      this.tasks.recordEvent(source.id, 'external.sessionContinued', {
+        cli: sourceExternal.cli,
+        taskId: task.id,
+      });
+      this.tasks.recordEvent(task.id, 'external.sessionResumedFrom', {
+        cli: sourceExternal.cli,
+        taskId: source.id,
+        title: source.title,
+      });
+      task = this.tasks.getTask(task.id);
+      external = task.external!;
+      this.logger.info('settled external session continues as a new task', {
+        fromTaskId: source.id,
+        taskId: task.id,
+        cli: external.cli,
+      });
+    }
+
     const git = task.gitBaseline ? new GitService(task.projectPath) : null;
     const watcher = new WorkspaceWatcher(task.projectPath);
-    const changeSet = await this.tasks.contextForTask(taskId).changes.changeSet(taskId);
+    const changeSet = await this.tasks.contextForTask(task.id).changes.changeSet(task.id);
     const session: LiveSession = {
       terminalId,
-      taskId,
+      taskId: task.id,
       cli: external.cli,
       root: task.projectPath,
       cwd: expectedCwd,
@@ -876,9 +962,11 @@ export class ExternalSessionService {
     session.unsubscribe = watcher.onBatch((changes) => this.onBatch(session, changes));
     watcher.start();
     this.byTerminal.set(terminalId, session);
-    this.tasks.resumeExternalSession(taskId, terminalId);
+    // A continuation task is born active; only a same-task resume flips the
+    // source task's status back (and is state-gated in the task service).
+    if (!settled) this.tasks.resumeExternalSession(task.id, terminalId);
     broadcast('external.sessionChanged', {
-      taskId,
+      taskId: task.id,
       terminalId,
       cli: external.cli,
       status: 'active',
@@ -890,19 +978,32 @@ export class ExternalSessionService {
     const detected = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingResumes.delete(terminalId);
-        void this.onAgentExit(terminalId).finally(() =>
+        void this.onAgentExit(terminalId).finally(() => {
+          // A continuation stub that never saw its CLI is pure noise — retire
+          // it. Worktree-mounted stubs keep the shared mount and stay visible
+          // (archive would discard the source task's worktree).
+          if (settled && !task.worktree) {
+            try {
+              this.tasks.archive(task.id);
+            } catch (e) {
+              this.logger.warn('failed to retire an undetected continuation task', {
+                taskId: task.id,
+                error: errorMessage(e),
+              });
+            }
+          }
           reject(
             new ProductFailure(
               productError('EXTERNAL_RESUME_NOT_DETECTED', {
                 userMessage: `${external.cli} did not start in the terminal. The task remains safe and ready for review.`,
               }),
             ),
-          ),
-        );
+          );
+        });
       }, 12_000);
       timer.unref?.();
       this.pendingResumes.set(terminalId, {
-        taskId,
+        taskId: task.id,
         cli: external.cli,
         timer,
         resolve,
@@ -917,19 +1018,21 @@ export class ExternalSessionService {
     if (resuming) this.writeProduct(resuming, `${command}\r`);
     else this.terminals.write(terminalId, `${command}\r`);
     await detected;
-    return { terminalId, cli: external.cli };
+    return { terminalId, cli: external.cli, taskId: task.id };
   }
 
   /**
-   * Product-owned continuation path for Claude/Codex. The renderer sends
-   * structured refs; the main process validates them through IPC, serializes
-   * the exact snapshots, writes the owning PTY, and records the same refs in
-   * the Session ledger.
+   * ADR-0030 — context feeding for external sessions. Writes one reference
+   * into the CLI's own input line (bracketed paste, deliberately no Enter):
+   * the user watches it land, edits it, and submits with the CLI's own
+   * keystroke. File refs become `@path` mentions the CLI resolves at send
+   * time; selections carry their frozen bytes so a later edit can never
+   * change what the user cited. The injection itself is ledgered — the
+   * eventual submit stays an ordinary unmanaged keystroke.
    */
-  sendMessage(
+  injectContext(
     taskId: string,
-    text: string,
-    codeRefs: CodeContextRefDto[],
+    ref: ExternalInjectRefDto,
   ): { delivered: boolean; terminalId: string } {
     const task = this.tasks.getTask(taskId);
     const external = task.external;
@@ -948,26 +1051,23 @@ export class ExternalSessionService {
         }),
       );
     }
-    const prompt = formatPromptWithCodeContext(text, codeRefs);
-    this.tasks.recordEvent(taskId, 'user.message', {
-      text,
-      kind: 'external',
-      ...(codeRefs.length > 0 ? { codeRefs } : {}),
+    const prompt = externalInjectText(ref);
+    this.tasks.recordEvent(taskId, 'external.contextInjected', {
+      cli: session.cli,
+      captureGrade: session.captureGrade,
+      kind: ref.kind,
+      path: ref.kind === 'file' ? ref.path : ref.code.path,
+      ...(ref.kind === 'selection'
+        ? {
+            startLine: ref.code.startLine,
+            endLine: ref.code.endLine,
+            selectionHash: ref.code.selectionHash,
+          }
+        : {}),
     });
-    // A session that never got a composer prompt keeps its placeholder title
-    // until the first product-path message names it.
-    if (task.title === `${external.cli} · external session`) {
-      const title = externalTitleFromPrompt(text);
-      if (title) this.tasks.setExternalTitle(taskId, title);
-    }
-    session.lastUserLine = text;
+    // Bracketed paste with NO trailing Enter — landing in the input line
+    // unsent is the whole contract of this method.
     this.writeProduct(session, `\u001b[200~${prompt}\u001b[201~`);
-    // Enter as its own write — a CR inside the paste chunk reads as pasted
-    // text to TUI paste handling and leaves the message sitting unsent.
-    const enterTimer = setTimeout(() => {
-      if (!session.ended) this.writeProduct(session, '\r');
-    }, PROMPT_ENTER_DELAY_MS);
-    enterTimer.unref?.();
     return { delivered: true, terminalId: external.terminalId };
   }
 

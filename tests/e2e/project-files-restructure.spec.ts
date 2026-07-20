@@ -2,8 +2,13 @@ import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
 import { createGitFixture } from './helpers/fixtures';
 
-test.describe('Project Files restructure — one canonical contextual tree', () => {
-  test('projects navigate; Files/Search/Changes share one collapsible context', async () => {
+/**
+ * ADR-0029: one project tree. The rail's Files pane is the canonical tree
+ * (browsing + management + context feeding); the Editor surface keeps only
+ * Search/Changes as its contextual column and collapses to the plain editor.
+ */
+test.describe('Project Files — one canonical tree in the rail', () => {
+  test('projects route to the rail tree; Search/Changes toggle beside the editor', async () => {
     const fixture = createGitFixture();
     const { app, page } = await launchApp({
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
@@ -23,13 +28,18 @@ test.describe('Project Files restructure — one canonical contextual tree', () 
       });
       await expect(page.getByTestId('project-tool-view')).toBeVisible({ timeout: 15_000 });
 
-      // Projects contains projects and actions only; selecting one routes to
-      // the canonical contextual Explorer beside the editor.
+      // The Editor surface offers no Files tool — the tree is not duplicated.
+      await expect(page.getByTestId('project-tool-files')).toHaveCount(0);
+      await expect(page.getByTestId('project-tool-context')).toHaveAttribute('aria-hidden', 'true');
+      await expect(page.locator('.project-tool-body')).toHaveClass(/context-collapsed/);
+
+      // Projects contains projects and actions only; selecting one reveals the
+      // canonical tree in the rail's Files pane beside the plain editor.
       await page.getByTestId('rail-view-projects').click();
       await expect(page.getByTestId('rail-projects-panel')).toBeVisible();
       await expect(page.getByTestId('home-project-tree')).toHaveCount(0);
       await page.locator('[data-testid^="home-recent-"].active').click();
-      await expect(page.getByTestId('project-tool-files')).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByTestId('rail-tab-files')).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByTestId('explorer')).toBeVisible();
       await expect(page.getByRole('tree', { name: 'Files' })).toHaveCount(1);
 
@@ -37,20 +47,25 @@ test.describe('Project Files restructure — one canonical contextual tree', () 
       await page.getByTestId('tree-item-src/index.ts').click();
       await expect(page.getByTestId('tab-src/index.ts')).toBeVisible();
 
-      // Context collapse gives its width back to the editor. Selecting a tool
-      // restores the context because the user's request makes it actionable.
-      await page.getByTestId('project-context-toggle').click();
-      await expect(page.locator('.project-tool-body')).toHaveClass(/context-collapsed/);
-      await expect(page.getByTestId('project-tool-context')).toHaveAttribute('aria-hidden', 'true');
-      await expect(page.getByTestId('project-tool-editor')).toBeVisible();
+      // The tree carries the management surface (merged from the old Files
+      // tool): the pane's New File action creates through the normal fs path.
+      await page.getByTestId('explorer-new-file').click();
+      await page.getByTestId('explorer-inline-input').fill('notes-e2e.md');
+      await page.keyboard.press('Enter');
+      await expect(page.getByTestId('tab-notes-e2e.md')).toBeVisible({ timeout: 10_000 });
+
+      // Search/Changes share one collapsible context; selecting the active
+      // tool again gives its width back to the editor.
       await page.getByTestId('project-tool-search').click();
       await expect(page.locator('.project-tool-body')).not.toHaveClass(/context-collapsed/);
       await expect(page.getByTestId('search-view')).toBeVisible();
       await expect(page.getByTestId('search-input')).toBeFocused();
       await page.getByTestId('project-tool-changes').click();
       await expect(page.getByTestId('scm-view')).toBeVisible();
-      await page.getByTestId('project-tool-files').click();
-      await expect(page.getByTestId('explorer')).toBeVisible();
+      await page.getByTestId('project-tool-changes').click();
+      await expect(page.locator('.project-tool-body')).toHaveClass(/context-collapsed/);
+      await expect(page.getByTestId('project-tool-context')).toHaveAttribute('aria-hidden', 'true');
+      await expect(page.getByTestId('project-tool-editor')).toBeVisible();
 
       await page.getByTestId('project-editor-split').click();
       await expect(page.getByTestId('monaco-pane-1')).toBeVisible();
@@ -64,17 +79,16 @@ test.describe('Project Files restructure — one canonical contextual tree', () 
       await page.screenshot({ path: '/tmp/charter-project-files-production-1320.png' });
 
       // At narrow width the project list becomes an overlay controlled by the
-      // same global Projects icon; the Files context remains in the workbench.
+      // same global Projects icon; the Files pane stays a full rail panel.
       await page.setViewportSize({ width: 900, height: 900 });
-      await expect(page.locator('.sr-rail')).toHaveCSS('width', '44px');
-      await expect(page.locator('.sr-panel')).toHaveCSS('opacity', '0');
+      await expect(page.locator('.sr-rail')).toHaveCSS('width', '288px');
       await expect(page.getByTestId('explorer')).toBeVisible();
       await page.getByTestId('rail-view-projects').click();
+      await expect(page.locator('.sr-rail')).toHaveCSS('width', '44px');
       await expect(page.locator('.sr-panel')).toHaveCSS('opacity', '1');
-      await expect(page.locator('.sr-panel')).toHaveCSS('width', '290px');
       await expect(page.getByTestId('rail-projects-panel')).toBeVisible();
       await page.locator('[data-testid^="home-recent-"].active').click();
-      await expect(page.locator('.sr-panel')).toHaveCSS('opacity', '0');
+      await expect(page.locator('.sr-rail')).toHaveCSS('width', '288px');
       await expect(page.getByTestId('explorer')).toBeVisible();
 
       const narrowOverflow = await page.evaluate(

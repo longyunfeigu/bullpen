@@ -6,6 +6,15 @@ export const MAX_CODE_CONTEXT_TOTAL_CHARS = 48_000;
 
 export const CodeContextOriginSchema = z.enum(['diff', 'file-peek', 'editor', 'search', 'review']);
 
+/** Rejects absolute, drive-letter and parent-escaping paths (shared PTY-input guard). */
+export function isProjectRelativePath(value: string): boolean {
+  return (
+    !value.startsWith('/') &&
+    !/^[A-Za-z]:[\\/]/u.test(value) &&
+    !value.split(/[\\/]/u).includes('..')
+  );
+}
+
 export const CodeContextVersionSchema = z.enum(['working-tree', 'baseline', 'diff-patch']);
 
 /**
@@ -19,13 +28,7 @@ export const CodeContextRefSchema = z
       .string()
       .min(1)
       .max(2000)
-      .refine(
-        (value) =>
-          !value.startsWith('/') &&
-          !/^[A-Za-z]:[\\/]/u.test(value) &&
-          !value.split(/[\\/]/u).includes('..'),
-        'Code context paths must stay inside the project.',
-      ),
+      .refine(isProjectRelativePath, 'Code context paths must stay inside the project.'),
     origin: CodeContextOriginSchema,
     version: CodeContextVersionSchema,
     startLine: z.number().int().min(1).max(10_000_000),
@@ -67,6 +70,29 @@ export const CodeContextRefsSchema = z
       });
     }
   });
+
+/**
+ * ADR-0030 — one context reference bound for an external CLI's own input line.
+ * `file` lands as an `@path` mention the CLI resolves itself at send time;
+ * `selection` lands as the serialized frozen snapshot (same block sendMessage
+ * used), so "the bytes I selected" survive later edits to the file.
+ */
+export const ExternalInjectRefSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('file'),
+      path: z
+        .string()
+        .min(1)
+        .max(2000)
+        .refine(isProjectRelativePath, 'Injected file references must stay inside the project.'),
+      isFolder: z.boolean().default(false),
+    })
+    .strict(),
+  z.object({ kind: z.literal('selection'), code: CodeContextRefSchema }).strict(),
+]);
+
+export type ExternalInjectRefDto = z.infer<typeof ExternalInjectRefSchema>;
 
 /** Escape a value for use inside a double-quoted XML attribute (shared with file-context). */
 export function xmlAttribute(value: string): string {

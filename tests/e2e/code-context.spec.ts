@@ -144,11 +144,14 @@ test.describe('mature CodeContextRef', () => {
             };
             const task = listed.data?.tasks.find((item) => item.external?.cli === expectedCli);
             if (!task) throw new Error(`No external ${expectedCli} task`);
-            return bridge.rpc['external.message']!({
+            // ADR-0030: the snapshot is injected into the CLI's own input
+            // line (bracketed paste, no Enter) instead of being sent as a
+            // composed turn.
+            return bridge.rpc['external.injectContext']!({
               taskId: task.id,
-              text: 'Use the attached selection.',
-              codeRefs: [
-                {
+              ref: {
+                kind: 'selection',
+                code: {
                   id: `ref-${expectedCli}`,
                   path: 'src/index.ts',
                   origin: 'editor',
@@ -163,12 +166,17 @@ test.describe('mature CodeContextRef', () => {
                   selectionHash: 'a'.repeat(64),
                   createdAt: '2026-07-17T00:00:00.000Z',
                 },
-              ],
+              },
             });
           },
           { expectedCli: cli, markerText: marker },
         );
         expect(result).toMatchObject({ ok: true, data: { delivered: true } });
+        // The echo agent prints every stdin chunk: the frozen bytes crossed
+        // main → PTY as pasted input. (The no-Enter payload contract is unit
+        // tested — externalInjectText; the canonical-mode fake CLI only sees
+        // newline-terminated chunks, so the paste-close byte isn't assertable
+        // here.)
         await expect(page.getByTestId('terminal-panel')).toContainText(marker, {
           timeout: 15000,
         });

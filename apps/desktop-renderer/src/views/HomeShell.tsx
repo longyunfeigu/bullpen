@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useAppStore } from '../store/appStore.js';
 import { useTaskStore, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { useActivityStore } from '../store/activityStore.js';
-import { needsAttention } from './HomeSidebar.js';
+import { needsAttention } from './labels.js';
 import { useExternalStore } from '../store/externalStore.js';
 import { HomeView } from './HomeView.js';
 import { TaskRoomView } from './TaskRoomView.js';

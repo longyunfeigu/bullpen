@@ -104,6 +104,7 @@ test.describe('M4 search, intelligence, terminal', () => {
     );
     const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     try {
+      await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-src').click();
       await page.getByTestId('tree-item-src/broken.ts').click();
       await expect(page.getByTestId('tab-src/broken.ts')).toBeVisible();
@@ -206,6 +207,7 @@ test.describe('M4 search, intelligence, terminal', () => {
     writeFileSync(join(fixture, 'py/app.py'), 'def greet(name):\n    return "hi " + name\n');
     const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     try {
+      await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-py').click();
       await page.getByTestId('tree-item-py/app.py').click();
       await expect(page.getByTestId('tab-py/app.py')).toBeVisible();

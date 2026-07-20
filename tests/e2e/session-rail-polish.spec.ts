@@ -148,8 +148,9 @@ test.describe('Session rail and conversation role polish', () => {
 
       await page.getByTestId(`home-recent-${projectA}`).click();
       await expect(page.getByTestId('project-tool-view')).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByTestId('rail-view-projects')).toHaveClass(/active/);
-      await expect(page.getByTestId(`home-recent-${projectA}`)).toHaveClass(/active/);
+      // ADR-0029: "open project files" reveals the rail's Files tree beside
+      // the plain editor — the one project tree.
+      await expect(page.getByTestId('rail-tab-files')).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByTestId('explorer')).toBeVisible();
       await expect(page.getByTestId('home-project-tree')).toHaveCount(0);
       await page.screenshot({

@@ -80,6 +80,33 @@ function createResumableClaudeBin(initialDurationMs = 3500): string {
   return bin;
 }
 
+/** First run edits a file (so review has something to accept) and exits;
+ * a resumed run prints its marker and stays up long enough to observe. */
+function createHistoryClaudeBin(fixture: string): string {
+  const bin = mkdtempSync(join(tmpdir(), 'pi-ide-history-bin-'));
+  const target = join(fixture, 'src/util.ts').replace(/\\/g, '/');
+  writeFileSync(
+    join(bin, 'claude'),
+    [
+      '#!/usr/bin/env node',
+      "const fs = require('fs');",
+      `const target = ${JSON.stringify(target)};`,
+      "const resumed = process.argv.includes('--continue') || process.argv.includes('--resume');",
+      "console.log(resumed ? 'resumed-original-session' : 'original-session-started');",
+      'if (!resumed) {',
+      '  setTimeout(() => {',
+      "    fs.writeFileSync(target, fs.readFileSync(target, 'utf8') + 'export const externalTouch = 1;\\n');",
+      '  }, 900);',
+      '}',
+      'setTimeout(() => process.exit(0), resumed ? 8000 : 3500);',
+      '',
+    ].join('\n'),
+  );
+  chmodSync(join(bin, 'claude'), 0o755);
+  pinFixtureCliPath(bin);
+  return bin;
+}
+
 function createComposerClaudeBin(): { bin: string; probe: string } {
   const bin = mkdtempSync(join(tmpdir(), 'pi-ide-composer-bin-'));
   const probe = join(bin, 'probe.log');
@@ -465,7 +492,13 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       const row = page.getByTestId(`home-task-${task!.id}`);
       await expect(row).toContainText('hi from composer');
 
-      // CLI exit closes the session as "Ended", never "Answered".
+      // CLI exit closes the session as "Ended", never "Answered" — and an
+      // ended session with nothing to decide parks under History in the rail.
+      const historyToggle = page.getByTestId('rail-group-history');
+      await expect(historyToggle).toBeVisible({ timeout: 25000 });
+      if ((await historyToggle.getAttribute('aria-expanded')) !== 'true') {
+        await historyToggle.click();
+      }
       await expect(row).toHaveAttribute('data-state', 'REVIEW_READY', { timeout: 25000 });
       await expect(row).toContainText('Ended');
       await expect(row).toContainText('Session ended · no file changes');
@@ -571,6 +604,109 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(page.getByTestId('external-ended')).toBeVisible({ timeout: 20000 });
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY');
       await expect(page.getByTestId('task-resume')).toContainText('Resume Claude session');
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('an accepted Claude session parks in History and resumes as a NEW task', async () => {
+    test.setTimeout(180000);
+    const fixture = createGitFixture();
+    const bin = createHistoryClaudeBin(fixture);
+    const { app, page } = await launchApp({
+      env: {
+        PI_IDE_OPEN_WORKSPACE: fixture,
+        PI_IDE_EXTERNAL_CLIS: 'claude',
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+        ZDOTDIR: bin,
+      },
+    });
+    try {
+      await page.keyboard.press('Control+`');
+      await expect(page.locator('.xterm')).toBeVisible({ timeout: 15000 });
+      await page.locator('.xterm').click();
+      await page.keyboard.type(join(bin, 'claude'));
+      await page.keyboard.press('Enter');
+      await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText('Claude Code', {
+        timeout: 15000,
+      });
+      await expect(page.getByTestId('session-bar-ended')).toBeVisible({ timeout: 25000 });
+
+      // The session edited one file → review it and accept.
+      await page.getByTestId('session-bar-review').click();
+      await expect(page.getByTestId('task-room')).toBeVisible();
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 20000,
+      });
+      await page.getByTestId('review-bar-open').click();
+      await expect(page.getByTestId('review-view')).toBeVisible();
+      await page.getByTestId('review-accept-all').click();
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'ACCEPTED', {
+        timeout: 20000,
+      });
+      // Accepting a git-project task offers a PR draft — dismiss the modal.
+      await page.getByTestId('pr-draft-dismiss').click();
+      await expect(page.getByTestId('pr-draft-card')).toHaveCount(0);
+
+      const listExternal = async (): Promise<Array<{ id: string; state: string }>> =>
+        page.evaluate(async () => {
+          const bridge = (
+            window as never as {
+              product: {
+                rpc: Record<
+                  string,
+                  (payload: unknown) => Promise<{
+                    data?: { tasks?: Array<{ id: string; state: string; external: unknown }> };
+                  }>
+                >;
+              };
+            }
+          ).product;
+          const result = await bridge.rpc['task.list']!({
+            filter: 'all',
+            includeArchived: false,
+          });
+          return (result.data?.tasks ?? [])
+            .filter((task) => task.external)
+            .map((task) => ({ id: task.id, state: task.state }));
+        });
+      const before = await listExternal();
+      expect(before).toHaveLength(1);
+      const acceptedId = before[0]!.id;
+
+      // The accepted session parks under History (alive sessions never do).
+      await page.getByTestId('surface-home').click();
+      const historyToggle = page.getByTestId('rail-group-history');
+      await expect(historyToggle).toBeVisible();
+      // The rail auto-expands a collapsed group when the open room's task
+      // lands in it — only click if it is still collapsed.
+      if ((await historyToggle.getAttribute('aria-expanded')) !== 'true') {
+        await historyToggle.click();
+      }
+      const historyGroup = page
+        .locator('section.sr-group')
+        .filter({ has: page.getByTestId('rail-group-history') });
+      const row = historyGroup.getByTestId(`home-task-${acceptedId}`);
+      await expect(row).toBeVisible();
+      await expect(row).toContainText('Accepted');
+
+      // ↻ Resume continues the settled round as a NEW task (fresh baseline,
+      // same CLI conversation); the accepted record stays behind in History.
+      await row.hover();
+      await page.getByTestId(`home-resume-${acceptedId}`).click();
+      await expect(page.getByTestId('task-room')).toBeVisible({ timeout: 30000 });
+      await expect(page.getByTestId('external-terminal-host')).toContainText(
+        'resumed-original-session',
+        { timeout: 30000 },
+      );
+
+      const after = await listExternal();
+      expect(after).toHaveLength(2);
+      const source = after.find((task) => task.id === acceptedId);
+      expect(source?.state).toBe('ACCEPTED');
+      const continuation = after.find((task) => task.id !== acceptedId);
+      expect(continuation).toBeDefined();
+      expect(['READY', 'IN_PROGRESS'].includes(continuation!.state)).toBe(true);
     } finally {
       await app.close();
     }

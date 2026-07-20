@@ -25,8 +25,13 @@ export type OverlayKind = 'none' | 'settings' | 'diagnostics' | 'about' | 'memor
  * app-level workspace shell. */
 export type SessionTool = 'summary' | 'diff' | 'file' | 'preview' | 'terminal' | 'review';
 /** Project-level tools used before a Session exists. They render inside the
- * persistent Session shell and never recreate the legacy IDE frame. */
-export type ProjectTool = 'files' | 'search' | 'changes';
+ * persistent Session shell and never recreate the legacy IDE frame.
+ * ADR-0029: 'editor' is the plain editor (no context column) — the one
+ * project tree lives in the rail's Files pane. */
+export type ProjectTool = 'editor' | 'search' | 'changes';
+/** The rail's contextual views inside the single navigation surface.
+ * 'files' is the persistent context-feeding tree (ADR-0024, ADR-0029). */
+export type RailView = 'sessions' | 'inbox' | 'projects' | 'files';
 export type SettingsSection =
   | 'general'
   | 'editor'
@@ -122,6 +127,10 @@ interface AppStore {
   /** Contextual lower panel for project diagnostics. It belongs to Project
    * Tools and does not resurrect the retired global workspace shell. */
   projectBottomTab: BottomTab | null;
+  /** ADR-0029: the rail's panel view, lifted so commands and flows that mean
+   * "show me the project files" can reveal the one tree. */
+  railView: RailView;
+  setRailView(view: RailView): void;
   openPreviewRail(taskId: string): void;
   closePreviewRail(): void;
   setSessionTool(tool: SessionTool): void;
@@ -212,6 +221,28 @@ function sessionSplitKey(taskId: string): string {
   return `charter.sessionSplit.${taskId}`;
 }
 
+const RAIL_VIEW_KEY = 'charter.rail.view.v1';
+
+function loadRailView(): RailView {
+  try {
+    const saved = window.sessionStorage.getItem(RAIL_VIEW_KEY);
+    if (saved === 'sessions' || saved === 'inbox' || saved === 'projects' || saved === 'files') {
+      return saved;
+    }
+  } catch {
+    // Session-local navigation persistence is best effort.
+  }
+  return 'sessions';
+}
+
+function saveRailView(view: RailView): void {
+  try {
+    window.sessionStorage.setItem(RAIL_VIEW_KEY, view);
+  } catch {
+    // Session-local navigation persistence is best effort.
+  }
+}
+
 function readStoredSessionSplit(taskId: string): number | null {
   const raw = Number(window.localStorage.getItem(sessionSplitKey(taskId)));
   return Number.isFinite(raw) && raw >= 20 && raw <= 80 ? raw : null;
@@ -247,7 +278,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
   sessionSplitDragging: false,
   projectTool: null,
   projectBottomTab: null,
+  railView: typeof window === 'undefined' ? 'sessions' : loadRailView(),
   composerFocusSeq: 0,
+
+  setRailView(railView) {
+    saveRailView(railView);
+    set({ railView });
+  },
 
   setSurface(surface) {
     // The compatibility "workspace" value now opens a contextual tool state
@@ -260,7 +297,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
     set({
       surface,
-      projectTool: surface === 'workspace' ? (get().projectTool ?? 'files') : null,
+      projectTool: surface === 'workspace' ? (get().projectTool ?? 'editor') : null,
     });
   },
 
@@ -458,7 +495,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   toggleSidebar() {
     if (!get().taskRoomTaskId) {
-      set({ projectTool: get().projectTool === 'files' ? null : 'files' });
+      set({ projectTool: get().projectTool === 'editor' ? null : 'editor' });
     }
   },
   toggleAgentPanel() {
@@ -476,10 +513,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
   showSideBarView(view) {
     if (!get().taskRoomTaskId) {
-      set({
-        surface: 'workspace',
-        projectTool: view === 'search' ? 'search' : view === 'scm' ? 'changes' : 'files',
-      });
+      if (view === 'search' || view === 'scm') {
+        set({
+          surface: 'workspace',
+          projectTool: view === 'search' ? 'search' : 'changes',
+        });
+      } else {
+        // ADR-0029: the one project tree lives in the rail's Files pane.
+        get().setRailView(view === 'tasks' ? 'sessions' : 'files');
+      }
       return;
     }
     set({
@@ -492,7 +534,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (tab !== 'terminal') {
         set({
           surface: 'workspace',
-          projectTool: 'files',
+          projectTool: get().projectTool ?? 'editor',
           projectBottomTab: tab,
         });
       }

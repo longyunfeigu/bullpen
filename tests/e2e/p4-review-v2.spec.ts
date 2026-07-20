@@ -109,7 +109,8 @@ test.describe('P4 review v2 + decorations (ADR-0013)', () => {
       env: { PI_IDE_OPEN_WORKSPACE: fixture },
     });
     try {
-      // Explorer shows M on the modified file and U on the untracked one.
+      // The rail tree shows M on the modified file and U on the untracked one.
+      await page.getByTestId('rail-tab-files').click();
       await expect(page.getByTestId('tree-git-brand-new.ts')).toHaveText('U', { timeout: 15000 });
       const srcRow = page.getByTestId('tree-item-src');
       await expect(srcRow).toBeVisible();

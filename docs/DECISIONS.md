@@ -17,6 +17,8 @@
 | [ADR-0026](adr/ADR-0026-boundary-checker-aliased-requires.md) | Accepted | 边界检查器覆盖别名 require；Pi package.json 元数据读取为显式豁免（补录索引） | 2026-07-18 | CLAUDE.md 边界规则、§9.5、M1-06 |
 | [ADR-0027](adr/ADR-0027-m11-hardening-implementation.md) | Accepted | M11 硬化实现：fuses、四路秘密验证、Room 窗口化、真窗口缩放、无障碍 Diff、诚实隐私 | 2026-07-18 | §16.4/16.5、A11Y-001..005、PRIV-001..003、ADR-0025 |
 | [ADR-0028](adr/ADR-0028-project-memory.md) | Accepted | 项目记忆：审查即学习的规则沉淀，单源三投影（preamble / CLAUDE.md / AGENTS.md 托管区块），私有记忆只管理不合并 | 2026-07-19 | 提案① mock Ⓐ/Ⓑ/Ⓒ、ADR-0015/0019 模式复用、ADR-0017 边界教训、M11-07 清理路径 |
+| [ADR-0029](adr/ADR-0029-single-project-tree.md) | Accepted | 单一项目文件树：rail Files 面板并入 ExplorerView 管理能力成为唯一的树（ProjectTree）；编辑器表面移除 Files 工具列，'files' 工具改名 'editor'；railView 提升至 appStore | 2026-07-20 | 用户验收截图指出双树冗余并选定合并终局；部分取代 ADR-0024 中「Editor 保留 canonical ExplorerView」 |
+| [ADR-0030](adr/ADR-0030-external-terminal-single-input.md) | Accepted | 外部会话单输入口：删除底部 product composer，CLI 输入行是唯一对话面；拖拽/选区经 external.injectContext 注入（bracketed paste 不带回车）；注入记台账、typed-line 命名会话 | 2026-07-20 | 用户 mockup 验收（B 案）；部分取代 ADR-0017/0024 的外部 composer 表述 |
 
 ## ADR 模板
 

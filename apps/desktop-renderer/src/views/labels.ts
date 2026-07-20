@@ -59,6 +59,73 @@ export function canArchiveTask(task: { state: string; changedFiles?: number | nu
   return isAnswered(task);
 }
 
+/** ADR-0023: task states whose work is settled — the rail's History bucket. */
+export const SETTLED_TASK_STATES: ReadonlySet<string> = new Set([
+  'ACCEPTED',
+  'ROLLED_BACK',
+  'CANCELLED',
+]);
+
+/** Minimal task shape the History/resume predicates need. */
+type ExternalishTask = {
+  state: string;
+  changedFiles?: number | null;
+  external?: { cli: string; status: 'active' | 'ended' } | null;
+};
+
+/**
+ * History membership for a task row: the session is over AND nothing needs a
+ * decision. A live external process never lands here whatever the task state
+ * says, and rows revive out of History automatically — grouping is
+ * state-derived, so a resume flips them straight back into their project
+ * group. Ended external sessions with unreviewed changes stay out (History
+ * never hides something that still wants a decision).
+ */
+export function isHistoryTask(task: ExternalishTask): boolean {
+  if (task.external) {
+    return (
+      task.external.status === 'ended' && (SETTLED_TASK_STATES.has(task.state) || isAnswered(task))
+    );
+  }
+  return SETTLED_TASK_STATES.has(task.state);
+}
+
+/**
+ * States an ended external session can be revived from. The unsettled trio
+ * resumes the SAME task (existing service gate); a settled round continues
+ * the conversation as a NEW task on a fresh entry snapshot — mirroring
+ * "a follow-up is a new task" for managed runs.
+ */
+const EXTERNAL_RESUMABLE_STATES = new Set([
+  'REVIEW_READY',
+  'INTERRUPTED',
+  'FAILED',
+  ...SETTLED_TASK_STATES,
+]);
+
+export function canResumeExternal(task: ExternalishTask): boolean {
+  return (
+    task.external != null &&
+    task.external.status === 'ended' &&
+    (task.external.cli === 'claude' || task.external.cli === 'codex') &&
+    EXTERNAL_RESUMABLE_STATES.has(task.state)
+  );
+}
+
+/** Attention = the amber Inbox: states that block on the user (ADR-0009:
+ * zero-change "Answered" tasks are excluded — they ask for nothing). */
+export const ATTENTION_STATES = [
+  'AWAITING_PERMISSION',
+  'AWAITING_PLAN_APPROVAL',
+  'REVIEW_READY',
+  'INTERRUPTED',
+  'FAILED',
+];
+
+export function needsAttention(task: { state: string; changedFiles?: number | null }): boolean {
+  return ATTENTION_STATES.includes(task.state) && !isAnswered(task);
+}
+
 /** Presentation meta for a task — the only place the "Answered" veneer exists. */
 export function presentedMeta(task: {
   state: string;

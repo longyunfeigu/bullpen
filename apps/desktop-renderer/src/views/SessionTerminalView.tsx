@@ -3,7 +3,7 @@ import { useAppStore } from '../store/appStore.js';
 import { useExternalStore } from '../store/externalStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { EditorArea } from '../workbench/EditorArea.js';
-import { ExplorerView } from './ExplorerView.js';
+import { ProjectTree } from './ProjectTree.js';
 import { ScmView } from './ScmView.js';
 import { ExternalPanel } from './ExternalPanel.js';
 import { Ic, ProviderMark } from './home-icons.js';
@@ -159,9 +159,12 @@ export function SessionTerminalView({ terminalId }: { terminalId: string }): Rea
             </div>
             {tool === 'editor' ? (
               <div className="stv-editor-layout">
-                <section className="stv-explorer">
+                <section
+                  className="stv-explorer"
+                  style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                >
                   <div className="stv-pane-title">Files</div>
-                  <ExplorerView />
+                  <ProjectTree />
                 </section>
                 <section className="stv-editor">
                   <EditorArea />

@@ -563,14 +563,48 @@
   color: var(--fg-faint);
   font-size: 9.5px;
 }
-.sr-archive {
+/* Row hover actions: resume (ended external sessions) + archive. */
+.sr-actions {
   position: absolute;
   right: 7px;
   bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
   opacity: 0;
 }
-.sr-row-wrap:hover .sr-archive {
+.sr-row-wrap:hover .sr-actions,
+.sr-actions:focus-within {
   opacity: 1;
+}
+.sr-actions button {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.sr-actions button:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.sr-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sr-actions .sr-resume:hover {
+  color: var(--success);
+}
+.sr-actions .sr-archive.armed {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-card));
 }
 
 @keyframes srCompletionNudge {

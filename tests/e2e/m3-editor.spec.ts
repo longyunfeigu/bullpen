@@ -10,8 +10,9 @@ test.describe('M3 workspace and editor', () => {
     const first = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     const { page } = first;
 
-    // Explorer shows the workspace tree.
+    // ADR-0029: the one project tree lives in the rail's Files pane.
     await expect(page.getByTestId('workspace-chip')).toBeVisible();
+    await page.getByTestId('rail-tab-files').click();
     await page.getByTestId('tree-item-src').click();
     await page.getByTestId('tree-item-src/index.ts').click();
     await expect(page.getByTestId('tab-src/index.ts')).toBeVisible();
@@ -51,6 +52,7 @@ test.describe('M3 workspace and editor', () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     try {
+      await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-src').click();
       await page.getByTestId('tree-item-src/util.ts').click();
       await page.locator('.monaco-editor').first().click();
@@ -86,6 +88,7 @@ test.describe('M3 workspace and editor', () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     try {
+      await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-README.md').click();
       await expect(page.getByTestId('tab-README.md')).toBeVisible();
       writeFileSync(join(fixture, 'README.md'), '# Reloaded externally\n');
@@ -103,6 +106,7 @@ test.describe('M3 workspace and editor', () => {
     const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     try {
       // HTML file gets the item; PI_IDE_E2E keeps the real browser from launching.
+      await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-page.html').click({ button: 'right' });
       const item = page.getByRole('menuitem', { name: 'Open in Browser' });
       await expect(item).toBeVisible();
@@ -130,10 +134,12 @@ test.describe('M3 workspace and editor', () => {
       if (message.type() === 'error') consoleErrors.push(message.text());
     });
     try {
+      await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-src').click();
       await page.getByTestId('tree-item-src/index.ts').click();
       await expect(page.locator('.monaco-editor').first()).toContainText('add(2, 3)');
 
+      await page.getByTestId('rail-tab-sessions').click();
       await page.getByTestId('home-new-task').click();
       await page.getByTestId('home-mode-auto').click();
       await page.getByTestId('home-intent').fill('[scenario:edit-basic] update the call');

@@ -16,6 +16,7 @@ test('explorer context menu — html vs non-html', async () => {
   writeFileSync(join(fixture, 'index.html'), '<!doctype html><title>shot page</title>\n');
   const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
   try {
+    await page.getByTestId('rail-tab-files').click();
     await page.getByTestId('tree-item-index.html').click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Open in Browser' }).waitFor();
     await page.screenshot({ path: join(OUT, 'open-in-browser-html.png') });

@@ -71,7 +71,7 @@ export function QuickOpen(): React.JSX.Element | null {
       app.openPeek(app.taskRoomTaskId, item.path, 'edit');
       app.setSessionToolExpanded(true);
     } else {
-      app.setProjectTool('files');
+      app.setProjectTool('editor');
     }
   };
 

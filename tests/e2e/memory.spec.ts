@@ -194,11 +194,22 @@ test('memory: external private memory (fake home) — discover, view, promote, a
     const habits = files.filter({ hasText: 'habits.md' }).first();
     await expect(habits).toContainText('verify the build');
 
-    // View shows the body.
+    // View opens a dialog: frontmatter strip + rendered markdown body.
     await habits.getByText('View', { exact: true }).click();
+    await expect(page.getByTestId('memory-file-dialog')).toBeVisible();
     await expect(page.getByTestId('memory-external-viewer')).toContainText(
       'Always verify the build output',
     );
+    await expect(page.getByTestId('memory-external-viewer')).toContainText('name: habits');
+    await page.getByTestId('memory-file-close').click();
+    await expect(page.getByTestId('memory-file-dialog')).not.toBeVisible();
+
+    // Escape closes only the file dialog — the memory overlay stays open.
+    await habits.getByText('View', { exact: true }).click();
+    await expect(page.getByTestId('memory-file-dialog')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('memory-file-dialog')).not.toBeVisible();
+    await expect(page.getByTestId('memory-view')).toBeVisible();
 
     // Promote copies (one-way) into that project's Charter rule candidates.
     await habits.getByTestId('memory-external-promote').click();

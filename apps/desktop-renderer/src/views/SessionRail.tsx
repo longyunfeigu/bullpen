@@ -2,20 +2,26 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { RecentWorkspaceDto, TaskDto } from '@pi-ide/ipc-contracts';
 import { rpcResult } from '../bridge.js';
 import { useActivityStore, currentActionLine } from '../store/activityStore.js';
-import { useAppStore } from '../store/appStore.js';
+import { useAppStore, type RailView } from '../store/appStore.js';
 import { useExternalStore } from '../store/externalStore.js';
 import { RUNNING_TASK_STATES, useTaskStore } from '../store/taskStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useTerminalStore } from './TerminalPanel.js';
 import { Ic, ProviderMark } from './home-icons.js';
-import { canArchiveTask, isAnswered, presentedMeta } from './labels.js';
+import {
+  canArchiveTask,
+  canResumeExternal,
+  isAnswered,
+  isHistoryTask,
+  needsAttention,
+  presentedMeta,
+} from './labels.js';
 import { ArmedIconButton } from './ui.js';
-import { needsAttention } from './HomeSidebar.js';
 import { SessionFilesPane } from './SessionFilesPane.js';
 import { useGlowTasks } from './useGlow.js';
 import { sessionDisplayTitle } from '../store/sessionAttention.js';
 
-type SessionEntry =
+export type SessionEntry =
   | { key: string; kind: 'task'; task: TaskDto }
   | {
       key: string;
@@ -23,11 +29,8 @@ type SessionEntry =
       terminalId: string;
       launch: 'claude' | 'codex';
       projectName: string;
+      exited: boolean;
     };
-
-/** The rail's contextual views inside the single navigation surface.
- * 'files' is the persistent context-feeding tree (ADR-0024, mock B+D). */
-type RailView = 'sessions' | 'inbox' | 'projects' | 'files';
 
 interface RailGroup {
   key: string;
@@ -39,14 +42,15 @@ interface RailGroup {
 }
 
 /**
- * ADR-0023: settled sessions leave their project group for the collapsed
- * History group. Attention states (FAILED/INTERRUPTED, review) stay in their
- * project group — History never hides something that still wants a decision.
+ * ADR-0023 + external sessions: History = the session is over AND nothing
+ * needs a decision (predicates live in labels.ts). Exited bare CLI terminals
+ * count as over; a live process never lands here.
  */
-const SETTLED_STATES = new Set(['ACCEPTED', 'ROLLED_BACK', 'CANCELLED']);
+export function isHistoryEntry(entry: SessionEntry): boolean {
+  return entry.kind === 'terminal' ? entry.exited : isHistoryTask(entry.task);
+}
 
 const COLLAPSED_KEY = 'charter.rail.collapsed.v1';
-const VIEW_KEY = 'charter.rail.view.v1';
 const SESSION_PAGE_SIZE = 20;
 
 function loadCollapsed(): Set<string> {
@@ -68,26 +72,6 @@ function saveCollapsed(collapsed: ReadonlySet<string>): void {
     window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
   } catch {
     // best-effort UI state
-  }
-}
-
-function loadRailView(): RailView {
-  try {
-    const saved = window.sessionStorage.getItem(VIEW_KEY);
-    if (saved === 'sessions' || saved === 'inbox' || saved === 'projects' || saved === 'files') {
-      return saved;
-    }
-  } catch {
-    // Session-local navigation persistence is best effort.
-  }
-  return 'sessions';
-}
-
-function saveRailView(view: RailView): void {
-  try {
-    window.sessionStorage.setItem(VIEW_KEY, view);
-  } catch {
-    // Session-local navigation persistence is best effort.
   }
 }
 
@@ -157,7 +141,9 @@ function SessionTaskRow({
   const action = running ? currentActionLine(activity) : null;
   const badge = statusBadge(task);
   const externalSession = useExternalStore((state) => state.sessions[task.id]);
+  const resumingTaskId = useExternalStore((state) => state.resumingTaskId);
   const live = task.external ? externalSession?.status === 'active' : running;
+  const resumable = canResumeExternal(task) && !live;
 
   const open = (): void => {
     void useTaskStore.getState().openTask(task.id);
@@ -202,15 +188,31 @@ function SessionTaskRow({
           </span>
         </span>
       </button>
-      {canArchiveTask(task) ? (
-        <ArmedIconButton
-          icon="archive"
-          className="sr-archive"
-          testid={`home-archive-${task.id}`}
-          title="Archive session"
-          armedTitle="Click again to archive"
-          onConfirm={() => void useTaskStore.getState().archiveTask(task.id)}
-        />
+      {resumable || canArchiveTask(task) ? (
+        <div className="sr-actions">
+          {resumable ? (
+            <button
+              className="sr-resume"
+              data-testid={`home-resume-${task.id}`}
+              title={`Resume this ${task.external?.cli ?? ''} session`}
+              aria-label={`Resume this ${task.external?.cli ?? ''} session`}
+              disabled={resumingTaskId !== null}
+              onClick={() => void useExternalStore.getState().resumeTask(task)}
+            >
+              <Ic name="refresh" size={12} strokeWidth={2} />
+            </button>
+          ) : null}
+          {canArchiveTask(task) ? (
+            <ArmedIconButton
+              icon="archive"
+              className="sr-archive"
+              testid={`home-archive-${task.id}`}
+              title="Archive session"
+              armedTitle="Click again to archive"
+              onConfirm={() => void useTaskStore.getState().archiveTask(task.id)}
+            />
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -281,7 +283,9 @@ export function SessionRail(): React.JSX.Element {
   const taskByTerminal = useExternalStore((state) => state.taskByTerminal);
   const inbox = tasks.filter((task) => !task.archived && needsAttention(task));
   const [recent, setRecent] = useState<RecentWorkspaceDto[]>([]);
-  const [view, setViewState] = useState<RailView>(loadRailView);
+  // ADR-0029: the rail view lives in the app store so commands (⌘⇧E) and
+  // "open project files" flows can reveal the Files tree.
+  const view = app.railView;
   const [projectsPanelOpen, setProjectsPanelOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(loadCollapsed);
   const [query, setQuery] = useState('');
@@ -293,8 +297,7 @@ export function SessionRail(): React.JSX.Element {
   const [visibleCount, setVisibleCount] = useState(SESSION_PAGE_SIZE);
 
   const setView = (next: RailView): void => {
-    saveRailView(next);
-    setViewState(next);
+    app.setRailView(next);
     if (next !== 'projects') setProjectsPanelOpen(false);
     setAddMenuOpen(false);
   };
@@ -355,6 +358,7 @@ export function SessionRail(): React.JSX.Element {
         terminalId: terminal.id,
         launch: terminal.launch as 'claude' | 'codex',
         projectName: terminal.projectName,
+        exited: terminal.exited,
       }));
     return [...terminalEntries.toReversed(), ...taskEntries];
   }, [tasks, terminalStore.items, taskByTerminal]);
@@ -371,8 +375,7 @@ export function SessionRail(): React.JSX.Element {
   useEffect(() => {
     const reveal = app.sessionReveal;
     if (!reveal) return;
-    saveRailView('sessions');
-    setViewState('sessions');
+    useAppStore.getState().setRailView('sessions');
     setQuery('');
     setNeedsOnly(false);
     const index = allEntries.findIndex((entry) => entry.key === `task:${reveal.taskId}`);
@@ -396,7 +399,7 @@ export function SessionRail(): React.JSX.Element {
       history: true,
     };
     for (const entry of flatEntries) {
-      if (entry.kind === 'task' && SETTLED_STATES.has(entry.task.state)) {
+      if (isHistoryEntry(entry)) {
         history.entries.push(entry);
         continue;
       }
@@ -683,7 +686,7 @@ export function SessionRail(): React.JSX.Element {
                           key={entry.key}
                           terminalId={entry.terminalId}
                           launch={entry.launch}
-                          showProject={false}
+                          showProject={group.history === true}
                         />
                       ),
                     )}
@@ -845,15 +848,19 @@ export function SessionRail(): React.JSX.Element {
                 data-testid={`home-recent-${project.path}`}
                 title={`${project.path} — open project files`}
                 onClick={() => {
+                  // ADR-0029: "open project files" = the Editor surface plus
+                  // the rail's Files tree (the one project tree).
                   setProjectsPanelOpen(false);
                   if (active) {
-                    app.setProjectTool('files');
+                    app.setProjectTool('editor');
+                    setView('files');
                     return;
                   }
                   app.setHomePick(true);
                   void workspaceStore
                     .openPath(project.path)
-                    .then(() => app.setProjectTool('files'));
+                    .then(() => useAppStore.getState().setProjectTool('editor'));
+                  setView('files');
                 }}
               >
                 <Ic name="folder" size={14} />
@@ -941,7 +948,7 @@ export function SessionRail(): React.JSX.Element {
           title="Memory — project rules & agent memories"
           onClick={() => app.setOverlay('memory')}
         >
-          <Ic name="archive" size={16} />
+          <Ic name="brain" size={16} />
         </button>
         <span className="sr-activity-spacer" />
         <button

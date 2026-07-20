@@ -84,8 +84,8 @@ test.describe('M5 git workflow', () => {
     try {
       await page.getByTestId('project-tool-changes').click();
       await expect(page.getByTestId('scm-no-repo')).toBeVisible();
-      // Editor still fully works.
-      await page.getByTestId('project-tool-files').click();
+      // Editor still fully works (ADR-0029: the tree lives in the rail).
+      await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-README.md').click();
       await expect(page.getByTestId('tab-README.md')).toBeVisible();
     } finally {

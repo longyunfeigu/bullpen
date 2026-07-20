@@ -334,3 +334,83 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ADR-0029: the one project tree — management actions in the pane header. */
+
+.sr-files-actions {
+  display: flex;
+  flex: none;
+  align-self: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.sr-files-action {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.sr-files-action:hover {
+  border-color: var(--border);
+  background: var(--bg-card);
+  color: var(--fg);
+}
+
+.sr-files-action.active {
+  color: var(--accent);
+}
+
+/* The tree virtualizes its own scroll — the host must not double-scroll. */
+.sr-files-tree-host {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.sr-files-empty p {
+  margin: 0 0 10px;
+}
+
+/* Virtualized tree rows (absolutely positioned — styling stays in classes). */
+
+.pt-row:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.pt-row.selected {
+  background: var(--bg-selected);
+}
+
+.pt-add {
+  display: none;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-card);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.pt-row:hover .pt-add,
+.pt-row:focus-visible .pt-add,
+.pt-add:focus-visible {
+  display: grid;
+}
+
+.pt-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

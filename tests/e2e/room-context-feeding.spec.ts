@@ -26,22 +26,22 @@ test.describe('Room context feeding — Files pane and reference chips', () => {
       // Sessions ⇄ Files segmented tabs (persistent tree, mock B+D).
       await page.getByTestId('rail-tab-files').click();
       await expect(page.getByTestId('session-files-pane')).toBeVisible();
-      await expect(page.getByTestId('session-files-tree')).toBeVisible();
+      await expect(page.getByTestId('explorer')).toBeVisible();
 
       // Quick-add a file: hover reveals the "+", the chip appears on the composer.
-      const fileRow = page.getByTestId('session-files-tree-src');
+      const fileRow = page.getByTestId('tree-item-src');
       await expect(fileRow).toBeVisible();
       await fileRow.hover();
-      await page.getByTestId('session-files-tree-add-src').click();
+      await page.getByTestId('tree-add-src').click();
       await expect(page.getByTestId('room-file-refs')).toBeVisible();
       await expect(page.getByTestId('room-file-refs')).toContainText('src');
 
       // Expand the folder and add a file ref too.
       await fileRow.click();
-      const indexRow = page.getByTestId('session-files-tree-src/index.ts');
+      const indexRow = page.getByTestId('tree-item-src/index.ts');
       await expect(indexRow).toBeVisible();
       await indexRow.hover();
-      await page.getByTestId('session-files-tree-add-src/index.ts').click();
+      await page.getByTestId('tree-add-src/index.ts').click();
       await expect(page.getByTestId('room-file-refs')).toContainText('src/index.ts');
 
       // Search view yields flat draggable results with the same quick-add.
@@ -67,10 +67,10 @@ test.describe('Room context feeding — Files pane and reference chips', () => {
 
       // Removing works before a send: attach again, then remove via the chip ✕.
       await page.getByTestId('session-files-search').fill('');
-      const mathRow = page.getByTestId('session-files-tree-src/mathlib.ts');
+      const mathRow = page.getByTestId('tree-item-src/mathlib.ts');
       await expect(mathRow).toBeVisible();
       await mathRow.hover();
-      await page.getByTestId('session-files-tree-add-src/mathlib.ts').click();
+      await page.getByTestId('tree-add-src/mathlib.ts').click();
       await expect(page.getByTestId('room-file-refs')).toContainText('src/mathlib.ts');
       await page.locator('[data-testid^="file-ref-remove-"]').first().click();
       await expect(page.getByTestId('room-file-refs')).toHaveCount(0);

@@ -1,12 +1,10 @@
 import React from 'react';
 import {
-  viewRegistry,
   editorAreaRegistry,
   statusBarRegistry,
   titleBarRegistry,
   overlayRegistry,
 } from '../workbench/Workbench.js';
-import { ExplorerView } from '../views/ExplorerView.js';
 import { EditorArea } from '../workbench/EditorArea.js';
 import { Ic } from '../views/home-icons.js';
 import { registerCommands } from '../commands.js';
@@ -148,7 +146,6 @@ function TrustPrompt(): React.JSX.Element | null {
 }
 
 export function registerM3(): void {
-  viewRegistry.explorer = ExplorerView;
   editorAreaRegistry.main = EditorArea;
   titleBarRegistry.center.push(WorkspaceChip);
   overlayRegistry.push(TrustPrompt);

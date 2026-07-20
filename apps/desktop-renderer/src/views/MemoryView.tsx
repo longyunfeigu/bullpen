@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ExternalMemoryFileDto,
   MemoryCandidateDto,
@@ -11,6 +11,7 @@ import type {
 import { rpcResult } from '../bridge.js';
 import { useMemoryStore } from '../store/memoryStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
+import { Markdown } from './Markdown.js';
 import '../styles/memory.css';
 
 /**
@@ -56,6 +57,172 @@ function ConfirmButton(props: {
     >
       {armed ? props.confirmLabel : props.label}
     </button>
+  );
+}
+
+type ParsedMemoryDoc = {
+  meta: Array<{ key: string; value: string }>;
+  description: string | null;
+  body: string;
+};
+
+/** Shallow parse of a leading YAML frontmatter block into display chips. */
+function parseMemoryDoc(content: string): ParsedMemoryDoc {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content);
+  if (!match) return { meta: [], description: null, body: content };
+  const meta: Array<{ key: string; value: string }> = [];
+  let description: string | null = null;
+  for (const line of match[1]!.split(/\r?\n/)) {
+    const kv = /^\s*([A-Za-z0-9_-]+):\s*(.*)$/.exec(line);
+    if (!kv) continue;
+    const value = kv[2]!.trim().replace(/^["']/, '').replace(/["']$/, '');
+    if (value.length === 0) continue; // parent keys like `metadata:`
+    if (kv[1] === 'description') description = value;
+    else meta.push({ key: kv[1]!, value });
+  }
+  return { meta, description, body: content.slice(match[0].length) };
+}
+
+/** Render [[wiki-links]] as inline-code chips, leaving fenced blocks alone. */
+function chipWikiLinks(markdown: string): string {
+  return markdown
+    .split(/(```[\s\S]*?(?:```|$))/)
+    .map((segment, index) =>
+      index % 2 === 1 ? segment : segment.replace(/(?<!`)\[\[([^\]`\n]+)\]\](?!`)/g, '`[[$1]]`'),
+    )
+    .join('');
+}
+
+/**
+ * Centered dialog for one external memory file (nested inside the memory
+ * overlay). View renders the markdown body under a frontmatter strip; Edit
+ * is the raw file text. Escape is intercepted in the capture phase so the
+ * workbench overlay underneath stays open.
+ */
+function FileDialog(props: {
+  file: ExternalMemoryFileDto;
+  mode: 'view' | 'edit';
+  content: string;
+  truncated: boolean;
+  onModeChange: (mode: 'view' | 'edit') => void;
+  onContentChange: (content: string) => void;
+  onSave: () => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  const { file } = props;
+  const closeRef = useRef(props.onClose);
+  closeRef.current = props.onClose;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      closeRef.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+  const doc = useMemo(() => parseMemoryDoc(props.content), [props.content]);
+
+  return (
+    <div
+      className="modal-backdrop"
+      onClick={(e) => e.target === e.currentTarget && props.onClose()}
+    >
+      <div
+        className="modal mv-fd"
+        role="dialog"
+        aria-modal="true"
+        aria-label={file.label}
+        data-testid="memory-file-dialog"
+      >
+        <div className="modal-header mv-fd-head">
+          <div className="mv-fd-title">
+            <div className="name">
+              {file.label}
+              <span className="scope">{file.scope === 'global' ? 'global' : 'project'}</span>
+            </div>
+            <div className="path">{file.path}</div>
+          </div>
+          <div className="mv-fd-seg">
+            <button
+              className={props.mode === 'view' ? 'active' : ''}
+              data-testid="memory-file-mode-view"
+              onClick={() => props.onModeChange('view')}
+            >
+              View
+            </button>
+            <button
+              className={props.mode === 'edit' ? 'active' : ''}
+              data-testid="memory-file-mode-edit"
+              onClick={() => props.onModeChange('edit')}
+            >
+              Edit
+            </button>
+          </div>
+          <button
+            className="modal-close"
+            aria-label="Close"
+            data-testid="memory-file-close"
+            onClick={props.onClose}
+          >
+            ✕
+          </button>
+        </div>
+        {props.mode === 'view' ? (
+          <div className="modal-body" data-testid="memory-external-viewer">
+            {doc.meta.length > 0 || doc.description ? (
+              <div className="mv-fd-fm">
+                {doc.meta.map((entry) => (
+                  <span key={entry.key} className="chip">
+                    {entry.key}: {entry.value}
+                  </span>
+                ))}
+                {doc.description ? <span className="desc">{doc.description}</span> : null}
+              </div>
+            ) : null}
+            {props.truncated ? (
+              <div className="mv-hint" style={{ padding: '10px 22px 0' }}>
+                Preview truncated — the file is longer than shown here.
+              </div>
+            ) : null}
+            <div className="mv-fd-md">
+              <Markdown text={chipWikiLinks(doc.body)} />
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="modal-body mv-fd-editwrap">
+              <textarea
+                className="mv-fd-editor"
+                value={props.content}
+                onChange={(e) => props.onContentChange(e.target.value)}
+                spellCheck={false}
+                autoFocus
+                data-testid="memory-external-editor"
+              />
+            </div>
+            <div className="mv-fd-foot">
+              <button
+                className="mv-btn primary"
+                data-testid="memory-external-save"
+                disabled={props.truncated}
+                onClick={props.onSave}
+              >
+                Save
+              </button>
+              <button className="mv-btn quiet" onClick={props.onClose}>
+                Cancel
+              </button>
+              <span className="hint">
+                {props.truncated
+                  ? 'truncated read — saving would lose the tail; view only'
+                  : 'Raw file contents, frontmatter included'}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -123,46 +290,21 @@ function FileRow(props: {
           onConfirm={() => void store.deleteExternal(file.id)}
         />
       </div>
-      {mode === 'view' ? (
-        <>
-          <div className="mv-viewer" data-testid="memory-external-viewer">
-            {truncated ? '…(truncated view)\n' : ''}
-            {content}
-          </div>
-          <div className="mv-file-actions">
-            <button className="mv-btn quiet" onClick={() => setMode('closed')}>
-              Close
-            </button>
-          </div>
-        </>
-      ) : null}
-      {mode === 'edit' ? (
-        <div className="mv-editor">
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            data-testid="memory-external-editor"
-          />
-          <div className="foot">
-            <button
-              className="mv-btn primary"
-              data-testid="memory-external-save"
-              onClick={() =>
-                void store.writeExternal(file.id, content, mtime).then((ok) => {
-                  if (ok) setMode('closed');
-                })
-              }
-            >
-              Save
-            </button>
-            <button className="mv-btn quiet" onClick={() => setMode('closed')}>
-              Cancel
-            </button>
-            {truncated ? (
-              <span className="mv-hint">truncated — saving would lose the tail; view only</span>
-            ) : null}
-          </div>
-        </div>
+      {mode !== 'closed' ? (
+        <FileDialog
+          file={file}
+          mode={mode}
+          content={content}
+          truncated={truncated}
+          onModeChange={setMode}
+          onContentChange={setContent}
+          onSave={() =>
+            void store.writeExternal(file.id, content, mtime).then((ok) => {
+              if (ok) setMode('closed');
+            })
+          }
+          onClose={() => setMode('closed')}
+        />
       ) : null}
     </div>
   );

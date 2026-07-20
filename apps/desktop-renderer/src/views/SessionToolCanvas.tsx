@@ -1180,7 +1180,11 @@ function SessionActionDock({ task, files }: { task: TaskDto; files: string[] }):
         <span className="session-action-live">
           <i /> Agent working
         </span>
-        <span className="session-action-note">You can steer it from the composer.</span>
+        <span className="session-action-note">
+          {task.external
+            ? `You can steer it from the ${task.external.cli} terminal.`
+            : 'You can steer it from the composer.'}
+        </span>
         {!task.external ? (
           <button className="btn danger" data-testid="agent-stop" onClick={() => void store.stop()}>
             Stop

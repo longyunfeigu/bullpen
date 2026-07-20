@@ -134,7 +134,7 @@ export function QuickLauncher(): React.JSX.Element | null {
       {
         id: 'action-memory',
         group: 'Actions',
-        icon: 'archive',
+        icon: 'brain',
         label: 'Open Memory (project rules & agent memories)',
         run: () => useAppStore.getState().setOverlay('memory'),
       },
@@ -172,7 +172,7 @@ export function QuickLauncher(): React.JSX.Element | null {
         list.push({
           id: hit.id,
           group: 'Memory',
-          icon: 'archive',
+          icon: 'brain',
           label: hit.label.length > 72 ? `${hit.label.slice(0, 72)}…` : hit.label,
           sub: hit.sub,
           run: () => useAppStore.getState().setOverlay('memory'),

@@ -1,6 +1,8 @@
 import type { CodeContextRefDto } from '@pi-ide/ipc-contracts';
-import { useAppStore } from './store/appStore.js';
+import { rpcResult } from './bridge.js';
+import { okOrToast, useAppStore } from './store/appStore.js';
 import { useDraftStore } from './store/draftStore.js';
+import { useTaskStore } from './store/taskStore.js';
 
 export type CodeContextCapture = Omit<
   CodeContextRefDto,
@@ -72,15 +74,32 @@ export async function createCodeContextRef(
   };
 }
 
-/** Capture and enqueue one exact source selection for the Session's next turn. */
+/**
+ * Capture one exact source selection for the Session's next turn. Managed
+ * sessions enqueue a composer chip; external sessions (ADR-0030) place the
+ * frozen snapshot straight into the CLI's own input line, unsent.
+ */
 export async function addCodeContext(
   taskId: string,
   capture: CodeContextCapture,
 ): Promise<CodeContextRefDto | null> {
   const ref = await createCodeContextRef(capture);
   if (!ref) return null;
-  const result = useDraftStore.getState().addCodeRef(taskId, ref);
   const app = useAppStore.getState();
+  const external = useTaskStore.getState().tasks.find((task) => task.id === taskId)?.external;
+  if (external) {
+    const injected = await rpcResult('external.injectContext', {
+      taskId,
+      ref: { kind: 'selection', code: ref },
+    });
+    if (!okOrToast(injected)) return null;
+    app.pushToast(
+      'success',
+      `Selection placed in ${external.cli}’s input line — press Enter there to send it.`,
+    );
+    return ref;
+  }
+  const result = useDraftStore.getState().addCodeRef(taskId, ref);
   if (result === 'duplicate') {
     app.pushToast('info', 'That exact code selection is already attached.');
     return null;

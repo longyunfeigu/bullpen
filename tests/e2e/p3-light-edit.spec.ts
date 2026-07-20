@@ -15,6 +15,7 @@ test.describe('P3 — light editing (PIVOT-019/020, ADR-0007)', () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     try {
+      await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-README.md').click();
       await expect(page.getByTestId('tab-README.md')).toBeVisible();
 
@@ -51,6 +52,7 @@ test.describe('P3 — light editing (PIVOT-019/020, ADR-0007)', () => {
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
     });
     try {
+      await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-assets').click();
       await page.getByTestId('tree-item-assets/screen.png').click();
       await expect(page.getByTestId('image-view')).toBeVisible();

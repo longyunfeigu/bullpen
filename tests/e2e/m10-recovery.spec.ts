@@ -130,6 +130,7 @@ test.describe('M10 — crash recovery, reliability, diagnostics', () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     try {
+      await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-README.md').click();
       await expect(page.getByTestId('tab-README.md')).toBeVisible();
       // Tab state persists on a 500ms debounce; a crash may legitimately lose
