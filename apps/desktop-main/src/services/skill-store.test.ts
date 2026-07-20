@@ -148,6 +148,33 @@ describe('SkillStore (ADR-0015)', () => {
     expect(store.expandCommand('/skill:deploy')).toContain('Instructions for deploy.');
   });
 
+  it('reports which skill an explicit command expanded (ADR-0037)', () => {
+    store.import(makeSkillFolder(src, 'alpha', { description: 'Alpha skill.' }));
+    expect(store.expandCommandDetailed('/skill:alpha go').skill).toBe('alpha');
+    expect(store.expandCommandDetailed('/skill:alpha go').text).toContain('<skill name="alpha">');
+    expect(store.expandCommandDetailed('plain prose').skill).toBeNull();
+    expect(store.expandCommandDetailed('/skill:nope hi').skill).toBeNull();
+  });
+
+  it('estimates preamble tokens for enabled, model-visible skills only (ADR-0037)', () => {
+    store.import(makeSkillFolder(src, 'alpha', { description: 'Alpha skill.' }));
+    store.import(makeSkillFolder(src, 'deploy', { explicitOnly: true }));
+    const estimates = store.preambleTokenEstimates();
+    expect(estimates.bySkill.get('alpha')).toBeGreaterThan(0);
+    // Explicit-only skills never enter the preamble — free until invoked.
+    expect(estimates.bySkill.has('deploy')).toBe(false);
+    expect(estimates.overheadTokens).toBeGreaterThan(0);
+    // Per-skill estimates plus framing track the real preamble length (~4 chars/token).
+    const estimatedChars =
+      4 * ([...estimates.bySkill.values()].reduce((a, b) => a + b, 0) + estimates.overheadTokens);
+    expect(Math.abs(estimatedChars - store.preambleBlock().length)).toBeLessThan(16);
+
+    store.setEnabled('alpha', false);
+    const after = store.preambleTokenEstimates();
+    expect(after.bySkill.size).toBe(0);
+    expect(after.overheadTokens).toBe(0);
+  });
+
   it('readFile guards traversal and flags binaries', () => {
     store.import(makeSkillFolder(src, 'alpha', { extraFiles: { 'refs/a.md': 'ref body' } }));
     expect(store.readFile('alpha').content).toContain('Instructions for alpha.');

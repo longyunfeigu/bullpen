@@ -86,7 +86,7 @@ test('skills: manager (toggle/audit) + "/" picker + /skill: task through the moc
 
     // ---- Settings → Agent → Skills manager ----
     await page.getByTestId('home-settings').click();
-    await page.locator('.st-nav-item', { hasText: 'Agent' }).click();
+    await page.locator('.st-nav-item', { hasText: 'Skills' }).click();
     const row = page.getByTestId('skill-row-pdf-fill');
     await expect(row).toBeVisible();
     await expect(row).toContainText('Fill and extract fields');
@@ -137,7 +137,7 @@ test('skills: discovers and live-syncs a trusted external Agent Skills source', 
   try {
     await page.getByTestId('surface-home').click();
     await page.getByTestId('home-settings').click();
-    await page.locator('.st-nav-item', { hasText: 'Agent' }).click();
+    await page.locator('.st-nav-item', { hasText: 'Skills' }).click();
 
     const source = page.getByTestId('skill-source-agents');
     await expect(source).toContainText('1 found');

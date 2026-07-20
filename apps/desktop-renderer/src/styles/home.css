@@ -1331,3 +1331,25 @@
   font-size: 11px;
   color: var(--info);
 }
+
+/* ADR-0037: usage summary + manage entry in the "/" picker footer. */
+.skill-pick-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.skill-pick-manage {
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.skill-pick-manage:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}

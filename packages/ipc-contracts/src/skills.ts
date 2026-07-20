@@ -62,3 +62,25 @@ export const SkillDtoSchema = z.object({
   updatedAt: z.string(),
 });
 export type SkillDto = z.infer<typeof SkillDtoSchema>;
+
+/**
+ * Ledger-derived usage + per-turn context cost for one catalog skill
+ * (ADR-0037). Joined to SkillDto by `name` so the catalog schema stays put.
+ */
+export const SkillUsageDtoSchema = z.object({
+  /** Runtime invocation name (matches SkillDto.name). */
+  name: z.string(),
+  /**
+   * Estimated tokens this skill adds to EVERY turn's preamble. 0 means it is
+   * not in the preamble (disabled, invalid, or explicit-only — those cost
+   * nothing until invoked).
+   */
+  preambleTokens: z.number().int().nonnegative(),
+  /** load_skill loads + explicit `/skill:name` runs inside the window. */
+  uses: z.number().int().nonnegative(),
+  /** ISO time of the most recent invocation inside the window, if any. */
+  lastUsedAt: z.string().nullable(),
+  /** Per-week invocation buckets, oldest → newest. */
+  weekly: z.array(z.number().int().nonnegative()),
+});
+export type SkillUsageDto = z.infer<typeof SkillUsageDtoSchema>;

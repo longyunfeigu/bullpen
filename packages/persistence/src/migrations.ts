@@ -333,4 +333,23 @@ UPDATE tasks SET external_json = json_set(external_json, '$.status', 'ended')
     AND json_extract(external_json, '$.status') NOT IN ('active', 'ended');
 `,
   },
+  {
+    version: 8,
+    name: 'skill-usage-ledger',
+    // ADR-0037: skills usage insight. load_skill calls already land in
+    // tool_calls; explicit `/skill:name` expansions bypass the tool gateway,
+    // so they get their own append-only ledger. The tool_calls index keeps
+    // the 45-day aggregation cheap on long-lived databases.
+    up: `
+CREATE TABLE skill_invocations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  skill TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  task_id TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX idx_skill_invocations_skill_at ON skill_invocations(skill, at);
+CREATE INDEX idx_tool_calls_name_created ON tool_calls(name, created_at);
+`,
+  },
 ];

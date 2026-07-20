@@ -2,9 +2,25 @@ import { dialog } from 'electron';
 import type { Logger } from '@pi-ide/foundation';
 import { registerHandlers } from './router.js';
 import type { SkillStore } from '../services/skill-store.js';
+import { composeSkillUsage, type SkillUsageAggregate } from '../services/skill-usage.js';
+
+export interface SkillsHandlerDeps {
+  /**
+   * ADR-0037: invocation aggregation lives with the task database. The
+   * callback indirection tolerates the TaskService being constructed after
+   * these handlers register (usage reads empty until then).
+   */
+  usage?: (windowDays: number) => Map<string, SkillUsageAggregate>;
+}
+
+const USAGE_WINDOW_DAYS_DEFAULT = 45;
 
 /** Skills manager (ADR-0015/0019): managed imports + linked source registry. */
-export function registerSkillsHandlers(skills: SkillStore, logger: Logger): void {
+export function registerSkillsHandlers(
+  skills: SkillStore,
+  logger: Logger,
+  deps: SkillsHandlerDeps = {},
+): void {
   registerHandlers(
     {
       'skills.list': async () => skills.rescan('ipc-list'),
@@ -45,6 +61,20 @@ export function registerSkillsHandlers(skills: SkillStore, logger: Logger): void
       'skills.remove': async ({ id }) => ({ removed: skills.remove(id) }),
       'skills.setEnabled': async ({ id, enabled }) => ({ skill: skills.setEnabled(id, enabled) }),
       'skills.read': async ({ id, relPath }) => skills.readFile(id, relPath),
+      // ADR-0037: usage insight — catalog joined with ledger counts + the
+      // preamble cost each enabled skill charges on every turn.
+      'skills.usage': async ({ windowDays }) => {
+        const days = windowDays ?? USAGE_WINDOW_DAYS_DEFAULT;
+        const catalog = skills.list();
+        const estimates = skills.preambleTokenEstimates();
+        const usage = deps.usage?.(days) ?? new Map<string, SkillUsageAggregate>();
+        return {
+          windowDays: days,
+          since: new Date(Date.now() - days * 86_400_000).toISOString(),
+          preambleOverheadTokens: estimates.overheadTokens,
+          skills: composeSkillUsage(catalog, estimates, usage, days),
+        };
+      },
     },
     logger,
   );

@@ -956,39 +956,72 @@ export class SkillStore {
   preambleBlock(): string {
     const visible = this.enabledSkills().filter((skill) => !skill.explicitOnly);
     if (visible.length === 0) return '';
-    const lines = [
-      'The following skills provide specialized instructions for specific tasks.',
-      "When a task matches a skill's description, call load_skill with its exact name before proceeding. Load referenced bundled files with load_skill too.",
-      '<available_skills>',
-    ];
-    for (const skill of visible) {
-      lines.push(
-        '  <skill>',
-        `    <name>${escapeXml(skill.name)}</name>`,
-        `    <description>${escapeXml(skill.description)}</description>`,
-        `    <revision>${skill.revision.slice(0, 12)}</revision>`,
-        '  </skill>',
-      );
-    }
-    lines.push('</available_skills>');
+    const lines = [...PREAMBLE_FRAME_HEAD];
+    for (const skill of visible) lines.push(skillPreambleChunk(skill));
+    lines.push(PREAMBLE_FRAME_TAIL);
     return lines.join('\n');
   }
 
+  /**
+   * Per-skill preamble cost estimates for the Settings insight panel
+   * (ADR-0037). Disabled, invalid and explicit-only skills are absent from
+   * the preamble, so they carry no entry (the UI reads that as 0).
+   */
+  preambleTokenEstimates(): { overheadTokens: number; bySkill: Map<string, number> } {
+    const visible = this.enabledSkills().filter((skill) => !skill.explicitOnly);
+    const bySkill = new Map<string, number>();
+    for (const skill of visible) {
+      bySkill.set(skill.name, estimateTokens(skillPreambleChunk(skill)));
+    }
+    const overheadTokens =
+      visible.length === 0
+        ? 0
+        : estimateTokens([...PREAMBLE_FRAME_HEAD, PREAMBLE_FRAME_TAIL].join('\n'));
+    return { overheadTokens, bySkill };
+  }
+
   expandCommand(text: string): string {
+    return this.expandCommandDetailed(text).text;
+  }
+
+  /** Expansion plus which skill fired, so callers can ledger explicit usage (ADR-0037). */
+  expandCommandDetailed(text: string): { text: string; skill: string | null } {
     const match = /^\/skill:([A-Za-z0-9_@-]+)[ \t]?/.exec(text);
-    if (!match) return text;
+    if (!match) return { text, skill: null };
     const skill = this.enabledSkills().find((item) => item.name === match[1]!.toLowerCase());
-    if (!skill) return text;
+    if (!skill) return { text, skill: null };
     let body: string;
     try {
       body = stripFrontmatter(readFileSync(join(skill.dir, SKILL_FILE), 'utf8')).trim();
     } catch {
-      return text;
+      return { text, skill: null };
     }
     const args = text.slice(match[0].length).trim();
     const block = `<skill name="${skill.name}">\nRevision: ${skill.revision.slice(0, 12)}. Load bundled files this skill references with load_skill (name + file).\n\n${body}\n</skill>`;
-    return args ? `${block}\n\n${args}` : block;
+    return { text: args ? `${block}\n\n${args}` : block, skill: skill.name };
   }
+}
+
+const PREAMBLE_FRAME_HEAD: readonly string[] = [
+  'The following skills provide specialized instructions for specific tasks.',
+  "When a task matches a skill's description, call load_skill with its exact name before proceeding. Load referenced bundled files with load_skill too.",
+  '<available_skills>',
+];
+const PREAMBLE_FRAME_TAIL = '</available_skills>';
+
+function skillPreambleChunk(skill: SkillToolEntry): string {
+  return [
+    '  <skill>',
+    `    <name>${escapeXml(skill.name)}</name>`,
+    `    <description>${escapeXml(skill.description)}</description>`,
+    `    <revision>${skill.revision.slice(0, 12)}</revision>`,
+    '  </skill>',
+  ].join('\n');
+}
+
+/** Budget signal, not a tokenizer: ~4 chars per token for English prose. */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
 
 function walkSkillFiles(root: string, rootReal: string): FileWalkResult {

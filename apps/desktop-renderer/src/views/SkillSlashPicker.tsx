@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useSkillsStore } from '../store/skillsStore.js';
+import { useAppStore } from '../store/appStore.js';
 import { Ic } from './home-icons.js';
+import { preambleTotalTokens } from './skills-insight.js';
 
 /**
  * Composer "/" skill picker (ADR-0015; mockup: skills-manager-mockup.html).
@@ -26,12 +28,18 @@ export function useSkillSlash(options: {
   const { value, setValue, testid } = options;
   const skills = useSkillsStore((s) => s.skills);
   const loaded = useSkillsStore((s) => s.loaded);
+  const usage = useSkillsStore((s) => s.usage);
+  const usageLoaded = useSkillsStore((s) => s.usageLoaded);
+  const overheadTokens = useSkillsStore((s) => s.preambleOverheadTokens);
   const [open, setOpen] = useState(false);
   const [idx, setIdx] = useState(0);
 
   useEffect(() => {
     if (!loaded) void useSkillsStore.getState().refresh();
   }, [loaded]);
+  useEffect(() => {
+    if (!usageLoaded) void useSkillsStore.getState().refreshUsage();
+  }, [usageLoaded]);
 
   // Query = text after "/" (a pasted "/skill:" prefix matches too).
   const query = value.startsWith('/')
@@ -115,7 +123,24 @@ export function useSkillSlash(options: {
           No matching enabled skill.
         </div>
       ) : null}
-      <div className="skill-pick-hint">↑↓ select · ⏎ insert · esc close</div>
+      <div className="skill-pick-hint">
+        <span>↑↓ select · ⏎ insert · esc close</span>
+        {usageLoaded ? (
+          <button
+            className="skill-pick-manage"
+            data-testid={`${testid}-skill-manage`}
+            title="Per-skill usage and context budget in Settings → Skills"
+            onMouseDown={(e) => e.preventDefault() /* keep textarea focus until click */}
+            onClick={() => {
+              setOpen(false);
+              useAppStore.getState().openSettings('skills');
+            }}
+          >
+            {skills.filter((s) => s.enabled).length} enabled · ≈
+            {preambleTotalTokens(usage, overheadTokens).toLocaleString()} tok/turn · Manage…
+          </button>
+        ) : null}
+      </div>
     </div>
   ) : null;
 

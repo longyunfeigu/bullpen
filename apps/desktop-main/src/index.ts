@@ -565,7 +565,10 @@ if (!gotLock) {
       });
       skillStoreRef = skillStore;
       skillStore.startWatching();
-      registerSkillsHandlers(skillStore, logger.child('ipc'));
+      registerSkillsHandlers(skillStore, logger.child('ipc'), {
+        // Deferred: taskServiceRef is assigned right below (ADR-0037).
+        usage: (windowDays) => taskServiceRef?.skillUsage(windowDays) ?? new Map(),
+      });
       // ADR-0028: project memory — shared rules source, review-correction
       // capture, managed-block sync, external private-memory management.
       // E2E only discovers an explicitly supplied fake home (PI_IDE_MEMORY_HOME).

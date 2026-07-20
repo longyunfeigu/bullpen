@@ -37,6 +37,7 @@ export type SettingsSection =
   | 'editor'
   | 'terminal'
   | 'agent'
+  | 'skills'
   | 'models'
   | 'permissions'
   | 'privacy'

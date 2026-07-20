@@ -68,6 +68,11 @@ import { join } from 'node:path';
 import { GitService } from '@pi-ide/git-service';
 import { openWorkspaceInfo } from '@pi-ide/workspace-service';
 import type { AgentHost, RuntimeKind } from './agent-host.js';
+import {
+  aggregateSkillUsage,
+  type SkillUsageAggregate,
+  type SkillUsageEvent,
+} from './skill-usage.js';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { SettingsService } from './settings-service.js';
 import type { SkillStore } from './skill-store.js';
@@ -2641,6 +2646,9 @@ export class TaskService {
     // ADR-0028: reused sessions keep their original preamble, so rules
     // distilled since then would be invisible — refresh them per run too.
     const refreshedRules = createdSession ? null : (this.memory?.projectRulesBlock(taskId) ?? null);
+    // ADR-0037: explicit `/skill:` runs bypass load_skill — ledger them here.
+    const expandedCommand = this.skills.expandCommandDetailed(runtimeText);
+    this.recordSkillInvocation(expandedCommand.skill, taskId);
     this.host.startRun(taskId, {
       sessionRef: ref,
       runId,
@@ -2655,10 +2663,7 @@ export class TaskService {
           : []),
         ...(refreshedRules ? [refreshedRules] : []),
         formatPromptWithFileContext(
-          formatPromptWithCodeContext(
-            this.skills.expandCommand(runtimeText),
-            extras?.codeRefs ?? [],
-          ),
+          formatPromptWithCodeContext(expandedCommand.text, extras?.codeRefs ?? []),
           extras?.fileRefs ?? [],
         ),
       ].join('\n\n'),
@@ -2752,13 +2757,16 @@ export class TaskService {
       const currentSkills = this.skills.preambleBlock();
       // ADR-0028: rules distilled mid-run reach the very next turn.
       const currentRules = this.memory?.projectRulesBlock(taskId) ?? null;
+      // ADR-0037: explicit `/skill:` replies bypass load_skill — ledger them.
+      const expandedCommand = this.skills.expandCommandDetailed(text);
+      this.recordSkillInvocation(expandedCommand.skill, taskId);
       const expanded = [
         ...(currentSkills
           ? [`<skill_catalog_refresh>\n${currentSkills}\n</skill_catalog_refresh>`]
           : []),
         ...(currentRules ? [currentRules] : []),
         formatPromptWithFileContext(
-          formatPromptWithCodeContext(this.skills.expandCommand(text), attachments?.codeRefs ?? []),
+          formatPromptWithCodeContext(expandedCommand.text, attachments?.codeRefs ?? []),
           attachments?.fileRefs ?? [],
         ),
       ].join('\n\n');
@@ -3364,6 +3372,57 @@ export class TaskService {
     result: { ok: boolean; code: string; summary: string } | null,
   ): void {
     if (result === null) return; // start is audited by the gateway
+  }
+
+  /**
+   * ADR-0037: explicit `/skill:name` expansions never reach the tool gateway,
+   * so they get their own append-only ledger row. Failure is non-fatal — the
+   * run must not care whether its usage statistic landed.
+   */
+  private recordSkillInvocation(skill: string | null, taskId: string): void {
+    if (!skill) return;
+    try {
+      this.db
+        .prepare('INSERT INTO skill_invocations (skill, kind, task_id, at) VALUES (?, ?, ?, ?)')
+        .run(skill, 'explicit', taskId, new Date().toISOString());
+    } catch (e) {
+      this.logger.warn('skill invocation ledger write failed', {
+        skill,
+        error: errorMessage(e),
+      });
+    }
+  }
+
+  /**
+   * ADR-0037: per-skill invocation stats for Settings → Skills. Model loads
+   * come from the tool audit (load_skill), explicit runs from the ledger
+   * above; both keyed by the runtime name recorded at call time.
+   */
+  skillUsage(windowDays: number): Map<string, SkillUsageAggregate> {
+    const since = new Date(Date.now() - windowDays * 86_400_000).toISOString();
+    const events: SkillUsageEvent[] = [];
+    const toolRows = this.db
+      .prepare(
+        "SELECT input_json, created_at FROM tool_calls WHERE name = 'load_skill' AND state = 'SUCCEEDED' AND created_at >= ?",
+      )
+      .all(since) as Array<{ input_json: string; created_at: string }>;
+    for (const row of toolRows) {
+      try {
+        const input = JSON.parse(row.input_json) as { name?: unknown; file?: unknown };
+        if (typeof input.name !== 'string') continue;
+        // Bundled-reference follow-ups belong to the same use: only the
+        // primary SKILL.md load counts as one invocation.
+        if (typeof input.file === 'string' && input.file !== 'SKILL.md') continue;
+        events.push({ skill: input.name, at: row.created_at });
+      } catch {
+        // A malformed audit row loses one count, never the whole panel.
+      }
+    }
+    const explicitRows = this.db
+      .prepare('SELECT skill, at FROM skill_invocations WHERE at >= ?')
+      .all(since) as Array<{ skill: string; at: string }>;
+    for (const row of explicitRows) events.push({ skill: row.skill, at: row.at });
+    return aggregateSkillUsage(events, Date.now(), windowDays);
   }
 
   private persistToolAudit(record: ToolAuditRecord): void {

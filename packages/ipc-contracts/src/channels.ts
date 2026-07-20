@@ -29,7 +29,7 @@ import {
   ReplaySessionDtoSchema,
 } from './replay.js';
 import { ProviderApiSchema, ProviderInfoSchema } from './providers.js';
-import { SkillDtoSchema, SkillSourceDtoSchema } from './skills.js';
+import { SkillDtoSchema, SkillSourceDtoSchema, SkillUsageDtoSchema } from './skills.js';
 import {
   ExternalMemoryFileDtoSchema,
   MemoryAgentsTreeDtoSchema,
@@ -1335,6 +1335,20 @@ export const CHANNELS = {
     1,
     z.object({ id: z.string().min(1).max(200), relPath: z.string().max(1024).optional() }).strict(),
     z.object({ path: z.string(), content: z.string(), binary: z.boolean() }),
+  ),
+  // Usage insight (ADR-0037): invocation counts aggregated from the tool audit
+  // + explicit-invocation ledger, plus each enabled skill's preamble cost.
+  'skills.usage': ch(
+    'skills.usage',
+    1,
+    z.object({ windowDays: z.number().int().min(1).max(365).optional() }).strict(),
+    z.object({
+      windowDays: z.number().int().positive(),
+      since: z.string(),
+      /** Fixed preamble framing cost, charged once while any skill is listed. */
+      preambleOverheadTokens: z.number().int().nonnegative(),
+      skills: z.array(SkillUsageDtoSchema),
+    }),
   ),
   // ---- Project memory (ADR-0028): shared rules source + external private memory ----
   // IA v3 spine: agents at the top, each agent = global memory + per-project groups.

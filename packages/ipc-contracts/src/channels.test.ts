@@ -102,4 +102,13 @@ describe('IPC channel registry', () => {
       }).ok,
     ).toBe(false);
   });
+
+  it('skills.usage bounds the window and rejects extra fields (ADR-0037)', () => {
+    expect(validateChannelRequest('skills.usage', {}).ok).toBe(true);
+    expect(validateChannelRequest('skills.usage', { windowDays: 45 }).ok).toBe(true);
+    expect(validateChannelRequest('skills.usage', { windowDays: 0 }).ok).toBe(false);
+    expect(validateChannelRequest('skills.usage', { windowDays: 366 }).ok).toBe(false);
+    expect(validateChannelRequest('skills.usage', { windowDays: 1.5 }).ok).toBe(false);
+    expect(validateChannelRequest('skills.usage', { windowDays: 45, extra: true }).ok).toBe(false);
+  });
 });

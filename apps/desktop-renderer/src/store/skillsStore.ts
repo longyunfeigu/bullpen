@@ -1,19 +1,26 @@
 import { create } from 'zustand';
-import type { SkillDto, SkillSourceDto } from '@pi-ide/ipc-contracts';
+import type { SkillDto, SkillSourceDto, SkillUsageDto } from '@pi-ide/ipc-contracts';
 import { onEvent, rpcResult } from '../bridge.js';
 import { okOrToast, useAppStore } from './appStore.js';
 
 /**
  * Skills manager state (ADR-0015): the managed store as Settings and the
  * composer "/" picker see it. `refresh()` is cheap — callers pull on mount.
+ * Usage insight (ADR-0037) rides along: ledger counts + preamble budget.
  */
 interface SkillsStore {
   skills: SkillDto[];
   sources: SkillSourceDto[];
   loaded: boolean;
   initialized: boolean;
+  /** ADR-0037: per-skill invocation counts + preamble token estimates. */
+  usage: SkillUsageDto[];
+  usageWindowDays: number;
+  preambleOverheadTokens: number;
+  usageLoaded: boolean;
   init(): void;
   refresh(): Promise<void>;
+  refreshUsage(): Promise<void>;
   rescan(): Promise<void>;
   importSkill(dir?: string): Promise<SkillDto | null>;
   addSource(dir?: string): Promise<SkillSourceDto | null>;
@@ -29,17 +36,38 @@ export const useSkillsStore = create<SkillsStore>((set, get) => ({
   sources: [],
   loaded: false,
   initialized: false,
+  usage: [],
+  usageWindowDays: 45,
+  preambleOverheadTokens: 0,
+  usageLoaded: false,
 
   init() {
     if (get().initialized) return;
     set({ initialized: true });
-    onEvent('skills.changed', () => void get().refresh());
+    onEvent('skills.changed', () => {
+      void get().refresh();
+      void get().refreshUsage();
+    });
     void get().refresh();
+    void get().refreshUsage();
   },
 
   async refresh() {
     const res = await rpcResult('skills.list', {});
     if (res.ok) set({ skills: res.data.skills, sources: res.data.sources, loaded: true });
+  },
+
+  async refreshUsage() {
+    // Silent on failure: the manager stays fully usable without the insight.
+    const res = await rpcResult('skills.usage', {});
+    if (res.ok) {
+      set({
+        usage: res.data.skills,
+        usageWindowDays: res.data.windowDays,
+        preambleOverheadTokens: res.data.preambleOverheadTokens,
+        usageLoaded: true,
+      });
+    }
   },
 
   async rescan() {
