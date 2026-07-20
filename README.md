@@ -7,8 +7,9 @@
 Charter is a local-first desktop IDE for delegating real repository work to coding agents without giving up visibility or control.
 
 [![Development Preview](https://img.shields.io/badge/status-development_preview-C47A19?style=flat-square)](#project-status)
-[![CI](https://img.shields.io/github/actions/workflow/status/longyunfeigu/bullpen/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/longyunfeigu/bullpen/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/longyunfeigu/Charter/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/longyunfeigu/Charter/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-2F855A?style=flat-square)](LICENSE)
+[![Website](https://img.shields.io/badge/website-charter--15n.pages.dev-1B1A16?style=flat-square)](https://charter-15n.pages.dev)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.19-417E38?style=flat-square&logo=nodedotjs&logoColor=white)](package.json)
 [![Electron](https://img.shields.io/badge/Electron-desktop-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
 
@@ -81,8 +82,8 @@ The left rail is the only global navigation. The center keeps the human-agent co
 ### Run from source
 
 ```bash
-git clone https://github.com/longyunfeigu/bullpen.git
-cd bullpen
+git clone https://github.com/longyunfeigu/Charter.git
+cd Charter
 npm install
 npm run dev
 ```
