@@ -51,6 +51,9 @@ export class AgentHost {
   private worker: UtilityProcess | null = null;
   private runtimeKind: RuntimeKind | null = null;
   private readyPromise: Deferred<void> | null = null;
+  /** In-flight spawn+init; concurrent ensure() calls join it instead of
+   * racing requests into a worker whose runtime is not initialized yet. */
+  private spawnPromise: Promise<void> | null = null;
   private initialized = false;
   private readonly pending = new Map<string, Deferred<unknown>>();
   private readonly activeRuns = new Map<string, ActiveRun>();
@@ -93,21 +96,35 @@ export class AgentHost {
   }
 
   async ensure(kind: RuntimeKind): Promise<void> {
-    if (this.disposed) {
-      throw new ProductFailure(
-        productError('AG_HOST_DISPOSED', { userMessage: 'The agent host is shutting down.' }),
-      );
-    }
-    if (this.worker && this.runtimeKind === kind && this.initialized) return;
-    if (this.worker && this.runtimeKind !== kind) {
-      this.logger.info('switching runtime kind, restarting worker', {
-        from: this.runtimeKind,
-        to: kind,
-      });
-      await this.stopWorker();
-    }
-    if (!this.worker) {
-      await this.spawn(kind);
+    // Bounded by construction: each pass either returns, joins an in-flight
+    // spawn, or spawns itself; a successful spawn satisfies the first check.
+    for (;;) {
+      if (this.disposed) {
+        throw new ProductFailure(
+          productError('AG_HOST_DISPOSED', { userMessage: 'The agent host is shutting down.' }),
+        );
+      }
+      if (this.worker && this.runtimeKind === kind && this.initialized) return;
+      // Join the spawn already in flight — returning early here (the previous
+      // "worker exists" fast path) posted requests to a worker whose runtime
+      // had not been initialized yet: the cold-start models.list failure.
+      if (this.spawnPromise) {
+        await this.spawnPromise;
+        continue;
+      }
+      if (this.worker && this.runtimeKind !== kind) {
+        this.logger.info('switching runtime kind, restarting worker', {
+          from: this.runtimeKind,
+          to: kind,
+        });
+        await this.stopWorker();
+      }
+      if (!this.worker) {
+        this.spawnPromise = this.spawn(kind).finally(() => {
+          this.spawnPromise = null;
+        });
+        await this.spawnPromise;
+      }
     }
   }
 

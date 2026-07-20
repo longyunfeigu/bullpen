@@ -45,7 +45,11 @@ export const ReplayLaneSchema = z.enum(['intent', 'actions', 'artifacts', 'risk'
 export type ReplayLane = z.infer<typeof ReplayLaneSchema>;
 
 export const ReplayRelationSchema = z.object({
-  type: z.enum(['requested-by', 'produced', 'verified-by']),
+  /** 'resolves' (V3.2): an approval's id-backed link to the fact it gated —
+   * the tool call behind a permission, or the plan behind a plan decision —
+   * so the recap can render it as an annotation on that fact instead of a
+   * standalone row. Emitted only when the recorded id chain joins. */
+  type: z.enum(['requested-by', 'produced', 'verified-by', 'resolves']),
   factId: z.string(),
 });
 export type ReplayRelation = z.infer<typeof ReplayRelationSchema>;
@@ -534,10 +538,21 @@ export function projectReplay(input: {
   const factIdOf = (index: number) => items[index]!.key;
   const toolByCall = new Map<string, number>();
   const requestedByRequestId = new Map<string, number>();
+  const planByVersionKey = new Map<string, number>();
   items.forEach((item, index) => {
     if (item.kind !== 'permission' && item.callId) toolByCall.set(item.callId, index);
     if (item.kind === 'permission' && item.status === 'pending' && item.parentKey) {
       requestedByRequestId.set(item.parentKey, index);
+    }
+    // Plan proposals carry the recorded plan version as their join key; the
+    // decision event carries the same version — an id-backed join, no adjacency.
+    if (
+      item.kind === 'plan' &&
+      item.author === 'agent' &&
+      item.status !== 'info' &&
+      item.parentKey
+    ) {
+      planByVersionKey.set(item.parentKey, index);
     }
   });
   const relationsFor = (item: ActivityItem, index: number): ReplayRelation[] => {
@@ -552,7 +567,21 @@ export function projectReplay(input: {
         const requested = requestedByRequestId.get(item.parentKey);
         if (requested !== undefined && requested !== index) {
           relations.push({ type: 'requested-by', factId: factIdOf(requested) });
+          // V3.2: an allowed decision also resolves the gated tool call
+          // (requestId → pending request → its recorded callId). Denials keep
+          // their own row, so only 'ok' emits the edge.
+          const gatedCallId = items[requested]!.callId;
+          const tool = gatedCallId !== undefined ? toolByCall.get(gatedCallId) : undefined;
+          if (item.status === 'ok' && tool !== undefined && tool !== index) {
+            relations.push({ type: 'resolves', factId: factIdOf(tool) });
+          }
         }
+      }
+    }
+    if (item.kind === 'plan-decision' && item.status === 'ok' && item.parentKey) {
+      const plan = planByVersionKey.get(item.parentKey);
+      if (plan !== undefined && plan !== index) {
+        relations.push({ type: 'resolves', factId: factIdOf(plan) });
       }
     }
     return relations;

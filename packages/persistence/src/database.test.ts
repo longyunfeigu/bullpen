@@ -122,7 +122,7 @@ describe('persistence database', () => {
     before.db.close();
 
     const upgraded = open(MIGRATIONS);
-    expect(upgraded.appliedVersions).toEqual([4, 5, 6]);
+    expect(upgraded.appliedVersions).toEqual([4, 5, 6, 7]);
     const names = (
       upgraded.db
         .prepare(
@@ -193,6 +193,38 @@ describe('persistence database', () => {
     expect(run('r-a1')).toBeNull();
     expect(run('r-a2')).toBe('accepted');
     expect(run('r-rev')).toBeNull();
+    upgraded.db.close();
+  });
+
+  it('v7 repairs legacy external_json.status values that poisoned task.list', () => {
+    const before = open(MIGRATIONS.slice(0, 6));
+    const now = new Date().toISOString();
+    before.db
+      .prepare(
+        "INSERT INTO workspaces (id, canonical_path, display_name, last_opened_at, created_at) VALUES ('ws', '/tmp/x', 'x', ?, ?)",
+      )
+      .run(now, now);
+    const insertTask = before.db.prepare(
+      "INSERT INTO tasks (id, workspace_id, title, goal_md, mode, state, model_json, created_at, updated_at, external_json) VALUES (?, 'ws', 't', '', 'edit', 'IDLE', '{}', ?, ?, ?)",
+    );
+    insertTask.run('t-legacy', now, now, JSON.stringify({ cli: 'claude', status: 'interrupted' }));
+    insertTask.run('t-live', now, now, JSON.stringify({ cli: 'claude', status: 'active' }));
+    insertTask.run('t-done', now, now, JSON.stringify({ cli: 'claude', status: 'ended' }));
+    insertTask.run('t-managed', now, now, null);
+    before.db.close();
+
+    const upgraded = open(MIGRATIONS);
+    expect(upgraded.appliedVersions).toEqual([7]);
+    const status = (id: string) =>
+      (
+        upgraded.db
+          .prepare("SELECT json_extract(external_json, '$.status') AS s FROM tasks WHERE id = ?")
+          .get(id) as { s: string | null }
+      ).s;
+    expect(status('t-legacy')).toBe('ended'); // repaired
+    expect(status('t-live')).toBe('active'); // untouched
+    expect(status('t-done')).toBe('ended'); // untouched
+    expect(status('t-managed')).toBeNull(); // no external payload
     upgraded.db.close();
   });
 });

@@ -233,6 +233,100 @@ describe('replay projection — relations', () => {
   });
 });
 
+describe('replay projection — V3.2 resolves relations (approval chips)', () => {
+  it('links an allowed permission to the gated tool call through the recorded id chain', () => {
+    seq = 0;
+    const { facts } = projectReplay({
+      task: task(),
+      items: [
+        item(at(0), {
+          kind: 'write',
+          callId: 'call-1',
+          key: 'call-1',
+          label: 'Created add.py',
+          changeIds: ['c1'],
+        }),
+        item(at(1), {
+          kind: 'permission',
+          status: 'pending',
+          callId: 'call-1',
+          parentKey: 'req-1',
+          label: 'Waiting for approval: Create add.py',
+        }),
+        item(at(2), {
+          kind: 'permission',
+          status: 'ok',
+          parentKey: 'req-1',
+          label: 'Approved: Create add.py',
+        }),
+      ],
+    });
+    expect(facts[2]!.relations).toContainEqual({ type: 'resolves', factId: 'call-1' });
+    // The pending request keeps only its requested-by edge.
+    expect(facts[1]!.relations).toEqual([{ type: 'requested-by', factId: 'call-1' }]);
+  });
+
+  it('never emits resolves for a denied decision — denials keep their own row', () => {
+    seq = 0;
+    const { facts } = projectReplay({
+      task: task(),
+      items: [
+        item(at(0), { kind: 'write', callId: 'call-1', key: 'call-1', changeIds: ['c1'] }),
+        item(at(1), {
+          kind: 'permission',
+          status: 'pending',
+          callId: 'call-1',
+          parentKey: 'req-1',
+        }),
+        item(at(2), { kind: 'permission', status: 'denied', parentKey: 'req-1' }),
+      ],
+    });
+    expect(facts[2]!.relations.some((r) => r.type === 'resolves')).toBe(false);
+  });
+
+  it('links an approved plan decision to the proposal via the recorded version key', () => {
+    seq = 0;
+    const { facts } = projectReplay({
+      task: task(),
+      items: [
+        item(at(0), {
+          kind: 'plan',
+          status: 'pending',
+          parentKey: 'plan-v1',
+          label: 'Proposed a plan (1 step)',
+        }),
+        item(at(5), {
+          kind: 'plan-decision',
+          status: 'ok',
+          author: 'user',
+          parentKey: 'plan-v1',
+          label: 'Plan approved',
+        }),
+      ],
+    });
+    expect(facts[1]!.relations).toContainEqual({ type: 'resolves', factId: facts[0]!.id });
+  });
+
+  it('emits no plan edge when the recorded versions do not join (edited plan bumps it)', () => {
+    seq = 0;
+    const { facts } = projectReplay({
+      task: task(),
+      items: [
+        item(at(0), { kind: 'plan', status: 'pending', parentKey: 'plan-v1' }),
+        // Approve-with-edits records the bumped version — the join fails open.
+        item(at(5), {
+          kind: 'plan-decision',
+          status: 'ok',
+          author: 'user',
+          parentKey: 'plan-v2',
+          label: 'Plan approved with your edits',
+        }),
+      ],
+    });
+    expect(facts[1]!.relations).toHaveLength(0);
+  });
+});
+
 describe('replay projection — chapters', () => {
   it('selects at most 8 chapters and prioritizes failures, approvals and verification', () => {
     seq = 0;

@@ -85,6 +85,9 @@ export const ActivityItemSchema = z.object({
   parentKey: z.string().optional(),
   /** Recorded risk level (permission cards); never a product heuristic. */
   riskLevel: z.enum(['R0', 'R1', 'R2', 'R3', 'R4']).optional(),
+  /** A full-task rollback restored every file: the touched-files projection
+   * starts over from this item (live fold and replay agree, ADR-0006). */
+  filesReset: z.boolean().optional(),
   /** Filled by main-side enrichment (tool_calls / file_changes). */
   durationMs: z.number().int().nullable().optional(),
   diffstat: z
@@ -467,6 +470,9 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
         label: `Proposed a plan (${steps} step${steps === 1 ? '' : 's'})`,
         ...(str(plan.summary) ? { detail: trunc(str(plan.summary), 200) } : {}),
         status: 'pending',
+        // Recorded plan version: the id-backed join key its decision event
+        // carries too (same pattern as the permission requestId join).
+        ...(typeof plan.version === 'number' ? { parentKey: `plan-v${plan.version}` } : {}),
       };
     }
     case 'agent.planUpdated':
@@ -494,6 +500,7 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
               : 'Plan approved'
           : 'Plan rejected',
         status: approved ? 'ok' : 'denied',
+        ...(typeof p.version === 'number' ? { parentKey: `plan-v${p.version}` } : {}),
       };
     }
     case 'permission.requested': {
@@ -605,6 +612,9 @@ export function projectActivityEvent(event: TimelineEventDto): ActivityItem | nu
         kind: 'state',
         label: 'Rolled back to the pre-task state',
         status: 'warn',
+        // Everything the task touched was restored byte-exact: the
+        // touched-files projection must not keep listing restored paths.
+        filesReset: true,
       };
     case 'turn.rolledBack': {
       // ADR-0032 (P2): one turn unwound to its boundary — byte-exact restores.

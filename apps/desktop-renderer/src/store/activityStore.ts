@@ -49,10 +49,12 @@ const MAX_FILES = 500;
 const MAX_PULSES = 200;
 
 function fold(prev: TaskActivity, item: ActivityItem): TaskActivity {
+  // A full rollback restored every file byte-exact (task.rolledBack sets
+  // filesReset): the touched-files projection starts over — otherwise the
+  // Diff tool keeps counting files that no longer differ from the baseline.
+  const carried = item.filesReset ? [] : prev.filesTouched;
   const filesTouched =
-    item.paths.length > 0
-      ? [...new Set([...prev.filesTouched, ...item.paths])].slice(-MAX_FILES)
-      : prev.filesTouched;
+    item.paths.length > 0 ? [...new Set([...carried, ...item.paths])].slice(-MAX_FILES) : carried;
   // "What is the agent DOING" — message/state/system noise never becomes the
   // action line (fixes the room header overflowing with reply prose).
   const isAction =

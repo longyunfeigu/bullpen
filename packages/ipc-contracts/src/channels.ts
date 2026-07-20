@@ -133,6 +133,15 @@ export const CHANNELS = {
     z.object({}).strict(),
     z.object({ items: z.array(RecentWorkspaceSchema) }),
   ),
+  // ADR-0034: forget a project — removes the workspace row and every recorded
+  // Session (tasks, events, snapshots metadata) for it. Files on disk are
+  // NEVER touched. Refused while the project still has a running Session.
+  'workspace.remove': ch(
+    'workspace.remove',
+    1,
+    z.object({ path: z.string().min(1) }).strict(),
+    z.object({ removed: z.boolean(), removedSessions: z.number().int() }),
+  ),
   'workspace.pickParentDir': ch(
     'workspace.pickParentDir',
     1,

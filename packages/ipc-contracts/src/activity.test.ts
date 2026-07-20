@@ -181,12 +181,21 @@ describe('projectActivityEvent (ADR-0006 pure projection)', () => {
     expect(plan.kind).toBe('plan');
     expect(plan.label).toBe('Proposed a plan (3 steps)');
     expect(plan.status).toBe('pending');
+    // V3.2: the recorded plan version is the id-backed join key its decision carries.
+    expect(plan.parentKey).toBe('plan-v1');
 
     const decision = projectActivityEvent(
-      evt('user.planDecision', { decision: 'approved', auto: true, edited: false }),
+      evt('user.planDecision', { decision: 'approved', auto: true, edited: false, version: 1 }),
     )!;
     expect(decision.label).toContain('auto-approved');
     expect(decision.author).toBe('system');
+    expect(decision.parentKey).toBe('plan-v1');
+
+    // No recorded version → no join key (never inferred from adjacency).
+    const versionless = projectActivityEvent(
+      evt('user.planDecision', { decision: 'approved', auto: false, edited: false }),
+    )!;
+    expect(versionless.parentKey).toBeUndefined();
 
     const requested = projectActivityEvent(
       evt('permission.requested', {
@@ -239,6 +248,21 @@ describe('projectActivityEvent (ADR-0006 pure projection)', () => {
 
     expect(projectActivityEvent(evt('agent.usage', { usage: {} }))).toBeNull();
     expect(projectActivityEvent(evt('totally.unknown', {}))).toBeNull();
+  });
+
+  it('marks a full rollback as a touched-files reset (turn rollback stays additive)', () => {
+    // task.rolledBack restored EVERYTHING byte-exact: any touched-files fold
+    // must start over, or the Diff tool keeps counting restored files.
+    const full = projectActivityEvent(evt('task.rolledBack', { restored: ['add.py'] }))!;
+    expect(full.kind).toBe('state');
+    expect(full.status).toBe('warn');
+    expect(full.filesReset).toBe(true);
+    expect(() => ActivityItemSchema.parse(full)).not.toThrow();
+
+    // One-turn rollback leaves earlier turns' changes in place — no reset.
+    const turn = projectActivityEvent(evt('turn.rolledBack', { restored: ['add.py'] }))!;
+    expect(turn.filesReset).toBeUndefined();
+    expect(turn.paths).toEqual(['add.py']);
   });
 
   it('never throws on malformed payloads and validates against the schema', () => {

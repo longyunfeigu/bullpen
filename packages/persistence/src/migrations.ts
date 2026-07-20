@@ -320,4 +320,17 @@ UPDATE tasks SET state = 'IDLE'
   WHERE state IN ('ACCEPTED','ROLLED_BACK') AND archived = 0;
 `,
   },
+  {
+    version: 7,
+    name: 'repair-legacy-external-status',
+    // Rows written by pre-ADR-0030 builds carry external_json.status values
+    // (e.g. 'interrupted') that TaskExternalSchema no longer accepts. One such
+    // row made the whole task.list response fail validation. Anything that is
+    // not a live session normalizes to 'ended'.
+    up: `
+UPDATE tasks SET external_json = json_set(external_json, '$.status', 'ended')
+  WHERE external_json IS NOT NULL
+    AND json_extract(external_json, '$.status') NOT IN ('active', 'ended');
+`,
+  },
 ];

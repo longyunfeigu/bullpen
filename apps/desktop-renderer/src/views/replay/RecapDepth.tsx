@@ -9,8 +9,12 @@ import {
   KIND_ICON,
   LEVEL_LABEL,
   REVERSIBILITY_BADGE,
+  approvalChipsByTarget,
+  buildStorySegments,
   formatDurationShort,
   formatReplayTime,
+  isSoftErrorFact,
+  type ApprovalChip,
 } from './replay-model.js';
 
 const CONTEXT_RADIUS = 28;
@@ -38,10 +42,11 @@ export function RecapDepth({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const activeRef = useRef<HTMLButtonElement | null>(null);
 
-  const factIndex = useMemo(() => new Map(facts.map((item, index) => [item.id, index])), [facts]);
   const factById = useMemo(() => new Map(facts.map((item) => [item.id, item])), [facts]);
 
-  const storyFacts = useMemo(() => {
+  const chipsByTarget = useMemo(() => approvalChipsByTarget(facts), [facts]);
+
+  const story = useMemo(() => {
     const keep = new Set(session.chapters.map((chapter) => chapter.factId));
     session.summary.changed.forEach((line) => keep.add(line.factId));
     session.summary.attention.forEach((line) => keep.add(line.factId));
@@ -55,16 +60,57 @@ export function RecapDepth({
     });
     const last = facts.at(-1);
     if (last) keep.add(last.id);
+
+    // V3.2: an approval whose target row is visible becomes a chip on that
+    // row (with its pending request), not a standalone story row. Approvals
+    // without a visible joined target keep their row — fail open.
+    const chipped = new Set<string>();
+    for (const [target, chips] of chipsByTarget) {
+      if (!keep.has(target)) continue;
+      for (const chip of chips) {
+        chipped.add(chip.fact.id);
+        if (chip.requestFactId) chipped.add(chip.requestFactId);
+      }
+    }
+    chipped.forEach((id) => keep.delete(id));
+
+    // The selected fact is always a visible row, chip or not.
+    chipped.delete(fact.id);
     keep.add(fact.id);
 
     if (showContext) {
       const current = Math.max(0, facts.indexOf(fact));
       facts
         .slice(Math.max(0, current - CONTEXT_RADIUS), current + CONTEXT_RADIUS + 1)
-        .forEach((item) => keep.add(item.id));
+        .forEach((item) => {
+          keep.add(item.id);
+          chipped.delete(item.id);
+        });
     }
-    return facts.filter((item) => keep.has(item.id));
-  }, [facts, fact, session, showContext]);
+
+    const { segments, quietCount } = buildStorySegments({
+      facts,
+      keptIds: keep,
+      chippedIds: chipped,
+    });
+    // Chips still standing after the exclusions above are the ones rendered.
+    const chips = new Map<string, ApprovalChip[]>();
+    for (const [target, list] of chipsByTarget) {
+      if (!keep.has(target)) continue;
+      const visible = list.filter((chip) => chipped.has(chip.fact.id));
+      if (visible.length > 0) chips.set(target, visible);
+    }
+    return { segments, quietCount, chips };
+  }, [facts, fact, session, showContext, chipsByTarget]);
+
+  const nodeCount = useMemo(
+    () => story.segments.filter((s) => s.type === 'fact' && !s.inline).length,
+    [story.segments],
+  );
+  const barsHidden = useMemo(
+    () => story.segments.reduce((sum, s) => (s.type === 'fold' ? sum + s.hidden.length : sum), 0),
+    [story.segments],
+  );
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: 'center' });
@@ -75,7 +121,6 @@ export function RecapDepth({
     if (revealDetails) setDetailsOpen(true);
   };
 
-  const foldedCount = facts.length - storyFacts.length;
   const outwardIds = useMemo(
     () => new Set(session.summary.outward.map((line) => line.factId)),
     [session.summary.outward],
@@ -109,40 +154,42 @@ export function RecapDepth({
           </button>
         </header>
         <div className="rp-story-list" data-testid="replay-story-list">
-          {storyFacts.map((item, index) => {
-            const previous = storyFacts[index - 1];
-            const from = previous ? (factIndex.get(previous.id) ?? 0) + 1 : 0;
-            const to = factIndex.get(item.id) ?? 0;
-            const hidden = previous ? facts.slice(from, to) : [];
-            return (
-              <React.Fragment key={item.id}>
-                {hidden.length > 0 ? (
-                  <FoldGap
-                    hidden={hidden}
-                    onSelect={(id) => selectFact(id)}
-                    onExplore={() => controller.setDepth('explore')}
-                  />
-                ) : null}
-                <StoryEvent
-                  fact={item}
-                  active={item.id === fact.id}
-                  ref={item.id === fact.id ? activeRef : undefined}
-                  onSelect={() => selectFact(item.id)}
-                  onSelectRef={(id) => selectFact(id, true)}
-                  factById={factById}
-                />
-              </React.Fragment>
-            );
-          })}
+          {story.segments.map((segment) =>
+            segment.type === 'fold' ? (
+              <FoldGap
+                key={`fold-${segment.hidden[0]!.id}`}
+                hidden={segment.hidden}
+                onSelect={(id) => selectFact(id)}
+                onExplore={() => controller.setDepth('explore')}
+              />
+            ) : (
+              <StoryEvent
+                key={segment.fact.id}
+                fact={segment.fact}
+                inline={segment.inline}
+                softError={isSoftErrorFact(segment.fact, session.outcome)}
+                chips={story.chips.get(segment.fact.id)}
+                active={segment.fact.id === fact.id}
+                ref={segment.fact.id === fact.id ? activeRef : undefined}
+                onSelect={() => selectFact(segment.fact.id)}
+                onSelectRef={(id) => selectFact(id, true)}
+                factById={factById}
+              />
+            ),
+          )}
         </div>
         <footer className="rp-story-foot">
-          <span>{storyFacts.length} 个语义节点</span>
-          <small>
+          <span>{nodeCount} 个语义节点</span>
+          <small data-testid="replay-story-foot-note">
             {showContext
               ? `当前附近最多 ${CONTEXT_RADIUS * 2 + 1} 条记录`
-              : foldedCount > 0
-                ? `已折叠 ${foldedCount} 条低影响记录 · 节点间可展开`
-                : '全部记录都已显示'}
+              : [
+                  barsHidden > 0 ? `已折叠 ${barsHidden} 条（节点间可展开）` : null,
+                  story.quietCount > 0 ? `${story.quietCount} 次状态记录未占行` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || '全部记录都已显示'}
+            {!showContext && (barsHidden > 0 || story.quietCount > 0) ? ' · 探究层可见全部' : ''}
           </small>
         </footer>
       </aside>
@@ -363,18 +410,55 @@ function FoldGap({
   );
 }
 
+/** Recorded approval rendered as an annotation on the fact it resolved
+ * (V3.2 rule 3). Click opens the approval's own audit detail. */
+function ApprovalChipButton({
+  chip,
+  onSelectRef,
+}: {
+  chip: ApprovalChip;
+  onSelectRef(factId: string): void;
+}): React.JSX.Element {
+  const byUser = chip.fact.actor.kind === 'user';
+  return (
+    <button
+      className="rp-ok-chip"
+      data-testid="replay-approval-chip"
+      title={chip.fact.action}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelectRef(chip.fact.id);
+      }}
+    >
+      <i aria-hidden>✓</i> {byUser ? '你批准了' : '自动批准'} {clockTime(chip.fact.startedAt)}
+    </button>
+  );
+}
+
 const StoryEvent = React.forwardRef<
   HTMLButtonElement,
   {
     fact: ReplayFactDto;
     active: boolean;
+    inline?: boolean;
+    softError?: boolean;
+    chips?: ApprovalChip[];
     onSelect(): void;
     onSelectRef(factId: string): void;
     factById: Map<string, ReplayFactDto>;
   }
->(function StoryEvent({ fact, active, onSelect, onSelectRef, factById }, ref) {
+>(function StoryEvent(
+  { fact, active, inline = false, softError = false, chips, onSelect, onSelectRef, factById },
+  ref,
+) {
   const conversational = fact.actor.kind === 'user' || fact.actor.kind === 'agent';
   const provider = providerFor(fact);
+  const chipButtons =
+    chips && chips.length > 0
+      ? chips.map((chip) => (
+          <ApprovalChipButton key={chip.fact.id} chip={chip} onSelectRef={onSelectRef} />
+        ))
+      : null;
 
   // Recorded pivot: a plan revision card with its cited grounds. The refs are
   // separate buttons, so the card itself is a div carrying the story classes.
@@ -404,8 +488,9 @@ const StoryEvent = React.forwardRef<
             <p className="rp-pivot-none">计划已修订；未记录修订原因说明。</p>
           )}
         </button>
-        {fact.pivot.refFactIds.length > 0 ? (
+        {chipButtons || fact.pivot.refFactIds.length > 0 ? (
           <span className="rp-pivot-refs">
+            {chipButtons}
             {fact.pivot.refFactIds.slice(0, 3).map((refId) => {
               const target = factById.get(refId);
               return target ? (
@@ -417,6 +502,37 @@ const StoryEvent = React.forwardRef<
           </span>
         ) : null}
       </div>
+    );
+  }
+
+  // V3.2 rule 4: a process error the session outlived is a soft amber notice —
+  // the recorded action stays, the raw code demotes to small print, red is
+  // reserved for failures that shaped the result.
+  if (softError) {
+    return (
+      <button
+        ref={ref}
+        className={`rp-story-event action soft-err ${active ? 'active' : ''}`}
+        data-fact-id={fact.id}
+        data-kind={fact.kind}
+        data-testid="replay-soft-error"
+        onClick={onSelect}
+        aria-current={active ? 'step' : undefined}
+      >
+        <span className="rp-story-node" aria-hidden>
+          <Ic name="alert" size={14} />
+        </span>
+        <span className="rp-story-copy">
+          <span className="rp-story-action">
+            <strong>{fact.action}</strong>
+            {fact.detail ? <code className="rp-soft-raw">{fact.detail.slice(0, 80)}</code> : null}
+          </span>
+          <span className="rp-story-meta">
+            <em className="rp-soft-note">过程性错误 · 会话仍完成</em>
+            <time>{clockTime(fact.startedAt)}</time>
+          </span>
+        </span>
+      </button>
     );
   }
 
@@ -461,15 +577,8 @@ const StoryEvent = React.forwardRef<
     );
   }
 
-  return (
-    <button
-      ref={ref}
-      className={`rp-story-event action ${active ? 'active' : ''} status-${fact.status}`}
-      data-fact-id={fact.id}
-      data-kind={fact.kind}
-      onClick={onSelect}
-      aria-current={active ? 'step' : undefined}
-    >
+  const body = (
+    <>
       <span className="rp-story-node" aria-hidden>
         <Ic name={KIND_ICON[fact.kind] ?? 'info'} size={16} />
       </span>
@@ -485,10 +594,49 @@ const StoryEvent = React.forwardRef<
           ) : null}
         </span>
         <span className="rp-story-meta">
-          <span className={`rp-level rp-level-${fact.level}`}>{LEVEL_LABEL[fact.level]}</span>
+          {/* V3.2 rule 5: '结构化记录' is the default and carries no signal —
+              only the exceptions (verified/observed/inferred/missing) badge. */}
+          {fact.level !== 'recorded' ? (
+            <span className={`rp-level rp-level-${fact.level}`}>{LEVEL_LABEL[fact.level]}</span>
+          ) : null}
           <time>{clockTime(fact.startedAt)}</time>
         </span>
       </span>
+    </>
+  );
+
+  // A row with approval chips is a div (chips are separate buttons), carrying
+  // the same story classes — the pivot card pattern.
+  if (chipButtons) {
+    return (
+      <div
+        className={`rp-story-event action has-chips ${inline ? 'inline' : ''} ${active ? 'active' : ''} status-${fact.status}`}
+        data-fact-id={fact.id}
+        data-kind={fact.kind}
+      >
+        <button
+          ref={ref}
+          className="rp-story-main"
+          onClick={onSelect}
+          aria-current={active ? 'step' : undefined}
+        >
+          {body}
+        </button>
+        <span className="rp-story-chips">{chipButtons}</span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      ref={ref}
+      className={`rp-story-event action ${inline ? 'inline' : ''} ${active ? 'active' : ''} status-${fact.status}`}
+      data-fact-id={fact.id}
+      data-kind={fact.kind}
+      onClick={onSelect}
+      aria-current={active ? 'step' : undefined}
+    >
+      {body}
     </button>
   );
 });

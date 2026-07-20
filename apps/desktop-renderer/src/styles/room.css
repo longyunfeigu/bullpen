@@ -10,6 +10,10 @@
   display: flex;
   flex-direction: column;
   background: var(--bg-editor);
+  /* Size container for the Session Canvas breakpoints: the stacked layout
+     must react to the width the room ACTUALLY has (window minus rails and
+     sidebars), which a window media query cannot see. */
+  container: task-room / inline-size;
 }
 
 .tr-terminal-refs {
@@ -179,6 +183,10 @@
 .rt-scroll {
   flex: 1;
   overflow-y: auto;
+  /* The reading column never scrolls sideways: wide evidence (code blocks,
+     diffs) scrolls inside its own block. Without this, one over-wide child
+     grows a permanent horizontal scrollbar above the composer. */
+  overflow-x: hidden;
   min-height: 0;
   padding: 14px 24px 18px;
 }
@@ -934,6 +942,10 @@
 .tr-ccard {
   position: relative;
   flex: 1;
+  /* A flex item's implicit min-width:auto would let the foot's min-content
+     push the centered card out of the column on narrow panes (the clipped
+     "…eply" composer). The foot truncates instead. */
+  min-width: 0;
   max-width: 760px;
   background: var(--bg-card);
   border: 1px solid var(--border);

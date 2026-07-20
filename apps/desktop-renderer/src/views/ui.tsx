@@ -108,7 +108,7 @@ export function ArmedIconButton(props: {
         props.onConfirm();
       }}
     >
-      <Ic name={armed ? 'check' : 'archive'} size={12} strokeWidth={2} />
+      <Ic name={armed ? 'check' : props.icon} size={12} strokeWidth={2} />
     </button>
   );
 }

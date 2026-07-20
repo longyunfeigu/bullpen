@@ -2,7 +2,7 @@ import { dialog } from 'electron';
 import { promises as fs } from 'node:fs';
 import { OpenTabsStateSchema } from '@pi-ide/ipc-contracts';
 import { resolveInsideRoot } from '@pi-ide/workspace-service';
-import type { Logger } from '@pi-ide/foundation';
+import { productError, ProductFailure, type Logger } from '@pi-ide/foundation';
 import { registerHandlers } from './router.js';
 import { createProject } from '../services/project-create.js';
 import { toDto, type WorkspaceHost } from '../services/workspace-host.js';
@@ -27,6 +27,25 @@ export function registerWorkspaceHandlers(
       'workspace.close': async () => {
         await host.close();
         return { closed: true };
+      },
+      // ADR-0034: forget a project — the workspace row plus all recorded
+      // Sessions leave the app; files on disk are never touched. The open
+      // project is closed first so no service keeps a live handle on it.
+      'workspace.remove': async ({ path }) => {
+        const result = state.removeWorkspace(path);
+        if (result.status === 'running') {
+          throw new ProductFailure(
+            productError('WORKSPACE_REMOVE_BLOCKED', {
+              userMessage: `This project still has ${result.running} running session${result.running === 1 ? '' : 's'}. Stop or finish them, then remove the project.`,
+            }),
+          );
+        }
+        if (result.status === 'missing') return { removed: false, removedSessions: 0 };
+        // Close AFTER the guard passed: a refused removal must not surprise
+        // the user by also closing their open project.
+        if (host.current?.canonicalPath === path) await host.close();
+        logger.info('workspace removed', { path, sessions: result.removedSessions });
+        return { removed: true, removedSessions: result.removedSessions };
       },
       'workspace.pickParentDir': async () => {
         const result = await dialog.showOpenDialog({

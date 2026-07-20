@@ -1,4 +1,4 @@
-import { errorMessage, productError, ProductFailure, type Logger } from '@pi-ide/foundation';
+import { productError, ProductFailure, toProductError, type Logger } from '@pi-ide/foundation';
 import { providerPreset } from '@pi-ide/ipc-contracts';
 import { registerHandlers } from './router.js';
 import { processPreviewAttachment } from './preview-handlers.js';
@@ -126,8 +126,14 @@ export function registerM6Handlers(
             workerAlive: host.alive,
           };
         } catch (e) {
-          logger.error('models.list failed', {
-            error: errorMessage(e),
+          // The response already degrades to an empty catalog and the renderer
+          // refetches on agent.workerStatus. Self-healing conditions (worker
+          // still starting / restarting — retryable) are expected during cold
+          // start and are not error-level events.
+          const err = toProductError(e, 'AG_LIST_MODELS_FAILED');
+          logger[err.retryable ? 'warn' : 'error']('models.list unavailable', {
+            code: err.code,
+            error: err.userMessage,
           });
           return { models: [], workerAlive: host.alive };
         }

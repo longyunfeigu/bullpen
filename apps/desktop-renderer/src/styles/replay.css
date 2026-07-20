@@ -3995,6 +3995,101 @@
   font-weight: 640;
 }
 
+/* ---------- V3.2 lean recap (ADR-0035) ---------- */
+
+/* Time stays right-aligned when the default '结构化记录' badge is omitted. */
+.rp-story-meta time {
+  margin-left: auto;
+}
+
+/* Approval chip: a recorded decision pinned to the fact it resolved. */
+.rp-ok-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--success) 34%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--success) 10%, var(--bg-card));
+  color: color-mix(in srgb, var(--success) 72%, var(--fg));
+  font-size: 10px;
+  font-weight: 620;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.rp-ok-chip:hover {
+  background: color-mix(in srgb, var(--success) 18%, var(--bg-card));
+}
+
+.rp-ok-chip i {
+  font-style: normal;
+}
+
+/* Row-with-chips: the same story grid, but a div (chips are own buttons). */
+.rp-story-event.has-chips {
+  row-gap: 0;
+  padding: 0;
+}
+
+.rp-story-main {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 8px 9px 4px 8px;
+  color: inherit;
+  text-align: left;
+}
+
+.rp-story-chips {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 2;
+  gap: 4px;
+  padding: 0 9px 8px 10px;
+}
+
+.rp-story-event.active .rp-ok-chip {
+  border-color: color-mix(in srgb, var(--rp-accent-fg) 44%, transparent);
+  background: color-mix(in srgb, var(--rp-accent-fg) 14%, transparent);
+  color: var(--rp-accent-fg);
+}
+
+/* Inline rows: 1–2 substantive facts shown directly instead of a fold bar. */
+.rp-story-event.inline {
+  min-height: 40px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  opacity: 0.85;
+}
+
+/* Soft process error: recorded, amber, never a red story beat. */
+.rp-story-event.soft-err .rp-story-node {
+  border-color: color-mix(in srgb, var(--rp-amber) 62%, var(--border-strong));
+  color: var(--rp-amber);
+}
+
+.rp-soft-raw {
+  margin-left: 6px;
+  color: var(--fg-faint);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+}
+
+.rp-soft-note {
+  flex: none;
+  color: color-mix(in srgb, var(--rp-amber) 74%, var(--fg));
+  font-style: normal;
+}
+
+.rp-story-event.soft-err.active .rp-soft-note,
+.rp-story-event.soft-err.active .rp-soft-raw {
+  color: color-mix(in srgb, var(--rp-accent-fg) 82%, transparent);
+}
+
 /* ---------- session contract: time + inputs cells ---------- */
 
 .rp-contract-time small {

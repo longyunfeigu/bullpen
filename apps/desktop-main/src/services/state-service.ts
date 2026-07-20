@@ -93,6 +93,82 @@ export class StateService {
     }));
   }
 
+  /**
+   * ADR-0034: forget a project. Deletes the workspace row and every recorded
+   * Session (tasks + their event/tool/change/verification records) in one
+   * transaction. Never touches files on disk. Content-addressed blobs stay
+   * (they are shared and already have no delete path — see BlobStore).
+   *
+   * A project with a running session is never removed — the caller shows the
+   * refusal; a crash-orphaned "running" row is repaired at startup
+   * (system.interruptedByRestart), so this can not wedge permanently.
+   */
+  removeWorkspace(
+    canonicalPath: string,
+  ):
+    | { status: 'removed'; removedSessions: number }
+    | { status: 'missing' }
+    | { status: 'running'; running: number } {
+    const ws = this.db
+      .prepare('SELECT id FROM workspaces WHERE canonical_path = ?')
+      .get(canonicalPath) as { id: string } | undefined;
+    if (!ws) return { status: 'missing' };
+
+    const running = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM tasks
+         WHERE workspace_id = ?
+           AND (state IN ('EXPLORING','PLANNING','IN_PROGRESS','AWAITING_PERMISSION','VERIFYING')
+                OR json_extract(external_json, '$.status') = 'active')`,
+      )
+      .get(ws.id) as { n: number };
+    if (running.n > 0) return { status: 'running', running: running.n };
+
+    return this.db.transaction(() => {
+      const removedSessions = (
+        this.db.prepare('SELECT COUNT(*) AS n FROM tasks WHERE workspace_id = ?').get(ws.id) as {
+          n: number;
+        }
+      ).n;
+      const inTasks = '(SELECT id FROM tasks WHERE workspace_id = ?)';
+      const taskScoped = [
+        `DELETE FROM permission_decisions WHERE task_id IN ${inTasks}`,
+        `DELETE FROM permission_requests WHERE task_id IN ${inTasks}`,
+        `DELETE FROM file_changes WHERE task_id IN ${inTasks}`,
+        `DELETE FROM file_baselines WHERE task_id IN ${inTasks}`,
+        `DELETE FROM verification_runs WHERE task_id IN ${inTasks}`,
+        `DELETE FROM tool_calls WHERE task_id IN ${inTasks}`,
+        `DELETE FROM agent_runs WHERE task_id IN ${inTasks}`,
+        `DELETE FROM agent_sessions WHERE task_id IN ${inTasks}`,
+        `DELETE FROM task_events WHERE task_id IN ${inTasks}`,
+        // Both directions: rows owned by removed tasks AND rows in other
+        // projects that referenced these tasks as a source. The NOT NULL
+        // source_task_id foreign key leaves no way to keep the snapshot
+        // once its source row is gone.
+        `DELETE FROM task_conversation_references WHERE task_id IN ${inTasks} OR source_task_id IN ${inTasks}`,
+        `DELETE FROM memory_rule_injections WHERE task_id IN ${inTasks}`,
+      ];
+      for (const sql of taskScoped) {
+        const params = sql.split(inTasks).length - 1;
+        this.db.prepare(sql).run(...Array<string>(params).fill(ws.id));
+      }
+      const workspaceScoped = [
+        'permission_decisions',
+        'memory_candidates',
+        'memory_rule_stats',
+        'memory_rule_injections',
+        'memory_sync_state',
+        'ui_workspace_state',
+      ];
+      for (const table of workspaceScoped) {
+        this.db.prepare(`DELETE FROM ${table} WHERE workspace_id = ?`).run(ws.id);
+      }
+      this.db.prepare('DELETE FROM tasks WHERE workspace_id = ?').run(ws.id);
+      this.db.prepare('DELETE FROM workspaces WHERE id = ?').run(ws.id);
+      return { status: 'removed' as const, removedSessions };
+    });
+  }
+
   recordError(component: string, error: ProductError): void {
     try {
       this.db

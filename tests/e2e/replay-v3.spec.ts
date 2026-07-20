@@ -67,6 +67,20 @@ test.describe('Replay V3 — one story, three depths', () => {
       // The conversation is first-class: the user's request renders as a bubble.
       await expect(page.locator('.rp-story-event.message.from-user').first()).toBeVisible();
 
+      // 1c) V3.2 lean recap (ADR-0035): a small session earns no fold bars —
+      //     heartbeats are quiet-counted in the footer, approvals pin to the
+      //     fact they resolved as chips, and the default '结构化记录' badge is
+      //     gone from story rows (only exception levels badge).
+      await expect(page.getByTestId('replay-fold')).toHaveCount(0);
+      await expect(page.getByTestId('replay-approval-chip').first()).toBeVisible();
+      expect(await page.getByTestId('replay-story-list').textContent()).not.toContain('结构化记录');
+      // The approval keeps no standalone story row once it renders as a chip.
+      await expect(page.locator('.rp-story-event[data-kind="plan-decision"]')).toHaveCount(0);
+      // A chip is an audit entry: clicking it opens the approval's own detail.
+      await page.getByTestId('replay-approval-chip').first().click();
+      await expect(page.getByTestId('replay-detail-layer')).toBeVisible();
+      await page.getByTestId('replay-detail-layer').getByLabel('关闭步骤详情').last().click();
+
       // 2) The design taxonomy is gone: no A–E navigation, no % confidence.
       expect(await page.locator('[data-testid^="replay-mode-"]').count()).toBe(0);
       const fullText = (await page.getByTestId('replay-view').textContent()) ?? '';
@@ -409,8 +423,12 @@ test.describe('Replay V3 — one story, three depths', () => {
         page.getByTestId('replay-timeline').locator('[data-category="pivot"]'),
       ).toHaveCount(1);
 
+      // V3.2: the user's approval of the revised plan is a chip on the pivot
+      // card (id-backed plan-version join), not a standalone story row.
+      await expect(pivot.getByTestId('replay-approval-chip')).toContainText('你批准了');
+
       // Its grounds are clickable, id-backed references.
-      const refs = pivot.locator('.rp-pivot-refs button');
+      const refs = pivot.locator('.rp-pivot-refs .rp-cite-chip');
       await expect(refs.first()).toBeVisible();
       await refs.first().click();
       await expect(page.getByTestId('replay-detail-layer')).toBeVisible();

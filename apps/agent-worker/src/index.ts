@@ -11,7 +11,7 @@ import type {
   WorkerOutbound,
 } from '@pi-ide/agent-contract';
 import { MockAgentRuntime } from '@pi-ide/agent-runtime-mock';
-import { toProductError } from '@pi-ide/foundation';
+import { productError, ProductFailure, toProductError } from '@pi-ide/foundation';
 
 const port = process.parentPort;
 if (!port) {
@@ -47,6 +47,17 @@ const toolExecutor: ToolExecutor = (call, signal) =>
       { once: true },
     );
   });
+
+/** A request raced ahead of init (should not happen — the host serializes
+ * spawn+init — but a clear retryable refusal beats a null-deref TypeError). */
+function notReady(): ProductFailure {
+  return new ProductFailure(
+    productError('AG_NOT_READY', {
+      userMessage: 'The agent runtime is still starting.',
+      retryable: true,
+    }),
+  );
+}
 
 async function handle(message: WorkerInbound): Promise<void> {
   switch (message.type) {
@@ -158,7 +169,8 @@ async function handle(message: WorkerInbound): Promise<void> {
       break;
     case 'listModels': {
       try {
-        const models = await runtime!.listModels();
+        if (!runtime) throw notReady();
+        const models = await runtime.listModels();
         send({ type: 'response', reqId: message.reqId, ok: true, data: models });
       } catch (e) {
         send({
@@ -172,7 +184,8 @@ async function handle(message: WorkerInbound): Promise<void> {
     }
     case 'validateCredential': {
       try {
-        const check = await runtime!.validateCredential(message.providerId);
+        if (!runtime) throw notReady();
+        const check = await runtime.validateCredential(message.providerId);
         send({ type: 'response', reqId: message.reqId, ok: true, data: check });
       } catch (e) {
         send({

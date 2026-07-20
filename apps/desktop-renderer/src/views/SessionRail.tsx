@@ -748,6 +748,35 @@ export function SessionRail(): React.JSX.Element {
     )
     .slice(0, 8);
 
+  // ADR-0034: forget a project. Removal is arm-then-confirm on the icon; a
+  // project that still has recorded Sessions asks once more with the count,
+  // because those records go with it (files on disk are never touched).
+  const removeProject = async (path: string, sessionCount: number): Promise<void> => {
+    if (
+      sessionCount > 0 &&
+      !window.confirm(
+        `Remove this project and its ${sessionCount} recorded session${sessionCount === 1 ? '' : 's'} from Charter?\n\nFiles on disk are not touched.`,
+      )
+    ) {
+      return;
+    }
+    const res = await rpcResult('workspace.remove', { path });
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      return;
+    }
+    setRecent((items) => items.filter((item) => item.path !== path));
+    await useTaskStore.getState().refreshTasks();
+    useAppStore
+      .getState()
+      .pushToast(
+        'success',
+        res.data.removedSessions > 0
+          ? `Project removed (${res.data.removedSessions} session${res.data.removedSessions === 1 ? '' : 's'} deleted). Files on disk were not touched.`
+          : 'Project removed. Files on disk were not touched.',
+      );
+  };
+
   const openFolderAction = (): void => {
     setAddMenuOpen(false);
     void workspaceStore.openViaDialog();
@@ -885,6 +914,14 @@ export function SessionRail(): React.JSX.Element {
               >
                 <Ic name="plus" size={13} />
               </button>
+              <ArmedIconButton
+                icon="trash"
+                className="sr-project-remove"
+                testid={`project-remove-${project.path}`}
+                title={`Remove ${project.displayName} from Charter`}
+                armedTitle="Click again to remove this project"
+                onConfirm={() => void removeProject(project.path, sessionCount)}
+              />
             </div>
           );
         })}

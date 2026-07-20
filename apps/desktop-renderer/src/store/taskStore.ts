@@ -629,8 +629,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       res = await rpcResult('task.rollback', { taskId, force: true });
     }
     if (!okOrToast(res)) return false;
-    set({ reviewOpen: false });
+    // The restore invalidated the recorded change set: clear it immediately so
+    // an open Diff tool can never keep showing rolled-back hunks, then refetch
+    // the (now empty) truth from the main process.
+    set({ reviewOpen: false, changeSet: null });
     await get().refreshTasks();
+    await get().refreshChangeSet();
     useAppStore
       .getState()
       .pushToast('info', `Rolled back ${res.data.restored?.length ?? 0} file(s).`);

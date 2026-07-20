@@ -1642,7 +1642,19 @@ export class TaskService {
             return { ...wt, missing: !existsSync(wt.path) };
           })()
         : null,
-      external: row.external_json ? (JSON.parse(row.external_json) as TaskDto['external']) : null,
+      external: row.external_json
+        ? (() => {
+            // Defensive read-side normalization: a single legacy row with an
+            // out-of-vocabulary status must never invalidate a whole
+            // task.list response (migration 7 repairs stored rows; this
+            // guards restored backups and future drift the same way).
+            const external = JSON.parse(row.external_json!) as NonNullable<TaskDto['external']>;
+            if (external.status !== 'active' && external.status !== 'ended') {
+              return { ...external, status: 'ended' as const };
+            }
+            return external;
+          })()
+        : null,
     };
   }
 

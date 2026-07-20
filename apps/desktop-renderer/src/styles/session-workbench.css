@@ -904,6 +904,39 @@
   background: var(--bg-card);
   color: var(--accent);
 }
+/* ADR-0034: forget-project affordance — same hover-reveal as the "+" spawn
+   button; arming turns it red (arm/confirm contract of ArmedIconButton). */
+.sr-project-remove {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-right: 6px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  opacity: 0;
+  cursor: pointer;
+}
+.sr-project-wrap:hover .sr-project-remove,
+.sr-project-wrap:focus-within .sr-project-remove,
+.sr-project-wrap.active .sr-project-remove {
+  opacity: 1;
+}
+.sr-project-remove:hover {
+  border-color: var(--border);
+  background: var(--bg-card);
+  color: var(--danger);
+}
+.sr-project-remove.armed {
+  opacity: 1;
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
 /* A raw external PTY before accounting-task detection. */
 .stv-root {
   flex: 1;

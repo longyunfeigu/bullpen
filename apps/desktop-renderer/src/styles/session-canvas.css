@@ -1339,8 +1339,12 @@ button.hm-board-now:hover {
   cursor: default;
 }
 
-/* ---------- responsive priority reordering ---------- */
-@media (max-width: 1120px) {
+/* ---------- responsive priority reordering ----------
+ * Container query on .tr-root (task-room), not a window media query: the
+ * conversation + tool canvas need 390px each, and whether they fit depends on
+ * what the window leaves the room after rails/sidebars — a 1500px window with
+ * the Files sidebar open is as tight as a 1100px window without it. */
+@container task-room (max-width: 880px) {
   .session-identity-head {
     min-height: 66px;
     padding: 8px 11px;
@@ -1414,7 +1418,7 @@ button.hm-board-now:hover {
   }
 }
 
-@media (max-width: 920px) {
+@container task-room (max-width: 700px) {
   .session-identity-head .tr-back {
     width: 30px;
     overflow: hidden;
@@ -1437,6 +1441,7 @@ button.hm-board-now:hover {
     max-width: 310px;
   }
 
+  /* The follow-up composer reuses Home's card inside the room. */
   .hm-btmrow {
     gap: 5px;
   }
@@ -1448,6 +1453,18 @@ button.hm-board-now:hover {
 
   .session-action-dock .btn {
     padding-inline: 10px;
+  }
+}
+
+/* The same composer squeeze on the Home surface (no task-room container). */
+@media (max-width: 920px) {
+  .hm-btmrow {
+    gap: 5px;
+  }
+
+  .hm-agent-picker > span,
+  .hm-native-chip {
+    display: none;
   }
 }
 
