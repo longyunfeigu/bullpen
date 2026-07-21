@@ -12,7 +12,6 @@ import {
   canArchiveTask,
   canResumeExternal,
   isAnswered,
-  isHistoryTask,
   needsAttention,
   presentedMeta,
 } from './labels.js';
@@ -21,35 +20,15 @@ import { SessionFilesPane } from './SessionFilesPane.js';
 import { useGlowTasks } from './useGlow.js';
 import { sessionDisplayTitle } from '../store/sessionAttention.js';
 import { unknownDirectories, useArchaeologyStore } from '../store/archaeologyStore.js';
+import {
+  buildRailGroups,
+  isHistoryEntry,
+  recordedTasksByProject,
+  type RailGroup,
+  type SessionEntry,
+} from './rail-groups.js';
 
-export type SessionEntry =
-  | { key: string; kind: 'task'; task: TaskDto }
-  | {
-      key: string;
-      kind: 'terminal';
-      terminalId: string;
-      launch: 'claude' | 'codex';
-      projectName: string;
-      exited: boolean;
-    };
-
-interface RailGroup {
-  key: string;
-  name: string;
-  path: string | null;
-  entries: SessionEntry[];
-  needs: number;
-  history?: boolean;
-}
-
-/**
- * ADR-0023 + external sessions: History = the session is over AND nothing
- * needs a decision (predicates live in labels.ts). Exited bare CLI terminals
- * count as over; a live process never lands here.
- */
-export function isHistoryEntry(entry: SessionEntry): boolean {
-  return entry.kind === 'terminal' ? entry.exited : isHistoryTask(entry.task);
-}
+export { isHistoryEntry, type SessionEntry } from './rail-groups.js';
 
 const COLLAPSED_KEY = 'charter.rail.collapsed.v1';
 const SESSION_PAGE_SIZE = 20;
@@ -406,37 +385,12 @@ export function SessionRail(): React.JSX.Element {
     }
   }, [allEntries, app.sessionReveal]);
 
-  const groups = useMemo<RailGroup[]>(() => {
-    const active: RailGroup[] = [];
-    const byName = new Map<string, RailGroup>();
-    const history: RailGroup = {
-      key: 'history',
-      name: 'History',
-      path: null,
-      entries: [],
-      needs: 0,
-      history: true,
-    };
-    for (const entry of flatEntries) {
-      if (isHistoryEntry(entry)) {
-        history.entries.push(entry);
-        continue;
-      }
-      const name = entry.kind === 'task' ? entry.task.projectName : entry.projectName;
-      let group = byName.get(name);
-      if (!group) {
-        group = { key: `proj:${name}`, name, path: null, entries: [], needs: 0 };
-        byName.set(name, group);
-        active.push(group);
-      }
-      if (entry.kind === 'task') {
-        group.path ??= entry.task.projectPath;
-        if (needsAttention(entry.task)) group.needs += 1;
-      }
-      group.entries.push(entry);
-    }
-    return history.entries.length > 0 ? [...active, history] : active;
-  }, [flatEntries]);
+  const groups = useMemo<RailGroup[]>(() => buildRailGroups(flatEntries), [flatEntries]);
+
+  // The Projects panel counts over the COMPLETE set — `groups` is built from
+  // the paginated slice and would under-report past the first rail page.
+  const fullGroups = useMemo<RailGroup[]>(() => buildRailGroups(allEntries), [allEntries]);
+  const recordedByProject = useMemo(() => recordedTasksByProject(allEntries), [allEntries]);
 
   const visibleGroups = useMemo<RailGroup[]>(() => {
     const normalized = query.trim().toLowerCase();
@@ -769,13 +723,14 @@ export function SessionRail(): React.JSX.Element {
     .slice(0, 8);
 
   // ADR-0034: forget a project. Removal is arm-then-confirm on the icon; a
-  // project that still has recorded Sessions asks once more with the count,
-  // because those records go with it (files on disk are never touched).
-  const removeProject = async (path: string, sessionCount: number): Promise<void> => {
+  // project that still has recorded Sessions asks once more with the count
+  // (active and History alike — those records go with it; files on disk are
+  // never touched).
+  const removeProject = async (path: string, recordedCount: number): Promise<void> => {
     if (
-      sessionCount > 0 &&
+      recordedCount > 0 &&
       !window.confirm(
-        `Remove this project and its ${sessionCount} recorded session${sessionCount === 1 ? '' : 's'} from Charter?\n\nFiles on disk are not touched.`,
+        `Remove this project and its ${recordedCount} recorded session${recordedCount === 1 ? '' : 's'} from Charter?\n\nFiles on disk are not touched.`,
       )
     ) {
       return;
@@ -890,8 +845,10 @@ export function SessionRail(): React.JSX.Element {
         ) : null}
         {filteredRecent.map((project) => {
           const active = workspaceStore.workspace?.path === project.path;
-          const sessionCount =
-            groups.find((group) => group.path === project.path)?.entries.length ?? 0;
+          const activeCount =
+            fullGroups.find((group) => group.path === project.path)?.entries.length ?? 0;
+          const outsideCount = discoveredByProject.get(project.path) ?? 0;
+          const recordedCount = recordedByProject.get(project.path) ?? 0;
           return (
             <div className={`sr-project-wrap ${active ? 'active' : ''}`} key={project.path}>
               <button
@@ -916,11 +873,17 @@ export function SessionRail(): React.JSX.Element {
                 <Ic name="folder" size={14} />
                 <span className="sr-project-copy">
                   <strong>{project.displayName}</strong>
-                  <small data-testid={`project-discovered-${project.path}`}>
-                    {sessionCount} sessions
-                    {(discoveredByProject.get(project.path) ?? 0) > 0
-                      ? ` · ${discoveredByProject.get(project.path)} outside`
-                      : ''}
+                  <small
+                    data-testid={`project-discovered-${project.path}`}
+                    title={
+                      `${activeCount} active session${activeCount === 1 ? '' : 's'} — settled History and archived sessions are not counted` +
+                      (outsideCount > 0
+                        ? `\n${outsideCount} conversation${outsideCount === 1 ? '' : 's'} ran outside Charter — the clock button lists everything`
+                        : '')
+                    }
+                  >
+                    {activeCount} active
+                    {outsideCount > 0 ? ` · ${outsideCount} outside` : ''}
                   </small>
                 </span>
                 {active ? (
@@ -956,7 +919,7 @@ export function SessionRail(): React.JSX.Element {
                 testid={`project-remove-${project.path}`}
                 title={`Remove ${project.displayName} from Charter`}
                 armedTitle="Click again to remove this project"
-                onConfirm={() => void removeProject(project.path, sessionCount)}
+                onConfirm={() => void removeProject(project.path, recordedCount)}
               />
             </div>
           );

@@ -76,6 +76,7 @@ import { workspaceDataDir, type AppPaths } from '../app-paths.js';
 import { ProjectContexts, type ProjectContext } from './project-contexts.js';
 import { WorktreeService, type TaskWorktree } from './worktree-service.js';
 import { buildPrCommands, buildPrDraft } from './pr-draft.js';
+import { buildExternalSessionIndex, type ExternalSessionRow } from './external-session-index.js';
 import { broadcast } from '../broadcast.js';
 
 /** ADR-0022: preview-feedback metadata recorded on the user.message event. */
@@ -2351,22 +2352,17 @@ export class TaskService {
   /**
    * ADR-0038: every CLI conversation id Charter already owns, lowercased,
    * mapped to its task. Archaeology dedupes against this so a session started
-   * inside a product terminal is never re-listed as "discovered".
+   * inside a product terminal is never re-listed as "discovered". A session id
+   * recorded on several tasks (resumes) resolves to the live task, never an
+   * archived duplicate — the fold in external-session-index.ts owns that rule.
    */
   externalSessionIndex(): Map<string, string> {
     const rows = this.db
-      .prepare('SELECT id, external_json FROM tasks WHERE external_json IS NOT NULL')
-      .all() as Array<{ id: string; external_json: string }>;
-    const index = new Map<string, string>();
-    for (const row of rows) {
-      try {
-        const external = JSON.parse(row.external_json) as { sessionId?: string | null };
-        if (external.sessionId) index.set(external.sessionId.toLowerCase(), row.id);
-      } catch {
-        // A malformed legacy row must not break discovery.
-      }
-    }
-    return index;
+      .prepare(
+        'SELECT id, external_json, archived, updated_at FROM tasks WHERE external_json IS NOT NULL',
+      )
+      .all() as ExternalSessionRow[];
+    return buildExternalSessionIndex(rows);
   }
 
   /**
