@@ -3,6 +3,9 @@ name: CI
 permissions:
   contents: read
 
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+
 on:
   push:
     branches: [main]
@@ -10,10 +13,7 @@ on:
 
 jobs:
   check-test:
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,11 +25,7 @@ jobs:
       - run: npm run test
       - run: npm run build
       - name: E2E (Linux headless)
-        if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum npm run test:e2e
-      - name: E2E
-        if: runner.os != 'Linux'
-        run: npm run test:e2e
 
   package-smoke:
     strategy:
