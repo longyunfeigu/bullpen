@@ -38,9 +38,15 @@ When requirements conflict, acceptance criteria take precedence. Record interpre
 5. Run `npm run check` and relevant tests before marking DONE.
 6. Mark VERIFIED only after the milestone exit test passes.
 7. Update `docs/IMPLEMENTATION_STATUS.md` after each meaningful change.
-8. Add an ADR for dependency changes, architecture deviations, security tradeoffs or Pi patches.
-9. Never use static fake UI in a completed feature. Mock Runtime is allowed only as a deterministic backend for tests/dev.
-10. Never bypass an acceptance failure by weakening the test unless the specification is formally changed.
+8. After adding or changing any user-visible feature: update `README.md` and
+   `README.zh-CN.md` in the same change set, then sync the marketing site at
+   `~/git/charter-site` — edit `public/index.html` and `public/zh/index.html`
+   in lockstep, follow that repo's `CLAUDE.md` brand rules (no internal names,
+   no overstated status), commit and push `main` (Cloudflare Pages
+   auto-deploys to https://charter-15n.pages.dev).
+9. Add an ADR for dependency changes, architecture deviations, security tradeoffs or Pi patches.
+10. Never use static fake UI in a completed feature. Mock Runtime is allowed only as a deterministic backend for tests/dev.
+11. Never bypass an acceptance failure by weakening the test unless the specification is formally changed.
 
 ## Required commands
 
