@@ -149,6 +149,19 @@
 | M12-06 | E2E-001..024 与 Release Gates 全量 | 全部 | DONE | 本地 138 E2E + 19 条件 skip、E2E-023/024、805 unit、139+2 security、6 perf、50-lap soak；tag workflow 再跑全量 |
 | M12-07 | Beta 修复、RC 冻结、Stable 发布 | M12-06 | DONE (Beta RC) / BLOCKED (Stable) | `1.0.0-beta.1` 零成本 unsigned RC；Stable 需 Apple/Windows 证书、notarization、真实 20-task eval 与 owner sign-off |
 
+## Milestone 13: 会话编排（agent 指挥 agent）
+
+来源：ADR-0044。验收锚点 ORCH-001..012 定义于该 ADR §Verification；产品负责人 2026-07-21 裁定排期在 M12 之后。UI 以已验收 mockup 为准（`docs/design/agent-orchestration-fusion-mockup.html` + `agent-orchestration-v3-director-stage.html`）。退出条件：脚本化外部 CLI 司机完成"指挥 codex 评审往返"闭环 e2e，且 ORCH-001..012 全绿。
+
+| 任务 | 交付 | 依赖 | 状态 | 证据 |
+| --- | --- | --- | --- | --- |
+| M13-01 | 引擎心脏：`terminal-control-service`（六原语——list 含忙闲/read 去 ANSI 滚动缓冲 200KB/send \n→\r+bracketed paste/create 复用 launch+settle 后 autorun/wait 三判定 OSC133 exit 码·静默·正则/kill）+ `tools-terminal.ts` gateway 注册（send 文本过 classifyCommand 动态定级：裸 shell 下限 R2、TUI R1、控制键 R2；两层封顶；自控拒绝；预算 ≤5 窗 ≤30 send/min）+ ipc-contracts schema | M4,M7 | NOT_STARTED | ORCH-001/002/006/007/009；wait 取消无孤儿 waiter 单测；托管司机"开窗→注入→等 exit 0→读→关"闭环 e2e |
+| M13-02 | 指挥 UI（融合稿）：rail 家谱（两层缩进、44px 子行、needs 数字冒泡、「⌁ 指挥 N」chip）+ 工人房间 ⌁ 横带/敲字即接管（注入暂挂队列）/单会话暂停 + 主会话房间可折叠编队区（双列实时瓦片、瓦片上审批、⏸ 暂停全部）+ 审批单记录多入口同步（rail 徽章/瓦片/房间卡/mission control/系统通知） | M13-01 | NOT_STARTED | ORCH-003/004/005；normal/loading/empty/error/cancel 五态齐全 |
+| M13-03 | 导播位叠加：优先级自动切（待审批>失败>刚完成>输出中>静默）、每次切换带原因 chip、锁定、自动（默认）/手动档、审批未决其他事件只排队（「待切」chip）、导播记录=账本筛选视图+快照回看；范围仅主会话房间 | M13-02 | NOT_STARTED | ORCH-010 |
+| M13-04 | 外部门：pty env 三件套（`CHARTER_TERM_ID/CTL/CTL_TOKEN`，per-terminal 随机、内存登记、不落盘、`_OVERRIDE` 仅 dev/test）+ `ctl-server` unix socket（`<userData>/ctl.sock` 0600；验票→身份→翻译进同一 `executeCall`；403/404/409/429/501） | M13-01 | NOT_STARTED | ORCH-008；security：socket 权限、重启作废、内外路径定级一致 |
+| M13-05 | 说明书三渠道：`charter-terminal` skill（受管库 ADR-0015：速查、防自控、正则回显坑、替卡住的确认框按键、规矩）+ codex AGENTS.md 片段 + 设置面板一键装 | M13-04 | NOT_STARTED | 脚本化假 CLI 当司机完成 review 往返 e2e（M13 退出测试主体） |
+| M13-06 | 收尾与熔断：replay 渲染 ⌁ 编排事件、设置总开关「会话编排」（OFF=工具不注册+socket 不建+UI 隐藏）、缓冲内存压测（200KB×N 封顶）、文档与 STATUS 更新 | 全部 | NOT_STARTED | ORCH-011/012；`npm run check` + 全量 test/e2e/security 过闸 |
+
 ## 完成规则
 
 - `DONE`：代码与测试已提交，但尚未通过对应 Milestone 退出条件。
