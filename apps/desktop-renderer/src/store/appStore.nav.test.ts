@@ -11,7 +11,11 @@ import { mainSurfaceOf, railGroupOf, useAppStore } from './appStore.js';
 function reset(): void {
   useAppStore.setState({
     railView: 'sessions',
-    savedSurfaces: { workbench: { kind: 'home' }, projects: { kind: 'home' } },
+    savedSurfaces: {
+      workbench: { kind: 'home' },
+      projects: { kind: 'home' },
+      skills: { kind: 'home' },
+    },
     taskRoomTaskId: null,
     sessionTerminalId: null,
     archaeology: null,
@@ -25,11 +29,12 @@ function reset(): void {
 beforeEach(reset);
 
 describe('railGroupOf / mainSurfaceOf', () => {
-  it('groups sessions, inbox and files into one workbench; projects stands alone', () => {
+  it('groups sessions, inbox and files into one workbench; projects and Skills stand alone', () => {
     expect(railGroupOf('sessions')).toBe('workbench');
     expect(railGroupOf('inbox')).toBe('workbench');
     expect(railGroupOf('files')).toBe('workbench');
     expect(railGroupOf('projects')).toBe('projects');
+    expect(railGroupOf('skills')).toBe('skills');
   });
 
   it('derives the surface identity with the same priority as HomeShell', () => {
@@ -77,6 +82,15 @@ describe('setRailView across groups (the stale-main bug class)', () => {
     const s = useAppStore.getState();
     expect(s.railView).toBe('sessions');
     expect(s.taskRoomTaskId).toBe('t1');
+  });
+
+  it('Skills is a main page and restores the open Session on return', () => {
+    useAppStore.getState().openTaskRoom('t-skills');
+    useAppStore.getState().setRailView('skills');
+    expect(useAppStore.getState().taskRoomTaskId).toBeNull();
+    expect(useAppStore.getState().railView).toBe('skills');
+    useAppStore.getState().setRailView('sessions');
+    expect(useAppStore.getState().taskRoomTaskId).toBe('t-skills');
   });
 
   it('leaving Projects for Sessions clears the archaeology page and restores it on return', () => {

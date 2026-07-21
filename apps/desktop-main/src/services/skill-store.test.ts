@@ -219,6 +219,21 @@ describe('SkillStore (ADR-0015)', () => {
       const shared = snapshot.skills.find((skill) => skill.displayName === 'shared')!;
       expect(discovered.setEnabled(shared.id, true).enabled).toBe(true);
       expect(discovered.sources().find((source) => source.id === 'agents')?.trusted).toBe(true);
+
+      const claude = snapshot.skills.find((skill) => skill.displayName === 'claude-only')!;
+      expect(claude.agentEnabled).toBe(true);
+      expect(discovered.setAgentEnabled(claude.id, false).agentEnabled).toBe(false);
+      expect(existsSync(join(home, '.claude', 'skills', 'claude-only'))).toBe(false);
+      expect(discovered.list().find((skill) => skill.id === claude.id)?.displayName).toBe(
+        'claude-only',
+      );
+      expect(discovered.setAgentEnabled(claude.id, true).agentEnabled).toBe(true);
+      expect(existsSync(join(home, '.claude', 'skills', 'claude-only', 'SKILL.md'))).toBe(true);
+
+      const system = snapshot.skills.find((skill) => skill.displayName === 'codex-system')!;
+      expect(system.protected).toBe(true);
+      expect(() => discovered.setAgentEnabled(system.id, false)).toThrowError(/protected/);
+      expect(() => discovered.trashTarget(system.id)).toThrowError(/protected/);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

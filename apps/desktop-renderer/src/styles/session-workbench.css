@@ -37,6 +37,11 @@
   min-width: 288px;
   grid-template-columns: 44px 244px;
 }
+.sr-rail.view-skills {
+  width: 274px;
+  min-width: 274px;
+  grid-template-columns: 44px 230px;
+}
 
 .sr-activity {
   min-height: 0;

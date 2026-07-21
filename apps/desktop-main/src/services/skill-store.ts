@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   watch,
@@ -152,6 +153,12 @@ function displayPath(path: string, home: string): string {
     : absolute;
 }
 
+function isProtectedInstall(source: SourceDefinition, root: string): boolean {
+  if (source.kind !== 'codex') return false;
+  const rel = relative(source.root, root);
+  return rel.split(sep).includes('.system');
+}
+
 interface SourceDefinition {
   id: string;
   label: string;
@@ -172,12 +179,21 @@ interface CustomSourceState {
   path: string;
 }
 
+interface DisabledInstallState {
+  sourceId: string;
+  originalPath: string;
+  parkedPath: string;
+  disabledAt: string;
+}
+
 interface StoreState {
-  version: 2;
+  version: 3;
   /** Per-skill override. Managed absent = on; external absent = source policy. */
   enabled: Record<string, boolean>;
   sourcePolicies: Record<string, SourcePolicy>;
   customSources: CustomSourceState[];
+  /** Agent-owned copies parked outside the Agent's live skills root. */
+  disabledInstalls: Record<string, DisabledInstallState>;
 }
 
 interface FileWalkResult {
@@ -192,8 +208,13 @@ interface FileWalkResult {
 interface CatalogEntry {
   id: string;
   source: SourceDefinition;
+  /** Physical folder, including the parking location while disabled. */
   root: string;
   rootReal: string;
+  /** Stable live location shown to the user and restored on enable. */
+  originalRoot: string;
+  agentEnabled: boolean;
+  protected: boolean;
   displayName: string;
   baseName: string;
   description: string;
@@ -270,7 +291,7 @@ export class SkillStore {
       };
       if (parsed && typeof parsed === 'object') {
         return {
-          version: 2,
+          version: 3,
           enabled:
             parsed.enabled && typeof parsed.enabled === 'object'
               ? parsed.enabled
@@ -289,12 +310,35 @@ export class SkillStore {
                 ),
               )
             : [],
+          disabledInstalls:
+            parsed.disabledInstalls && typeof parsed.disabledInstalls === 'object'
+              ? Object.fromEntries(
+                  Object.entries(parsed.disabledInstalls).filter(
+                    (entry): entry is [string, DisabledInstallState] => {
+                      const value = entry[1] as Partial<DisabledInstallState> | null;
+                      return Boolean(
+                        value &&
+                        typeof value.sourceId === 'string' &&
+                        typeof value.originalPath === 'string' &&
+                        typeof value.parkedPath === 'string' &&
+                        typeof value.disabledAt === 'string',
+                      );
+                    },
+                  ),
+                )
+              : Object.create(null),
         };
       }
     } catch {
       // First run / unreadable state -> defaults. Catalog remains derived.
     }
-    return { version: 2, enabled: {}, sourcePolicies: {}, customSources: [] };
+    return {
+      version: 3,
+      enabled: {},
+      sourcePolicies: {},
+      customSources: [],
+      disabledInstalls: {},
+    };
   }
 
   private saveState(): void {
@@ -445,11 +489,30 @@ export class SkillStore {
       const counts = new Map<string, number>();
       for (const source of definitions) {
         const roots = this.findSkillRoots(source);
-        counts.set(source.id, roots.length);
+        const activeIds = new Set<string>();
         for (const root of roots) {
           const entry = this.inspectSkill(source, root);
-          if (entry) entries.push(entry);
+          if (entry) {
+            entries.push(entry);
+            activeIds.add(entry.id);
+          }
         }
+        let disabledCount = 0;
+        for (const [id, parked] of Object.entries(this.state.disabledInstalls)) {
+          if (parked.sourceId !== source.id || activeIds.has(id)) continue;
+          if (!existsSync(join(parked.parkedPath, SKILL_FILE))) continue;
+          const entry = this.inspectSkill(source, parked.parkedPath, {
+            id,
+            originalRoot: parked.originalPath,
+            agentEnabled: false,
+            skipSourceContainment: true,
+          });
+          if (entry) {
+            entries.push(entry);
+            disabledCount += 1;
+          }
+        }
+        counts.set(source.id, roots.length + disabledCount);
       }
       entries.sort(compareEntries);
       this.applyRuntimeNames(entries);
@@ -479,6 +542,8 @@ export class SkillStore {
               id: skill.id,
               name: skill.name,
               enabled: skill.enabled,
+              agentEnabled: skill.agentEnabled,
+              protected: skill.protected,
               revision: skill.revision,
               status: skill.status,
             })),
@@ -576,7 +641,16 @@ export class SkillStore {
     return roots;
   }
 
-  private inspectSkill(source: SourceDefinition, root: string): CatalogEntry | null {
+  private inspectSkill(
+    source: SourceDefinition,
+    root: string,
+    options: {
+      id?: string;
+      originalRoot?: string;
+      agentEnabled?: boolean;
+      skipSourceContainment?: boolean;
+    } = {},
+  ): CatalogEntry | null {
     let rootReal: string;
     let content: string;
     try {
@@ -587,17 +661,20 @@ export class SkillStore {
     } catch {
       return null;
     }
-    const relativePath = relative(source.root, root) || basename(root);
+    const originalRoot = resolve(options.originalRoot ?? root);
+    const relativePath = relative(source.root, originalRoot) || basename(originalRoot);
     const fm = parseSkillFrontmatter(content, basename(root));
     const walked = walkSkillFiles(root, rootReal);
     const issues: string[] = [];
-    try {
-      const sourceReal = realpathSync(source.root);
-      if (!isInside(sourceReal, rootReal)) {
-        issues.push('Skill directory symlink resolves outside its trusted source root.');
+    if (!options.skipSourceContainment) {
+      try {
+        const sourceReal = realpathSync(source.root);
+        if (!isInside(sourceReal, rootReal)) {
+          issues.push('Skill directory symlink resolves outside its trusted source root.');
+        }
+      } catch {
+        issues.push('Skill source is no longer available.');
       }
-    } catch {
-      issues.push('Skill source is no longer available.');
     }
     if (walked.truncated || walked.files.length >= MAX_FILES) {
       issues.push(`Skill contains ${MAX_FILES}+ files.`);
@@ -617,9 +694,10 @@ export class SkillStore {
       );
     }
     const id =
-      source.kind === 'managed'
+      options.id ??
+      (source.kind === 'managed'
         ? skillSlug(relativePath.split(sep)[0] ?? relativePath)
-        : `${source.id}-${shortHash(relativePath.replaceAll(sep, '/'))}`;
+        : `${source.id}-${shortHash(relativePath.replaceAll(sep, '/'))}`);
     let importedAt = new Date(0).toISOString();
     try {
       importedAt = statSync(root).birthtime.toISOString();
@@ -637,6 +715,9 @@ export class SkillStore {
       source,
       root: resolve(root),
       rootReal,
+      originalRoot,
+      agentEnabled: options.agentEnabled ?? true,
+      protected: isProtectedInstall(source, originalRoot),
       displayName: fm.name,
       baseName: skillSlug(fm.name),
       description: fm.description,
@@ -671,8 +752,15 @@ export class SkillStore {
       const defaultEnabled =
         entry.source.kind === 'managed' ? true : policy.trusted && policy.autoEnableNew;
       const desired = this.state.enabled[entry.id] ?? defaultEnabled;
-      const enabled = entry.status !== 'invalid' && policy.trusted && desired;
+      const enabled = entry.agentEnabled && entry.status !== 'invalid' && policy.trusted && desired;
+      const agentEnabled =
+        entry.source.kind === 'claude' || entry.source.kind === 'codex'
+          ? entry.agentEnabled
+          : enabled;
       const issues = [...entry.issues];
+      if (!entry.agentEnabled) {
+        issues.push(`Disabled for ${entry.source.label}; the installed copy is parked by Charter.`);
+      }
       if (conflict) {
         issues.push(
           preferred === entry
@@ -686,11 +774,13 @@ export class SkillStore {
         displayName: entry.displayName,
         description: entry.description,
         enabled,
+        agentEnabled,
+        protected: entry.protected,
         explicitOnly: entry.explicitOnly,
         source: entry.source.kind,
         sourceId: entry.source.id,
         sourceLabel: entry.source.label,
-        sourcePath: displayPath(entry.root, this.home),
+        sourcePath: displayPath(entry.originalRoot, this.home),
         live: entry.source.live,
         status: conflict && entry.status === 'ready' ? 'conflict' : entry.status,
         compatibility: entry.compatibility,
@@ -884,6 +974,132 @@ export class SkillStore {
     }
     this.logger.info('skill toggled', { id, enabled, source: entry.source.id });
     return { ...dto };
+  }
+
+  /**
+   * Toggle the installed copy for its owning Agent. Pi/shared sources already
+   * have an in-process policy, while Claude/Codex need their folder moved out
+   * of the live discovery root. The parking path is a sibling of that root so
+   * restore stays atomic on the same file system.
+   */
+  setAgentEnabled(id: string, enabled: boolean): SkillDto {
+    const entry = this.entries.find((item) => item.id === id);
+    if (!entry || !entry.dto) {
+      throw new ProductFailure(
+        productError('SKILL_NOT_FOUND', { userMessage: 'This skill no longer exists on disk.' }),
+      );
+    }
+    if (entry.protected) {
+      throw new ProductFailure(
+        productError('SKILL_PROTECTED', {
+          userMessage: 'This Agent built-in is protected and cannot be disabled or removed.',
+        }),
+      );
+    }
+
+    const ownedByExternalAgent = entry.source.kind === 'claude' || entry.source.kind === 'codex';
+    if (!ownedByExternalAgent) return this.setEnabled(id, enabled);
+    if (entry.agentEnabled === enabled) return { ...entry.dto };
+
+    if (enabled) {
+      const parked = this.state.disabledInstalls[id];
+      if (!parked || !existsSync(join(parked.parkedPath, SKILL_FILE))) {
+        throw new ProductFailure(
+          productError('SKILL_NOT_FOUND', {
+            userMessage: 'The parked skill copy is missing and cannot be restored.',
+          }),
+        );
+      }
+      if (existsSync(parked.originalPath)) {
+        throw new ProductFailure(
+          productError('SKILL_RESTORE_CONFLICT', {
+            userMessage: 'A skill already exists at the original Agent path.',
+          }),
+        );
+      }
+      mkdirSync(dirname(parked.originalPath), { recursive: true });
+      renameSync(parked.parkedPath, parked.originalPath);
+      delete this.state.disabledInstalls[id];
+    } else {
+      const relativePath = relative(entry.source.root, entry.originalRoot);
+      if (!relativePath || relativePath.startsWith(`..${sep}`) || relativePath === '..') {
+        throw new ProductFailure(
+          productError('SKILL_PATH_OUTSIDE', {
+            userMessage: 'This installed copy is outside its Agent source root.',
+          }),
+        );
+      }
+      const parkedPath = join(
+        dirname(entry.source.root),
+        '.charter-disabled-skills',
+        entry.source.id,
+        relativePath,
+      );
+      if (existsSync(parkedPath)) {
+        throw new ProductFailure(
+          productError('SKILL_DISABLE_CONFLICT', {
+            userMessage: 'A parked copy already exists for this Agent skill.',
+          }),
+        );
+      }
+      mkdirSync(dirname(parkedPath), { recursive: true });
+      renameSync(entry.root, parkedPath);
+      this.state.disabledInstalls[id] = {
+        sourceId: entry.source.id,
+        originalPath: entry.originalRoot,
+        parkedPath,
+        disabledAt: new Date().toISOString(),
+      };
+    }
+
+    this.saveState();
+    this.rescan(enabled ? 'agent-skill-enabled' : 'agent-skill-disabled');
+    const dto = this.skillDtos.find((skill) => skill.id === id);
+    if (!dto) {
+      throw new ProductFailure(
+        productError('SKILL_NOT_FOUND', {
+          userMessage: 'The Agent skill changed on disk before the operation completed.',
+        }),
+      );
+    }
+    this.logger.info('agent skill install toggled', {
+      id,
+      enabled,
+      source: entry.source.id,
+    });
+    return { ...dto };
+  }
+
+  /** Resolve one exact, mutable copy for Electron's recoverable trash API. */
+  trashTarget(id: string): string {
+    const entry = this.entries.find((item) => item.id === id);
+    if (!entry) {
+      throw new ProductFailure(
+        productError('SKILL_NOT_FOUND', { userMessage: 'This skill no longer exists on disk.' }),
+      );
+    }
+    if (entry.protected) {
+      throw new ProductFailure(
+        productError('SKILL_PROTECTED', {
+          userMessage: 'This Agent built-in is protected and cannot be disabled or removed.',
+        }),
+      );
+    }
+    if (!existsSync(join(entry.root, SKILL_FILE))) {
+      throw new ProductFailure(
+        productError('SKILL_NOT_FOUND', { userMessage: 'This skill no longer exists on disk.' }),
+      );
+    }
+    return entry.root;
+  }
+
+  /** Reconcile state only after Electron confirms the folder reached Trash. */
+  finishTrash(id: string): void {
+    delete this.state.enabled[id];
+    delete this.state.disabledInstalls[id];
+    this.saveState();
+    this.rescan('trash');
+    this.logger.info('skill moved to trash', { id });
   }
 
   /** Audit view. Actual path containment follows symlinks before the read. */

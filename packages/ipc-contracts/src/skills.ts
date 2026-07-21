@@ -38,6 +38,14 @@ export const SkillDtoSchema = z.object({
   description: z.string(),
   /** User toggle: false = Off (disabled), true = Auto (enabled). */
   enabled: z.boolean(),
+  /**
+   * Whether the owning Agent can currently discover this installed copy.
+   * Linked Claude/Codex copies may be parked outside their live source while
+   * remaining visible here so the user can restore them. Older peers omit it.
+   */
+  agentEnabled: z.boolean().optional(),
+  /** Agent/vendor built-ins are visible for usage insight but cannot be moved or deleted. */
+  protected: z.boolean().optional(),
   /** Frontmatter `disable-model-invocation` — only `/skill:name`, never auto. */
   explicitOnly: z.boolean(),
   source: SkillSourceKindSchema,

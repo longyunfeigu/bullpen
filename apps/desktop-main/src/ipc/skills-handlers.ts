@@ -1,4 +1,4 @@
-import { dialog } from 'electron';
+import { dialog, shell } from 'electron';
 import { errorMessage, type Logger } from '@pi-ide/foundation';
 import { registerHandlers } from './router.js';
 import type { SkillStore } from '../services/skill-store.js';
@@ -73,6 +73,15 @@ export function registerSkillsHandlers(
       }),
       'skills.remove': async ({ id }) => ({ removed: skills.remove(id) }),
       'skills.setEnabled': async ({ id, enabled }) => ({ skill: skills.setEnabled(id, enabled) }),
+      'skills.setAgentEnabled': async ({ id, enabled }) => ({
+        skill: skills.setAgentEnabled(id, enabled),
+      }),
+      'skills.trash': async ({ id }) => {
+        const target = skills.trashTarget(id);
+        await shell.trashItem(target);
+        skills.finishTrash(id);
+        return { removed: true };
+      },
       'skills.read': async ({ id, relPath }) => skills.readFile(id, relPath),
       // ADR-0037: usage insight — catalog joined with ledger counts + the
       // preamble cost each enabled skill charges on every turn. ADR-0040

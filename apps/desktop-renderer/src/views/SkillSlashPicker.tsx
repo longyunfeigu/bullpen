@@ -107,7 +107,7 @@ export function useSkillSlash(options: {
           onMouseDown={(e) => e.preventDefault() /* keep textarea focus */}
           onClick={() => pick(s.name)}
         >
-          <Ic name="zap" size={13} />
+          <Ic name="puzzle" size={13} />
           <span className="hm-tt">
             <span className="skill-pick-name">/skill:{s.name}</span>
             <span className="skill-pick-desc">
@@ -129,11 +129,11 @@ export function useSkillSlash(options: {
           <button
             className="skill-pick-manage"
             data-testid={`${testid}-skill-manage`}
-            title="Per-skill usage and context budget in Settings → Skills"
+            title="Per-Agent usage and installed copies in Skills"
             onMouseDown={(e) => e.preventDefault() /* keep textarea focus until click */}
             onClick={() => {
               setOpen(false);
-              useAppStore.getState().openSettings('skills');
+              useAppStore.getState().setRailView('skills');
             }}
           >
             {skills.filter((s) => s.enabled).length} enabled · ≈

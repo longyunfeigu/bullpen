@@ -31,7 +31,7 @@ export type SessionTool = 'summary' | 'diff' | 'file' | 'preview' | 'terminal' |
 export type ProjectTool = 'editor' | 'search' | 'changes';
 /** The rail's contextual views inside the single navigation surface.
  * 'files' is the persistent context-feeding tree (ADR-0024, ADR-0029). */
-export type RailView = 'sessions' | 'inbox' | 'projects' | 'files';
+export type RailView = 'sessions' | 'inbox' | 'projects' | 'files' | 'skills';
 
 /** ADR-0042 — the identity of what the main content area is showing
  * (mirrors HomeShell's render priority). */
@@ -45,10 +45,12 @@ export type MainSurface =
 /** ADR-0042 — rail views form two navigation groups that each own their main
  * surface. sessions/inbox/files are one workbench (inbox is a filtered session
  * list; Files feeds the open conversation), projects is its own page. */
-export type RailGroup = 'workbench' | 'projects';
+export type RailGroup = 'workbench' | 'projects' | 'skills';
 
 export function railGroupOf(view: RailView): RailGroup {
-  return view === 'projects' ? 'projects' : 'workbench';
+  if (view === 'projects') return 'projects';
+  if (view === 'skills') return 'skills';
+  return 'workbench';
 }
 
 export function mainSurfaceOf(
@@ -263,7 +265,13 @@ const RAIL_VIEW_KEY = 'charter.rail.view.v1';
 function loadRailView(): RailView {
   try {
     const saved = window.sessionStorage.getItem(RAIL_VIEW_KEY);
-    if (saved === 'sessions' || saved === 'inbox' || saved === 'projects' || saved === 'files') {
+    if (
+      saved === 'sessions' ||
+      saved === 'inbox' ||
+      saved === 'projects' ||
+      saved === 'files' ||
+      saved === 'skills'
+    ) {
       return saved;
     }
   } catch {
@@ -359,7 +367,11 @@ export const useAppStore = create<AppStore>((set, get) => {
     projectBottomTab: null,
     archaeology: null,
     railView: typeof window === 'undefined' ? 'sessions' : loadRailView(),
-    savedSurfaces: { workbench: { kind: 'home' }, projects: { kind: 'home' } },
+    savedSurfaces: {
+      workbench: { kind: 'home' },
+      projects: { kind: 'home' },
+      skills: { kind: 'home' },
+    },
     composerFocusSeq: 0,
 
     openArchaeology(scope) {

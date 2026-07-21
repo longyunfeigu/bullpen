@@ -9,6 +9,7 @@ import { MemoryView } from '../views/MemoryView.js';
 import { DiagnosticsView } from '../views/DiagnosticsView.js';
 import { Ic } from '../views/home-icons.js';
 import { SessionRail } from '../views/SessionRail.js';
+import { SkillsView } from '../views/SkillsView.js';
 import { ScreenshotQuickCard } from '../views/ScreenshotQuickCard.js';
 import type { BottomTab, SideBarView } from '@pi-ide/ipc-contracts';
 import { useTaskStore } from '../store/taskStore.js';
@@ -209,6 +210,7 @@ export function Workbench(): React.JSX.Element {
   const dismissSessionNotice = useAppStore((s) => s.dismissSessionNotice);
   const pushToast = useAppStore((s) => s.pushToast);
   const appInfo = useAppStore((s) => s.appInfo);
+  const railView = useAppStore((s) => s.railView);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -253,10 +255,16 @@ export function Workbench(): React.JSX.Element {
         <button
           className="tb-chip"
           data-testid="surface-home"
-          title="Open the selected Session"
-          onClick={() => useAppStore.getState().setSurface('home')}
+          title={
+            railView === 'skills' ? 'Skills usage and installations' : 'Open the selected Session'
+          }
+          onClick={() => {
+            if (railView === 'skills') return;
+            useAppStore.getState().setSurface('home');
+          }}
         >
-          <Ic name="home" size={12} /> Sessions
+          <Ic name={railView === 'skills' ? 'puzzle' : 'home'} size={12} />{' '}
+          {railView === 'skills' ? 'Skills' : 'Sessions'}
         </button>
         {titleBarRegistry.center.map((C, i) => (
           <C key={i} />
@@ -281,7 +289,9 @@ export function Workbench(): React.JSX.Element {
 
       <div className="wb-main">
         <SessionRail />
-        {homeSurfaceRegistry.main ? (
+        {railView === 'skills' ? (
+          <SkillsView />
+        ) : homeSurfaceRegistry.main ? (
           <div className="session-home-host">
             <homeSurfaceRegistry.main />
           </div>

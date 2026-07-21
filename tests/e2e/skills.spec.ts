@@ -6,7 +6,7 @@ import { launchApp } from './helpers/launch.js';
 import { createGitFixture } from './helpers/fixtures.js';
 
 /**
- * Skills (ADR-0015): managed store + Settings manager + composer "/" picker.
+ * Skills: managed store + main-page usage manager + composer "/" picker.
  * Skills are pre-seeded into the managed store (userData/skills) — the product
  * itself never scans project folders for skills (AG-014).
  */
@@ -84,29 +84,27 @@ test('skills: manager (toggle/audit) + "/" picker + /skill: task through the moc
     await expect(page.getByTestId('task-room')).toContainText('/skill:pdf-fill');
     await page.getByTestId('task-room-back').click();
 
-    // ---- Settings → Agent → Skills manager ----
-    await page.getByTestId('home-settings').click();
-    await page.locator('.st-nav-item', { hasText: 'Skills' }).click();
-    const row = page.getByTestId('skill-row-pdf-fill');
+    // ---- Skills main page: grouped catalog + per-Agent management ----
+    await page.getByTestId('rail-view-skills').click();
+    await expect(page.getByTestId('skills-main-page')).toBeVisible();
+    await expect(page.getByText('Future adapters', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Sources & trust', { exact: true })).toHaveCount(0);
+    const row = page.locator('tbody tr', { hasText: 'pdf-fill' });
     await expect(row).toBeVisible();
     await expect(row).toContainText('Fill and extract fields');
-    await expect(row).toContainText('1 script');
-    await expect(page.getByTestId('skill-row-deploy-staging')).toContainText('explicit-only');
+    await expect(page.locator('tbody tr', { hasText: 'deploy-staging' })).toContainText('explicit');
 
-    // Audit view: SKILL.md + bundled files, scripts flagged.
-    await page.getByTestId('skill-audit-pdf-fill').click();
-    const audit = page.getByTestId('skill-audit-panel-pdf-fill');
-    await expect(audit).toBeVisible();
-    await expect(audit).toContainText('You are using the pdf-fill skill');
-    await expect(audit).toContainText('scripts/run.py');
-    await expect(audit).toContainText('Permission Engine');
-
-    // Toggle Off: the row dims…
-    await page.getByTestId('skill-off-pdf-fill').click();
+    // Disable only the selected Pi copy: the grouped row dims…
+    await page.getByTestId('skills-manage-pdf-fill').click();
+    const pdfDrawer = page.getByRole('dialog', { name: 'Manage pdf-fill' });
+    await expect(pdfDrawer).toContainText('Pi Agent');
+    await expect(pdfDrawer.getByRole('checkbox', { name: 'Select Pi Agent copy' })).toBeChecked();
+    await page.getByTestId('skills-drawer-disable').click();
     await expect(row).toHaveClass(/off/);
 
     // …and the skill vanishes from the "/" picker immediately.
-    await page.getByTestId('overlay-settings').getByLabel('Close').click();
+    await page.getByRole('dialog', { name: 'Manage pdf-fill' }).getByLabel('Close').click();
+    await page.getByTestId('rail-view-sessions').click();
     await intent.click();
     await intent.press('/');
     await expect(page.getByTestId('home-skill-picker')).toBeVisible();
@@ -137,20 +135,19 @@ test('skills: discovers and live-syncs a trusted external Agent Skills source', 
   try {
     await page.getByTestId('surface-home').click();
     await page.getByTestId('home-settings').click();
-    await page.locator('.st-nav-item', { hasText: 'Skills' }).click();
+    await page.locator('.st-nav-item', { hasText: 'Skill Sources' }).click();
 
     const source = page.getByTestId('skill-source-agents');
-    await expect(source).toContainText('1 found');
-    const alphaRow = page.locator('.st-skill-row', { hasText: 'live-alpha' });
-    await expect(alphaRow).toBeVisible();
-    await expect(alphaRow).toContainText('Agent Skills');
-    await expect(alphaRow).toContainText('live');
-    await expect(alphaRow).toHaveClass(/off/); // discovery is not trust
+    await expect(source).toContainText('1 Skills');
 
-    // Trust the root and opt into automatic enablement for existing/future
-    // skills that do not have a per-skill override.
+    // Discovery is not trust. Trust the source and opt into automatic
+    // enablement before entering the main Skills workspace.
     await page.getByTestId('skill-source-trust-agents').check();
     await page.getByTestId('skill-source-auto-agents').check();
+    await page.getByTestId('settings-go-to-skills').click();
+    const alphaRow = page.locator('tbody tr', { hasText: 'live-alpha' });
+    await expect(alphaRow).toBeVisible();
+    await expect(alphaRow).toContainText('Pi');
     await expect(alphaRow).not.toHaveClass(/off/);
 
     // Atomic-ish editor update + newly added folder are reconciled by the
@@ -166,23 +163,100 @@ test('skills: discovers and live-syncs a trusted external Agent Skills source', 
       ].join('\n'),
     );
     seedSkill(agentsRoot, 'live-beta', { description: 'Added after app launch.' });
-    await expect(source).toContainText('2 found', { timeout: 15000 });
     await expect(alphaRow).toContainText('Live description version two.');
-    const betaRow = page.locator('.st-skill-row', { hasText: 'live-beta' });
+    const betaRow = page.locator('tbody tr', { hasText: 'live-beta' });
     await expect(betaRow).toBeVisible();
     await expect(betaRow).not.toHaveClass(/off/);
 
     // Deletion propagates too; Charter never owns or recreates linked files.
     rmSync(alphaDir, { recursive: true, force: true });
-    await expect(source).toContainText('1 found', { timeout: 15000 });
     await expect(alphaRow).toHaveCount(0);
 
-    await page.getByTestId('overlay-settings').getByLabel('Close').click();
+    await page.getByTestId('rail-view-sessions').click();
     const intent = page.getByTestId('home-intent');
     await intent.click();
     await intent.press('/');
     await expect(page.getByTestId('home-skill-item-live-beta')).toBeVisible();
     await expect(page.getByTestId('home-skill-item-live-alpha')).toHaveCount(0);
+  } finally {
+    await app.close();
+    rmSync(skillHome, { recursive: true, force: true });
+  }
+});
+
+test('skills: groups same-name Agent copies and scopes disable/delete safely', async () => {
+  test.setTimeout(120000);
+  const userDataDir = mkdtempSync(join(tmpdir(), 'pi-ide-agent-skills-'));
+  const skillHome = mkdtempSync(join(tmpdir(), 'pi-ide-agent-skill-home-'));
+  seedSkill(join(userDataDir, 'skills'), 'design-review', {
+    description: 'Review a product design against the shared rubric.',
+  });
+  seedSkill(join(skillHome, '.claude', 'skills'), 'design-review', {
+    description: 'Review a product design against the shared rubric.',
+  });
+  seedSkill(join(skillHome, '.codex', 'skills'), 'design-review', {
+    description: 'Review a product design against the shared rubric.',
+  });
+  seedSkill(join(skillHome, '.codex', 'skills', '.system'), 'system-pdf', {
+    description: 'Codex built-in PDF capability.',
+  });
+
+  const { app, page } = await launchApp({
+    userDataDir,
+    home: 'keep',
+    env: { PI_IDE_FORCE_MOCK: '1', PI_IDE_SKILLS_HOME: skillHome },
+  });
+  try {
+    await page.getByTestId('rail-view-skills').click();
+    const row = page.locator('tbody tr', { hasText: 'design-review' });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('Pi');
+    await expect(row).toContainText('Claude');
+    await expect(row).toContainText('Codex');
+
+    await page.getByTestId('skills-manage-design-review').click();
+    const drawer = page.getByRole('dialog', { name: 'Manage design-review' });
+    await expect(drawer).toContainText('All agents · 3');
+    await expect(drawer.getByRole('checkbox')).toHaveCount(3);
+    const piCopy = drawer.getByRole('checkbox', { name: 'Select Pi Agent copy' });
+    await expect(piCopy).toBeChecked();
+    await expect(drawer.getByRole('checkbox', { name: 'Select Claude Code copy' })).toBeChecked();
+    await expect(drawer.getByRole('checkbox', { name: 'Select Codex copy' })).toBeChecked();
+    await piCopy.uncheck();
+    await expect(piCopy).not.toBeChecked();
+    await expect(drawer).toContainText('2 selected');
+    await drawer.getByRole('button', { name: 'Claude · 1' }).click();
+    await expect(drawer.getByRole('checkbox', { name: 'Select Pi Agent copy' })).not.toBeChecked();
+    await expect(drawer.getByRole('checkbox', { name: 'Select Claude Code copy' })).toBeChecked();
+    await expect(drawer.getByRole('checkbox', { name: 'Select Codex copy' })).not.toBeChecked();
+    await page.getByTestId('skills-drawer-disable').click();
+    await expect(drawer).toContainText('Disabled');
+    await expect(row).toContainText('Claude · off');
+    await expect(row).not.toHaveClass(/is-off/);
+    await expect(page.getByTestId('skills-drawer-enable')).toBeEnabled();
+    await expect(page.getByTestId('skills-drawer-disable')).toBeDisabled();
+    await drawer.getByRole('button', { name: 'All agents · 3' }).click();
+    await expect(page.getByTestId('skills-drawer-enable')).toBeEnabled();
+    await expect(page.getByTestId('skills-drawer-disable')).toBeEnabled();
+    await drawer.getByRole('button', { name: 'Claude · 1' }).click();
+    await expect(page.getByTestId('skills-drawer-delete')).toBeEnabled();
+    await page.getByTestId('skills-drawer-delete').click();
+    await page.getByTestId('skills-delete-confirm-button').click();
+    await expect(drawer).toHaveCount(0);
+    await expect(row).not.toContainText('Claude');
+    await expect(row).toContainText('Pi');
+    await expect(row).toContainText('Codex');
+
+    const systemRow = page.locator('tbody tr', { hasText: 'system-pdf' });
+    await page.getByTestId('skills-manage-system-pdf').click();
+    const systemDrawer = page.getByRole('dialog', { name: 'Manage system-pdf' });
+    await expect(systemDrawer).toContainText('Built-in · locked');
+    await expect(systemDrawer.getByRole('checkbox', { name: 'Select Codex copy' })).toBeDisabled();
+    await expect(page.getByTestId('skills-drawer-enable')).toBeDisabled();
+    await expect(page.getByTestId('skills-drawer-disable')).toBeDisabled();
+    await expect(page.getByTestId('skills-drawer-delete')).toBeDisabled();
+    await systemDrawer.getByLabel('Close').click();
+    await expect(systemRow).toContainText('built-in');
   } finally {
     await app.close();
     rmSync(skillHome, { recursive: true, force: true });

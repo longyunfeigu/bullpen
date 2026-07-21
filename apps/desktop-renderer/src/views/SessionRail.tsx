@@ -17,6 +17,7 @@ import {
 } from './labels.js';
 import { ArmedIconButton } from './ui.js';
 import { SessionFilesPane } from './SessionFilesPane.js';
+import { SkillsRailPanel } from './SkillsRailPanel.js';
 import { useGlowTasks } from './useGlow.js';
 import { sessionDisplayTitle } from '../store/sessionAttention.js';
 import { unknownDirectories, useArchaeologyStore } from '../store/archaeologyStore.js';
@@ -953,7 +954,7 @@ export function SessionRail(): React.JSX.Element {
     <aside
       className={`sr-rail view-${view} ${projectsPanelOpen ? 'projects-panel-open' : ''}`}
       data-testid="home-sidebar"
-      aria-label="Sessions"
+      aria-label={view === 'skills' ? 'Skills' : 'Sessions'}
     >
       <nav className="sr-activity" aria-label="Application">
         <div className="sr-activity-brand" aria-label="Charter">
@@ -1009,6 +1010,15 @@ export function SessionRail(): React.JSX.Element {
         >
           <Ic name="brain" size={16} />
         </button>
+        <button
+          className={`sr-activity-item ${view === 'skills' ? 'active' : ''}`}
+          data-testid="rail-view-skills"
+          aria-label="Skills"
+          title="Skills — usage and Agent installations"
+          onClick={() => setView('skills')}
+        >
+          <Ic name="puzzle" size={17} />
+        </button>
         <span className="sr-activity-spacer" />
         <button
           className="sr-activity-item"
@@ -1030,13 +1040,17 @@ export function SessionRail(): React.JSX.Element {
         </button>
       </nav>
       <section className="sr-panel">
-        {view === 'inbox'
-          ? inboxPanel
-          : view === 'projects'
-            ? projectsPanel
-            : view === 'files'
-              ? filesPanel
-              : sessionsPanel}
+        {view === 'inbox' ? (
+          inboxPanel
+        ) : view === 'projects' ? (
+          projectsPanel
+        ) : view === 'skills' ? (
+          <SkillsRailPanel />
+        ) : view === 'files' ? (
+          filesPanel
+        ) : (
+          sessionsPanel
+        )}
       </section>
     </aside>
   );

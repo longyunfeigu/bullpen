@@ -4,7 +4,7 @@ import { rpcResult } from '../bridge.js';
 import { useAppStore, type SettingsSection } from '../store/appStore.js';
 import { useTaskStore } from '../store/taskStore.js';
 import { Ic } from './home-icons.js';
-import { SkillsSettingsSection } from './SkillsSettings.js';
+import { SkillSourcesSettingsSection } from './SkillSourcesSettings.js';
 import { SKIN_LABELS, type AppearanceSkin } from '../appearance.js';
 import { ZOOM_STEPS, zoomPercentLabel } from './ui-zoom.js';
 import '../styles/settings.css';
@@ -274,7 +274,7 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: string }> = [
   { id: 'editor', label: 'Editor', icon: 'pencil' },
   { id: 'terminal', label: 'Terminal', icon: 'terminal' },
   { id: 'agent', label: 'Agent', icon: 'bot' },
-  { id: 'skills', label: 'Skills', icon: 'zap' },
+  { id: 'skills', label: 'Skill Sources', icon: 'folder' },
   { id: 'models', label: 'Models', icon: 'provider' },
   { id: 'permissions', label: 'Permissions', icon: 'shield' },
   { id: 'privacy', label: 'Privacy', icon: 'eye' },
@@ -1016,14 +1016,14 @@ export function SettingsView(): React.JSX.Element {
                   Open Memory
                 </button>
               </Row>
-              <Row
-                label="Skills"
-                hint="Catalog, trust, per-skill usage and the context budget moved to their own section (ADR-0037)"
-              >
+              <Row label="Skills" hint="Usage and cross-Agent cleanup live on the main Skills page">
                 <button
                   className="btn"
                   data-testid="settings-open-skills"
-                  onClick={() => setSection('skills')}
+                  onClick={() => {
+                    useAppStore.getState().setOverlay('none');
+                    useAppStore.getState().setRailView('skills');
+                  }}
                 >
                   Open Skills
                 </button>
@@ -1032,7 +1032,7 @@ export function SettingsView(): React.JSX.Element {
           </>
         ) : null}
 
-        {section === 'skills' ? <SkillsSettingsSection /> : null}
+        {section === 'skills' ? <SkillSourcesSettingsSection /> : null}
 
         {section === 'models' ? (
           <>

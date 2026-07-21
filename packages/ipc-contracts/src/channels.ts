@@ -1387,6 +1387,22 @@ export const CHANNELS = {
     z.object({ id: z.string().min(1).max(200), enabled: z.boolean() }).strict(),
     z.object({ skill: SkillDtoSchema }),
   ),
+  // Toggle the owning Agent's installed copy. For Claude/Codex this parks the
+  // folder outside their live skills root; Pi copies use the existing catalog
+  // policy. A parked copy remains in the catalog so it can be restored.
+  'skills.setAgentEnabled': ch(
+    'skills.setAgentEnabled',
+    1,
+    z.object({ id: z.string().min(1).max(200), enabled: z.boolean() }).strict(),
+    z.object({ skill: SkillDtoSchema }),
+  ),
+  // Recoverable removal: main moves the exact installed copy to the OS trash.
+  'skills.trash': ch(
+    'skills.trash',
+    1,
+    z.object({ id: z.string().min(1).max(200) }).strict(),
+    z.object({ removed: z.boolean() }),
+  ),
   // Audit view: read one bundled file (defaults to SKILL.md). Path is resolved
   // inside the skill root; traversal is rejected in the handler.
   'skills.read': ch(

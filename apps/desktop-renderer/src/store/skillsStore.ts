@@ -28,6 +28,8 @@ interface SkillsStore {
   setSourcePolicy(id: string, patch: { trusted?: boolean; autoEnableNew?: boolean }): Promise<void>;
   remove(id: string): Promise<void>;
   setEnabled(id: string, enabled: boolean): Promise<void>;
+  setAgentEnabled(id: string, enabled: boolean): Promise<boolean>;
+  trash(id: string): Promise<boolean>;
   read(id: string, relPath?: string): Promise<{ path: string; content: string } | null>;
 }
 
@@ -130,6 +132,45 @@ export const useSkillsStore = create<SkillsStore>((set, get) => ({
       useAppStore.getState().pushToast('error', res.error.userMessage);
       await get().refresh();
     }
+  },
+
+  async setAgentEnabled(id, enabled) {
+    const before = get().skills;
+    set({
+      skills: before.map((skill) =>
+        skill.id === id
+          ? {
+              ...skill,
+              agentEnabled: enabled,
+              ...(!enabled && skill.source !== 'claude' && skill.source !== 'codex'
+                ? { enabled: false }
+                : {}),
+            }
+          : skill,
+      ),
+    });
+    const res = await rpcResult('skills.setAgentEnabled', { id, enabled });
+    if (!res.ok) {
+      set({ skills: before });
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      await get().refresh();
+      return false;
+    }
+    await get().refresh();
+    await get().refreshUsage();
+    return true;
+  },
+
+  async trash(id) {
+    const res = await rpcResult('skills.trash', { id });
+    if (!res.ok) {
+      useAppStore.getState().pushToast('error', res.error.userMessage);
+      await get().refresh();
+      return false;
+    }
+    await get().refresh();
+    await get().refreshUsage();
+    return res.data.removed;
   },
 
   async read(id, relPath) {
