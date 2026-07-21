@@ -144,5 +144,10 @@ try {
       // The temporary mount is removed below; keep the original failure.
     }
   }
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(scratch, {
+    recursive: true,
+    force: true,
+    maxRetries: process.platform === 'win32' ? 10 : 0,
+    retryDelay: 200,
+  });
 }

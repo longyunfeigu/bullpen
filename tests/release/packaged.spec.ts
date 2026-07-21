@@ -41,6 +41,11 @@ test('E2E-024: packaged app starts on a clean profile and survives security chec
     expect(rendererErrors).toEqual([]);
   } finally {
     await launched.close();
-    rmSync(launched.userDataDir, { recursive: true, force: true });
+    rmSync(launched.userDataDir, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === 'win32' ? 10 : 0,
+      retryDelay: 200,
+    });
   }
 });
