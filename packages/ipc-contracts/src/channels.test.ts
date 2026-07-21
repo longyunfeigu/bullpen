@@ -187,4 +187,29 @@ describe('IPC channel registry', () => {
     expect(validateChannelRequest('skills.usage', { windowDays: 1.5 }).ok).toBe(false);
     expect(validateChannelRequest('skills.usage', { windowDays: 45, extra: true }).ok).toBe(false);
   });
+
+  it('skills.usage v2 rows require the per-consumer split (ADR-0040)', () => {
+    const def = getChannel('skills.usage');
+    expect(def.schemaVersion).toBe(2);
+    const series = { uses: 0, lastUsedAt: null, weekly: [0, 0] };
+    const base = {
+      windowDays: 45,
+      since: '2026-06-06T00:00:00.000Z',
+      preambleOverheadTokens: 0,
+      skills: [
+        {
+          name: 'demo',
+          preambleTokens: 0,
+          uses: 0,
+          lastUsedAt: null,
+          weekly: [0, 0],
+          byConsumer: { charter: series, claude: series, codex: series },
+        },
+      ],
+    };
+    expect(def.response.safeParse(base).success).toBe(true);
+    const legacyRow = { ...base.skills[0] } as Record<string, unknown>;
+    delete legacyRow['byConsumer'];
+    expect(def.response.safeParse({ ...base, skills: [legacyRow] }).success).toBe(false);
+  });
 });

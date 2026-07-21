@@ -32,6 +32,34 @@ export type ProjectTool = 'editor' | 'search' | 'changes';
 /** The rail's contextual views inside the single navigation surface.
  * 'files' is the persistent context-feeding tree (ADR-0024, ADR-0029). */
 export type RailView = 'sessions' | 'inbox' | 'projects' | 'files';
+
+/** ADR-0042 — the identity of what the main content area is showing
+ * (mirrors HomeShell's render priority). */
+export type MainSurface =
+  | { kind: 'home' }
+  | { kind: 'room'; taskId: string }
+  | { kind: 'terminal'; terminalId: string }
+  | { kind: 'project-tool'; tool: ProjectTool }
+  | { kind: 'archaeology'; scope: string | null };
+
+/** ADR-0042 — rail views form two navigation groups that each own their main
+ * surface. sessions/inbox/files are one workbench (inbox is a filtered session
+ * list; Files feeds the open conversation), projects is its own page. */
+export type RailGroup = 'workbench' | 'projects';
+
+export function railGroupOf(view: RailView): RailGroup {
+  return view === 'projects' ? 'projects' : 'workbench';
+}
+
+export function mainSurfaceOf(
+  s: Pick<AppStore, 'taskRoomTaskId' | 'sessionTerminalId' | 'archaeology' | 'projectTool'>,
+): MainSurface {
+  if (s.sessionTerminalId) return { kind: 'terminal', terminalId: s.sessionTerminalId };
+  if (s.taskRoomTaskId) return { kind: 'room', taskId: s.taskRoomTaskId };
+  if (s.archaeology) return { kind: 'archaeology', scope: s.archaeology.scope };
+  if (s.projectTool) return { kind: 'project-tool', tool: s.projectTool };
+  return { kind: 'home' };
+}
 export type SettingsSection =
   | 'general'
   | 'editor'
@@ -137,6 +165,9 @@ interface AppStore {
    * "show me the project files" can reveal the one tree. */
   railView: RailView;
   setRailView(view: RailView): void;
+  /** ADR-0042: each nav group's last main surface, restored when the rail
+   * returns to that group so left nav and main content always correspond. */
+  savedSurfaces: Record<RailGroup, MainSurface>;
   openPreviewRail(taskId: string): void;
   closePreviewRail(): void;
   setSessionTool(tool: SessionTool): void;
@@ -254,455 +285,524 @@ function readStoredSessionSplit(taskId: string): number | null {
   return Number.isFinite(raw) && raw >= 20 && raw <= 80 ? raw : null;
 }
 
-export const useAppStore = create<AppStore>((set, get) => ({
-  ready: false,
-  appInfo: null,
-  settings: null,
-  settingsIssues: [],
-  layout: LayoutStateSchema.parse({}),
-  paletteOpen: false,
-  launcherOpen: false,
-  overlay: 'none',
-  settingsSection: 'general',
-  toasts: [],
-  sessionCompletionSignals: [],
-  sessionReplySignals: [],
-  sessionNotices: [],
-  sessionReveal: null,
-  surface: 'home',
-  taskRoomTaskId: null,
-  sessionTerminalId: null,
-  homePick: false,
-  pendingRefs: [],
-  newProjectOpen: false,
-  lens: null,
-  peek: null,
-  previewRailTaskId: null,
-  sessionTool: 'summary',
-  sessionToolExpanded: false,
-  sessionSplit: {},
-  sessionSplitDragging: false,
-  projectTool: null,
-  projectBottomTab: null,
-  archaeology: null,
-  railView: typeof window === 'undefined' ? 'sessions' : loadRailView(),
-  composerFocusSeq: 0,
+export const useAppStore = create<AppStore>((set, get) => {
+  /** ADR-0042 — openers of group-owned surfaces keep the rail in step: when
+   * the surface belongs to a different nav group than the rail shows, flip the
+   * rail and remember what the group we're leaving displayed. */
+  const crossRailPatch = (target: RailView): Partial<AppStore> => {
+    const prev = get().railView;
+    if (railGroupOf(prev) === railGroupOf(target)) return {};
+    saveRailView(target);
+    return {
+      railView: target,
+      savedSurfaces: { ...get().savedSurfaces, [railGroupOf(prev)]: mainSurfaceOf(get()) },
+    };
+  };
 
-  openArchaeology(scope) {
-    set({
-      archaeology: { scope },
-      taskRoomTaskId: null,
-      sessionTerminalId: null,
-      projectTool: null,
-      projectBottomTab: null,
-      surface: 'home',
-    });
-  },
-  closeArchaeology() {
-    set({ archaeology: null });
-  },
-
-  setRailView(railView) {
-    saveRailView(railView);
-    set({ railView });
-  },
-
-  setSurface(surface) {
-    // The compatibility "workspace" value now opens a contextual tool state
-    // inside the one Session shell. With an active Session it expands that
-    // Session's tool canvas; otherwise it opens the current project's Files
-    // tool beside the persistent global rail.
-    if (surface === 'workspace' && get().taskRoomTaskId) {
-      set({ surface: 'home', sessionToolExpanded: true, projectTool: null });
-      return;
-    }
-    set({
-      surface,
-      projectTool: surface === 'workspace' ? (get().projectTool ?? 'editor') : null,
-    });
-  },
-
-  setLens(lens) {
-    set({ lens });
-  },
-
-  openPeek(taskId, path, mode) {
-    // Peek and the preview rail share the room's side column — exclusive.
-    const nextMode = mode ?? 'diff';
-    set({
-      peek: peekOpen(get().peek, taskId, path, nextMode),
-      previewRailTaskId: null,
-      sessionTool: nextMode === 'diff' ? 'diff' : 'file',
-      ...(nextMode === 'diff' ? { sessionToolExpanded: true } : {}),
-    });
-  },
-  closePeek() {
-    set({ peek: null, sessionTool: 'summary', sessionToolExpanded: false });
-  },
-  openPreviewRail(taskId) {
-    set({ previewRailTaskId: taskId, peek: null, sessionTool: 'preview' });
-  },
-  closePreviewRail() {
-    set({ previewRailTaskId: null, sessionTool: 'summary', sessionToolExpanded: false });
-  },
-  setSessionTool(sessionTool) {
-    set({
-      sessionTool,
-      ...(sessionTool === 'diff' ? { sessionToolExpanded: true } : {}),
-      ...(sessionTool !== 'preview' ? { previewRailTaskId: null } : {}),
-      ...(sessionTool !== 'diff' && sessionTool !== 'file' ? { peek: null } : {}),
-    });
-  },
-  setSessionToolExpanded(sessionToolExpanded) {
-    set({ sessionToolExpanded });
-  },
-  setSessionSplit(taskId, pct) {
-    const sessionSplit = { ...get().sessionSplit };
-    if (pct === null) {
-      delete sessionSplit[taskId];
-      window.localStorage.removeItem(sessionSplitKey(taskId));
-    } else {
-      const clamped = Math.min(Math.max(pct, 20), 80);
-      sessionSplit[taskId] = clamped;
-      window.localStorage.setItem(sessionSplitKey(taskId), String(Math.round(clamped * 10) / 10));
-    }
-    set({ sessionSplit });
-  },
-  setSessionSplitDragging(sessionSplitDragging) {
-    set({ sessionSplitDragging });
-  },
-  ensureSessionSplit(taskId) {
-    if (taskId in get().sessionSplit) return;
-    const stored = readStoredSessionSplit(taskId);
-    if (stored !== null) {
-      set({ sessionSplit: { ...get().sessionSplit, [taskId]: stored } });
-    }
-  },
-  setProjectTool(projectTool) {
-    set({
-      projectTool,
-      surface: projectTool ? 'workspace' : 'home',
-      ...(projectTool
-        ? { taskRoomTaskId: null, sessionTerminalId: null, archaeology: null }
-        : { projectBottomTab: null }),
-    });
-  },
-  setProjectBottomTab(projectBottomTab) {
-    set({ projectBottomTab });
-  },
-  closePeekTab(path) {
-    const peek = get().peek;
-    if (peek) set({ peek: peekCloseTab(peek, path) });
-  },
-  setPeekMode(mode) {
-    const peek = get().peek;
-    if (peek) {
-      set({
-        peek: { ...peek, mode },
-        sessionTool: mode === 'diff' ? 'diff' : 'file',
-        ...(mode === 'diff' || mode === 'edit' ? { sessionToolExpanded: true } : {}),
-      });
-    }
-  },
-  setPeekActive(path) {
-    const peek = get().peek;
-    if (peek && peek.paths.includes(path)) set({ peek: { ...peek, active: path } });
-  },
-
-  focusComposer() {
-    set({ composerFocusSeq: get().composerFocusSeq + 1 });
-  },
-
-  openTaskRoom(taskId) {
-    // The peek belongs to one room — entering a different task's room resets it.
-    const peek = get().peek;
-    set({
-      taskRoomTaskId: taskId,
-      sessionTerminalId: null,
-      surface: 'home',
-      sessionTool: 'summary',
-      sessionToolExpanded: false,
-      projectTool: null,
-      projectBottomTab: null,
-      archaeology: null,
-      ...(peek && peek.taskId !== taskId ? { peek: null } : {}),
-    });
-  },
-
-  revealTaskSession(taskId) {
-    get().openTaskRoom(taskId);
-    set({
-      sessionReveal: {
-        taskId,
-        seq: (get().sessionReveal?.seq ?? 0) + 1,
-      },
-    });
-  },
-  clearSessionReveal(seq) {
-    if (get().sessionReveal?.seq === seq) set({ sessionReveal: null });
-  },
-
-  openTerminalSession(terminalId) {
-    set({
-      sessionTerminalId: terminalId,
-      taskRoomTaskId: null,
-      surface: 'home',
-      peek: null,
-      previewRailTaskId: null,
-      sessionTool: 'terminal',
-      sessionToolExpanded: false,
-      projectTool: null,
-      projectBottomTab: null,
-      archaeology: null,
-    });
-  },
-
-  closeTaskRoom() {
-    set({
-      taskRoomTaskId: null,
-      sessionTerminalId: null,
-      peek: null,
-      previewRailTaskId: null,
-      sessionTool: 'summary',
-      sessionToolExpanded: false,
-      projectTool: null,
-      projectBottomTab: null,
-    });
-  },
-
-  setHomePick(inProgress) {
-    set({ homePick: inProgress });
-  },
-
-  addPendingRefs(refs) {
-    set({ pendingRefs: [...new Set([...get().pendingRefs, ...refs])].slice(0, 20) });
-  },
-
-  consumePendingRefs() {
-    const refs = get().pendingRefs;
-    if (refs.length > 0) set({ pendingRefs: [] });
-    return refs;
-  },
-
-  setNewProjectOpen(open) {
-    set({ newProjectOpen: open });
-  },
-
-  async init() {
-    const [info, settingsState, layoutRes] = await Promise.all([
-      rpcResult('app.getInfo', {}),
-      rpcResult('settings.get', {}),
-      rpcResult('layout.get', {}),
-    ]);
-    if (info.ok) set({ appInfo: info.data });
-    if (settingsState.ok) {
-      applyAppearance(settingsState.data.effective);
-      set({ settings: settingsState.data.effective, settingsIssues: settingsState.data.issues });
-    }
-    if (layoutRes.ok && layoutRes.data.layout) set({ layout: layoutRes.data.layout });
-    set({ ready: true });
-
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      applyAppearance(get().settings);
-    });
-    onEvent('settings.changed', () => {
-      void get().refreshSettings();
-    });
-  },
-
-  setLayout(patch) {
-    const layout = { ...get().layout, ...patch };
-    set({ layout });
-    persistLayout(layout);
-  },
-
-  toggleSidebar() {
-    if (!get().taskRoomTaskId) {
-      set({ projectTool: get().projectTool === 'editor' ? null : 'editor' });
-    }
-  },
-  toggleAgentPanel() {
-    if (get().taskRoomTaskId) {
-      set({ sessionTool: 'summary', sessionToolExpanded: !get().sessionToolExpanded });
-    }
-  },
-  toggleBottomPanel() {
-    if (get().taskRoomTaskId) {
-      set({
-        sessionTool: get().sessionTool === 'terminal' ? 'summary' : 'terminal',
-        sessionToolExpanded: get().sessionTool !== 'terminal',
-      });
-    }
-  },
-  showSideBarView(view) {
-    if (!get().taskRoomTaskId) {
-      if (view === 'search' || view === 'scm') {
+  /** Re-apply a remembered surface through its owning opener so every opener
+   * invariant (tool resets, peek scoping, mutual exclusion) holds. */
+  const applySurface = (surface: MainSurface): void => {
+    switch (surface.kind) {
+      case 'room':
+        get().openTaskRoom(surface.taskId);
+        return;
+      case 'terminal':
+        get().openTerminalSession(surface.terminalId);
+        return;
+      case 'archaeology':
+        get().openArchaeology(surface.scope);
+        return;
+      case 'project-tool':
+        get().setProjectTool(surface.tool);
+        return;
+      default:
         set({
-          surface: 'workspace',
-          projectTool: view === 'search' ? 'search' : 'changes',
+          taskRoomTaskId: null,
+          sessionTerminalId: null,
+          archaeology: null,
+          projectTool: null,
+          projectBottomTab: null,
+          surface: 'home',
         });
+    }
+  };
+
+  return {
+    ready: false,
+    appInfo: null,
+    settings: null,
+    settingsIssues: [],
+    layout: LayoutStateSchema.parse({}),
+    paletteOpen: false,
+    launcherOpen: false,
+    overlay: 'none',
+    settingsSection: 'general',
+    toasts: [],
+    sessionCompletionSignals: [],
+    sessionReplySignals: [],
+    sessionNotices: [],
+    sessionReveal: null,
+    surface: 'home',
+    taskRoomTaskId: null,
+    sessionTerminalId: null,
+    homePick: false,
+    pendingRefs: [],
+    newProjectOpen: false,
+    lens: null,
+    peek: null,
+    previewRailTaskId: null,
+    sessionTool: 'summary',
+    sessionToolExpanded: false,
+    sessionSplit: {},
+    sessionSplitDragging: false,
+    projectTool: null,
+    projectBottomTab: null,
+    archaeology: null,
+    railView: typeof window === 'undefined' ? 'sessions' : loadRailView(),
+    savedSurfaces: { workbench: { kind: 'home' }, projects: { kind: 'home' } },
+    composerFocusSeq: 0,
+
+    openArchaeology(scope) {
+      set({
+        archaeology: { scope },
+        taskRoomTaskId: null,
+        sessionTerminalId: null,
+        projectTool: null,
+        projectBottomTab: null,
+        surface: 'home',
+        ...crossRailPatch('projects'),
+      });
+    },
+    closeArchaeology() {
+      set({ archaeology: null });
+    },
+
+    setRailView(railView) {
+      const prev = get().railView;
+      saveRailView(railView);
+      if (railGroupOf(railView) === railGroupOf(prev)) {
+        // Panel swap inside one group (Sessions ⇄ Inbox ⇄ Files) — the main
+        // surface is the group's and stays put (ADR-0024 context feeding).
+        set({ railView });
+        return;
+      }
+      // ADR-0042: crossing nav groups swaps the main surface with the rail.
+      const target = get().savedSurfaces[railGroupOf(railView)];
+      set({
+        railView,
+        savedSurfaces: { ...get().savedSurfaces, [railGroupOf(prev)]: mainSurfaceOf(get()) },
+      });
+      applySurface(target);
+    },
+
+    setSurface(surface) {
+      // The compatibility "workspace" value now opens a contextual tool state
+      // inside the one Session shell. With an active Session it expands that
+      // Session's tool canvas; otherwise it opens the current project's Files
+      // tool beside the persistent global rail.
+      if (surface === 'workspace' && get().taskRoomTaskId) {
+        set({ surface: 'home', sessionToolExpanded: true, projectTool: null });
+        return;
+      }
+      set({
+        surface,
+        projectTool: surface === 'workspace' ? (get().projectTool ?? 'editor') : null,
+        ...(surface === 'workspace' ? crossRailPatch('files') : {}),
+      });
+    },
+
+    setLens(lens) {
+      set({ lens });
+    },
+
+    openPeek(taskId, path, mode) {
+      // Peek and the preview rail share the room's side column — exclusive.
+      const nextMode = mode ?? 'diff';
+      set({
+        peek: peekOpen(get().peek, taskId, path, nextMode),
+        previewRailTaskId: null,
+        sessionTool: nextMode === 'diff' ? 'diff' : 'file',
+        ...(nextMode === 'diff' ? { sessionToolExpanded: true } : {}),
+      });
+    },
+    closePeek() {
+      set({ peek: null, sessionTool: 'summary', sessionToolExpanded: false });
+    },
+    openPreviewRail(taskId) {
+      set({ previewRailTaskId: taskId, peek: null, sessionTool: 'preview' });
+    },
+    closePreviewRail() {
+      set({ previewRailTaskId: null, sessionTool: 'summary', sessionToolExpanded: false });
+    },
+    setSessionTool(sessionTool) {
+      set({
+        sessionTool,
+        ...(sessionTool === 'diff' ? { sessionToolExpanded: true } : {}),
+        ...(sessionTool !== 'preview' ? { previewRailTaskId: null } : {}),
+        ...(sessionTool !== 'diff' && sessionTool !== 'file' ? { peek: null } : {}),
+      });
+    },
+    setSessionToolExpanded(sessionToolExpanded) {
+      set({ sessionToolExpanded });
+    },
+    setSessionSplit(taskId, pct) {
+      const sessionSplit = { ...get().sessionSplit };
+      if (pct === null) {
+        delete sessionSplit[taskId];
+        window.localStorage.removeItem(sessionSplitKey(taskId));
       } else {
-        // ADR-0029: the one project tree lives in the rail's Files pane.
-        get().setRailView(view === 'tasks' ? 'sessions' : 'files');
+        const clamped = Math.min(Math.max(pct, 20), 80);
+        sessionSplit[taskId] = clamped;
+        window.localStorage.setItem(sessionSplitKey(taskId), String(Math.round(clamped * 10) / 10));
       }
-      return;
-    }
-    set({
-      sessionTool: view === 'explorer' ? 'file' : view === 'scm' ? 'diff' : 'summary',
-      sessionToolExpanded: view === 'explorer' || view === 'scm',
-    });
-  },
-  showBottomTab(tab) {
-    if (!get().taskRoomTaskId) {
-      if (tab !== 'terminal') {
+      set({ sessionSplit });
+    },
+    setSessionSplitDragging(sessionSplitDragging) {
+      set({ sessionSplitDragging });
+    },
+    ensureSessionSplit(taskId) {
+      if (taskId in get().sessionSplit) return;
+      const stored = readStoredSessionSplit(taskId);
+      if (stored !== null) {
+        set({ sessionSplit: { ...get().sessionSplit, [taskId]: stored } });
+      }
+    },
+    setProjectTool(projectTool) {
+      set({
+        projectTool,
+        surface: projectTool ? 'workspace' : 'home',
+        ...(projectTool
+          ? {
+              taskRoomTaskId: null,
+              sessionTerminalId: null,
+              archaeology: null,
+              // ADR-0029/0040: project tools pair with the rail's Files tree
+              // when arriving from the Projects page.
+              ...crossRailPatch('files'),
+            }
+          : { projectBottomTab: null }),
+      });
+    },
+    setProjectBottomTab(projectBottomTab) {
+      set({ projectBottomTab });
+    },
+    closePeekTab(path) {
+      const peek = get().peek;
+      if (peek) set({ peek: peekCloseTab(peek, path) });
+    },
+    setPeekMode(mode) {
+      const peek = get().peek;
+      if (peek) {
         set({
-          surface: 'workspace',
-          projectTool: get().projectTool ?? 'editor',
-          projectBottomTab: tab,
+          peek: { ...peek, mode },
+          sessionTool: mode === 'diff' ? 'diff' : 'file',
+          ...(mode === 'diff' || mode === 'edit' ? { sessionToolExpanded: true } : {}),
         });
       }
-      return;
-    }
-    set({
-      surface: 'home',
-      sessionTool: tab === 'terminal' ? 'terminal' : tab === 'tests' ? 'review' : 'summary',
-      sessionToolExpanded: tab === 'terminal',
-    });
-  },
-  setPaletteOpen(open) {
-    set({ paletteOpen: open });
-  },
-  setLauncherOpen(open) {
-    set({ launcherOpen: open });
-  },
-  setOverlay(overlay) {
-    set({ overlay });
-  },
-  openSettings(settingsSection = 'general') {
-    set({ overlay: 'settings', settingsSection });
-  },
+    },
+    setPeekActive(path) {
+      const peek = get().peek;
+      if (peek && peek.paths.includes(path)) set({ peek: { ...peek, active: path } });
+    },
 
-  async updateSettings(scope, patch) {
-    const result = await rpcResult('settings.update', { scope, patch });
-    if (result.ok) {
-      applyAppearance(result.data.effective);
-      set({ settings: result.data.effective, settingsIssues: result.data.issues });
-    } else {
-      get().pushToast('error', `${result.error.userMessage} (${result.error.code})`);
-    }
-  },
+    focusComposer() {
+      set({ composerFocusSeq: get().composerFocusSeq + 1 });
+    },
 
-  async refreshSettings() {
-    const result = await rpcResult('settings.get', {});
-    if (result.ok) {
-      applyAppearance(result.data.effective);
-      set({ settings: result.data.effective, settingsIssues: result.data.issues });
-    }
-  },
-
-  pushToast(kind, message) {
-    const toast: Toast = { id: newId('toast'), kind, message };
-    set({ toasts: [...get().toasts, toast] });
-    setTimeout(() => get().dismissToast(toast.id), kind === 'error' ? 8000 : 4000);
-  },
-  dismissToast(id) {
-    set({ toasts: get().toasts.filter((t) => t.id !== id) });
-  },
-  signalSessionReply(taskId, edgeKey) {
-    if (get().sessionReplySignals.some((signal) => signal.edgeKey === edgeKey)) return;
-    const id = newId('session-reply');
-    set({
-      sessionReplySignals: [...get().sessionReplySignals, { id, edgeKey, taskId }].slice(-32),
-    });
-    setTimeout(() => {
+    openTaskRoom(taskId) {
+      // The peek belongs to one room — entering a different task's room resets it.
+      const peek = get().peek;
       set({
-        sessionReplySignals: get().sessionReplySignals.filter((candidate) => candidate.id !== id),
+        taskRoomTaskId: taskId,
+        sessionTerminalId: null,
+        surface: 'home',
+        sessionTool: 'summary',
+        sessionToolExpanded: false,
+        projectTool: null,
+        projectBottomTab: null,
+        archaeology: null,
+        ...(peek && peek.taskId !== taskId ? { peek: null } : {}),
+        ...crossRailPatch('sessions'),
       });
-    }, 4_200);
-  },
-  signalExternalSessionNotice(task, edgeKey, boundary, status = 'ok', lastUserMessage = null) {
-    const info = externalSessionReplyInfo(task, boundary, status);
-    if (!info || get().settings?.notifications.enabled === false) return;
-    // If the process already crossed a terminal task-state edge, that stronger
-    // task notification owns the banner. The row presence signal still runs.
-    if (sessionCompletionInfo(task)) return;
-    if (get().sessionNotices.some((notice) => notice.edgeKey === edgeKey)) return;
+    },
 
-    const id = newId('session-reply-notice');
-    const notice: SessionNotice = {
-      id,
-      edgeKey,
-      taskId: task.id,
-      state: task.state,
-      tone: info.tone,
-      kind: 'reply',
-      // A reply notice names the message it answers, not the session: after
-      // "who are you", a banner reading like the first message is a lie.
-      title: lastUserMessage?.trim() || sessionDisplayTitle(task),
-      projectName: task.projectName,
-      label: info.label,
-      body: info.body,
-    };
-    // A later reply for this Session replaces the earlier one instead of
-    // stacking repeated cards for the same long-lived interactive process.
-    set({
-      sessionNotices: [
-        ...get().sessionNotices.filter((candidate) => candidate.taskId !== task.id),
-        notice,
-      ].slice(-3),
-    });
-    setTimeout(() => get().dismissSessionNotice(id), 5_000);
-  },
-  signalSessionCompletion(task) {
-    const info = sessionCompletionInfo(task);
-    if (!info) return;
-    const edgeKey = `${task.id}:${task.state}:${task.updatedAt}`;
-    if (get().sessionCompletionSignals.some((signal) => signal.edgeKey === edgeKey)) return;
-
-    const id = newId('session-completion');
-    const signal: SessionCompletionSignal = {
-      id,
-      edgeKey,
-      taskId: task.id,
-      state: task.state,
-      tone: info.tone,
-    };
-    set({
-      sessionCompletionSignals: [...get().sessionCompletionSignals, signal].slice(-24),
-    });
-    setTimeout(() => {
+    revealTaskSession(taskId) {
+      get().openTaskRoom(taskId);
       set({
-        sessionCompletionSignals: get().sessionCompletionSignals.filter(
-          (candidate) => candidate.id !== id,
-        ),
+        sessionReveal: {
+          taskId,
+          seq: (get().sessionReveal?.seq ?? 0) + 1,
+        },
       });
-    }, 4_200);
+    },
+    clearSessionReveal(seq) {
+      if (get().sessionReveal?.seq === seq) set({ sessionReveal: null });
+    },
 
-    // The global notification preference gates banners, while the quieter row
-    // pulse remains available as local Session-page feedback.
-    if (get().settings?.notifications.enabled === false) return;
-    const notice: SessionNotice = {
-      ...signal,
-      kind: 'completion',
-      title: sessionDisplayTitle(task),
-      projectName: task.projectName,
-      label: info.label,
-      body: info.body,
-    };
-    // A task-state completion is stronger than a preceding external reply
-    // edge, so it atomically replaces that Session's transient reply card.
-    set({
-      sessionNotices: [
-        ...get().sessionNotices.filter((candidate) => candidate.taskId !== task.id),
-        notice,
-      ].slice(-3),
-    });
-    setTimeout(() => get().dismissSessionNotice(id), 5_000);
-  },
-  dismissSessionNotice(id) {
-    set({ sessionNotices: get().sessionNotices.filter((notice) => notice.id !== id) });
-  },
-}));
+    openTerminalSession(terminalId) {
+      set({
+        sessionTerminalId: terminalId,
+        taskRoomTaskId: null,
+        surface: 'home',
+        peek: null,
+        previewRailTaskId: null,
+        sessionTool: 'terminal',
+        sessionToolExpanded: false,
+        projectTool: null,
+        projectBottomTab: null,
+        archaeology: null,
+        ...crossRailPatch('sessions'),
+      });
+    },
+
+    closeTaskRoom() {
+      set({
+        taskRoomTaskId: null,
+        sessionTerminalId: null,
+        peek: null,
+        previewRailTaskId: null,
+        sessionTool: 'summary',
+        sessionToolExpanded: false,
+        projectTool: null,
+        projectBottomTab: null,
+      });
+    },
+
+    setHomePick(inProgress) {
+      set({ homePick: inProgress });
+    },
+
+    addPendingRefs(refs) {
+      set({ pendingRefs: [...new Set([...get().pendingRefs, ...refs])].slice(0, 20) });
+    },
+
+    consumePendingRefs() {
+      const refs = get().pendingRefs;
+      if (refs.length > 0) set({ pendingRefs: [] });
+      return refs;
+    },
+
+    setNewProjectOpen(open) {
+      set({ newProjectOpen: open });
+    },
+
+    async init() {
+      const [info, settingsState, layoutRes] = await Promise.all([
+        rpcResult('app.getInfo', {}),
+        rpcResult('settings.get', {}),
+        rpcResult('layout.get', {}),
+      ]);
+      if (info.ok) set({ appInfo: info.data });
+      if (settingsState.ok) {
+        applyAppearance(settingsState.data.effective);
+        set({ settings: settingsState.data.effective, settingsIssues: settingsState.data.issues });
+      }
+      if (layoutRes.ok && layoutRes.data.layout) set({ layout: layoutRes.data.layout });
+      set({ ready: true });
+
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        applyAppearance(get().settings);
+      });
+      onEvent('settings.changed', () => {
+        void get().refreshSettings();
+      });
+    },
+
+    setLayout(patch) {
+      const layout = { ...get().layout, ...patch };
+      set({ layout });
+      persistLayout(layout);
+    },
+
+    toggleSidebar() {
+      if (!get().taskRoomTaskId) {
+        set({ projectTool: get().projectTool === 'editor' ? null : 'editor' });
+      }
+    },
+    toggleAgentPanel() {
+      if (get().taskRoomTaskId) {
+        set({ sessionTool: 'summary', sessionToolExpanded: !get().sessionToolExpanded });
+      }
+    },
+    toggleBottomPanel() {
+      if (get().taskRoomTaskId) {
+        set({
+          sessionTool: get().sessionTool === 'terminal' ? 'summary' : 'terminal',
+          sessionToolExpanded: get().sessionTool !== 'terminal',
+        });
+      }
+    },
+    showSideBarView(view) {
+      if (!get().taskRoomTaskId) {
+        if (view === 'search' || view === 'scm') {
+          set({
+            surface: 'workspace',
+            projectTool: view === 'search' ? 'search' : 'changes',
+            ...crossRailPatch('files'),
+          });
+        } else {
+          // ADR-0029: the one project tree lives in the rail's Files pane.
+          get().setRailView(view === 'tasks' ? 'sessions' : 'files');
+        }
+        return;
+      }
+      set({
+        sessionTool: view === 'explorer' ? 'file' : view === 'scm' ? 'diff' : 'summary',
+        sessionToolExpanded: view === 'explorer' || view === 'scm',
+      });
+    },
+    showBottomTab(tab) {
+      if (!get().taskRoomTaskId) {
+        if (tab !== 'terminal') {
+          set({
+            surface: 'workspace',
+            projectTool: get().projectTool ?? 'editor',
+            projectBottomTab: tab,
+          });
+        }
+        return;
+      }
+      set({
+        surface: 'home',
+        sessionTool: tab === 'terminal' ? 'terminal' : tab === 'tests' ? 'review' : 'summary',
+        sessionToolExpanded: tab === 'terminal',
+      });
+    },
+    setPaletteOpen(open) {
+      set({ paletteOpen: open });
+    },
+    setLauncherOpen(open) {
+      set({ launcherOpen: open });
+    },
+    setOverlay(overlay) {
+      set({ overlay });
+    },
+    openSettings(settingsSection = 'general') {
+      set({ overlay: 'settings', settingsSection });
+    },
+
+    async updateSettings(scope, patch) {
+      const result = await rpcResult('settings.update', { scope, patch });
+      if (result.ok) {
+        applyAppearance(result.data.effective);
+        set({ settings: result.data.effective, settingsIssues: result.data.issues });
+      } else {
+        get().pushToast('error', `${result.error.userMessage} (${result.error.code})`);
+      }
+    },
+
+    async refreshSettings() {
+      const result = await rpcResult('settings.get', {});
+      if (result.ok) {
+        applyAppearance(result.data.effective);
+        set({ settings: result.data.effective, settingsIssues: result.data.issues });
+      }
+    },
+
+    pushToast(kind, message) {
+      const toast: Toast = { id: newId('toast'), kind, message };
+      set({ toasts: [...get().toasts, toast] });
+      setTimeout(() => get().dismissToast(toast.id), kind === 'error' ? 8000 : 4000);
+    },
+    dismissToast(id) {
+      set({ toasts: get().toasts.filter((t) => t.id !== id) });
+    },
+    signalSessionReply(taskId, edgeKey) {
+      if (get().sessionReplySignals.some((signal) => signal.edgeKey === edgeKey)) return;
+      const id = newId('session-reply');
+      set({
+        sessionReplySignals: [...get().sessionReplySignals, { id, edgeKey, taskId }].slice(-32),
+      });
+      setTimeout(() => {
+        set({
+          sessionReplySignals: get().sessionReplySignals.filter((candidate) => candidate.id !== id),
+        });
+      }, 4_200);
+    },
+    signalExternalSessionNotice(task, edgeKey, boundary, status = 'ok', lastUserMessage = null) {
+      const info = externalSessionReplyInfo(task, boundary, status);
+      if (!info || get().settings?.notifications.enabled === false) return;
+      // If the process already crossed a terminal task-state edge, that stronger
+      // task notification owns the banner. The row presence signal still runs.
+      if (sessionCompletionInfo(task)) return;
+      if (get().sessionNotices.some((notice) => notice.edgeKey === edgeKey)) return;
+
+      const id = newId('session-reply-notice');
+      const notice: SessionNotice = {
+        id,
+        edgeKey,
+        taskId: task.id,
+        state: task.state,
+        tone: info.tone,
+        kind: 'reply',
+        // A reply notice names the message it answers, not the session: after
+        // "who are you", a banner reading like the first message is a lie.
+        title: lastUserMessage?.trim() || sessionDisplayTitle(task),
+        projectName: task.projectName,
+        label: info.label,
+        body: info.body,
+      };
+      // A later reply for this Session replaces the earlier one instead of
+      // stacking repeated cards for the same long-lived interactive process.
+      set({
+        sessionNotices: [
+          ...get().sessionNotices.filter((candidate) => candidate.taskId !== task.id),
+          notice,
+        ].slice(-3),
+      });
+      setTimeout(() => get().dismissSessionNotice(id), 5_000);
+    },
+    signalSessionCompletion(task) {
+      const info = sessionCompletionInfo(task);
+      if (!info) return;
+      const edgeKey = `${task.id}:${task.state}:${task.updatedAt}`;
+      if (get().sessionCompletionSignals.some((signal) => signal.edgeKey === edgeKey)) return;
+
+      const id = newId('session-completion');
+      const signal: SessionCompletionSignal = {
+        id,
+        edgeKey,
+        taskId: task.id,
+        state: task.state,
+        tone: info.tone,
+      };
+      set({
+        sessionCompletionSignals: [...get().sessionCompletionSignals, signal].slice(-24),
+      });
+      setTimeout(() => {
+        set({
+          sessionCompletionSignals: get().sessionCompletionSignals.filter(
+            (candidate) => candidate.id !== id,
+          ),
+        });
+      }, 4_200);
+
+      // The global notification preference gates banners, while the quieter row
+      // pulse remains available as local Session-page feedback.
+      if (get().settings?.notifications.enabled === false) return;
+      const notice: SessionNotice = {
+        ...signal,
+        kind: 'completion',
+        title: sessionDisplayTitle(task),
+        projectName: task.projectName,
+        label: info.label,
+        body: info.body,
+      };
+      // A task-state completion is stronger than a preceding external reply
+      // edge, so it atomically replaces that Session's transient reply card.
+      set({
+        sessionNotices: [
+          ...get().sessionNotices.filter((candidate) => candidate.taskId !== task.id),
+          notice,
+        ].slice(-3),
+      });
+      setTimeout(() => get().dismissSessionNotice(id), 5_000);
+    },
+    dismissSessionNotice(id) {
+      set({ sessionNotices: get().sessionNotices.filter((notice) => notice.id !== id) });
+    },
+  };
+});
 
 /** Toast a failed rpcResult's user message; narrows to the success shape. */
 export function okOrToast<T>(

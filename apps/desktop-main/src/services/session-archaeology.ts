@@ -35,6 +35,9 @@ export interface TranscriptSummary {
   endedAt: string | null;
   filesTouched: string[];
   skills: string[];
+  /** Timestamped Skill invocations (ADR-0040) — `skills` minus the entries
+   * whose transcript line carried no timestamp. */
+  skillEvents: Array<{ skill: string; at: string }>;
   turnCount: number;
 }
 
@@ -99,6 +102,7 @@ export function parseClaudeTranscript(text: string): TranscriptSummary {
     endedAt: null,
     filesTouched: [],
     skills: [],
+    skillEvents: [],
     turnCount: 0,
   };
   let firstUser: string | null = null;
@@ -138,7 +142,12 @@ export function parseClaudeTranscript(text: string): TranscriptSummary {
           if (path) out.filesTouched.push(path);
         } else if (name === 'Skill') {
           const skill = asString(input.skill);
-          if (skill) out.skills.push(skill);
+          if (skill) {
+            out.skills.push(skill);
+            // Usage insight (ADR-0040) needs the invocation time; entries
+            // without a line timestamp stay in `skills` but carry no event.
+            if (ts) out.skillEvents.push({ skill, at: ts });
+          }
         }
       }
     }
@@ -158,6 +167,8 @@ export function parseCodexRollout(text: string): TranscriptSummary {
     endedAt: null,
     filesTouched: [],
     skills: [],
+    // Reserved (ADR-0040): no verified Codex skill-invocation format yet.
+    skillEvents: [],
     turnCount: 0,
   };
   let firstUser: string | null = null;
@@ -267,10 +278,18 @@ interface Candidate {
   fileSessionId: string;
 }
 
+/** One external Skill invocation for the usage insight (ADR-0040). */
+export interface ExternalSkillUsageEvent {
+  skill: string;
+  at: string;
+  consumer: 'claude';
+}
+
 export class SessionArchaeologyService {
   private readonly cache = new Map<string, CacheEntry>();
   private known: DiscoveredSessionDto[] = [];
   private scanning: Promise<DiscoveredSessionDto[]> | null = null;
+  private collecting: Promise<ExternalSkillUsageEvent[]> | null = null;
 
   constructor(private readonly options: ArchaeologyOptions) {}
 
@@ -290,6 +309,41 @@ export class SessionArchaeologyService {
       this.scanning = null;
     });
     return this.scanning;
+  }
+
+  /**
+   * ADR-0040: every timestamped Skill-tool invocation across the Claude Code
+   * store, for the skills usage insight. No window parameter — the Claude
+   * store has no date partition so the walk cost is fixed, and window-free
+   * results let concurrent calls coalesce safely (aggregation windows later).
+   * Codex is reserved: its parser records no skill events, so its rollouts
+   * are never walked here.
+   */
+  async skillUsageEvents(): Promise<ExternalSkillUsageEvent[]> {
+    if (!this.enabled) return [];
+    this.collecting ??= this.collectSkillEventsOnce().finally(() => {
+      this.collecting = null;
+    });
+    return this.collecting;
+  }
+
+  private async collectSkillEventsOnce(): Promise<ExternalSkillUsageEvent[]> {
+    const startedMs = Date.now();
+    const candidates = await this.claudeCandidates();
+    const events: ExternalSkillUsageEvent[] = [];
+    for (const candidate of candidates) {
+      const summary = await this.summarize(candidate);
+      if (!summary) continue;
+      for (const event of summary.skillEvents) {
+        events.push({ skill: event.skill, at: event.at, consumer: 'claude' });
+      }
+    }
+    this.options.logger.info('archaeology skill events collected', {
+      files: candidates.length,
+      events: events.length,
+      ms: Date.now() - startedMs,
+    });
+    return events;
   }
 
   /** The discovered session behind an adopt/terminal-context request. Scans

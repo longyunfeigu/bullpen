@@ -64,6 +64,7 @@ import { registerExternalHandlers } from './ipc/external-handlers.js';
 import { SessionArchaeologyService } from './services/session-archaeology.js';
 import { registerArchaeologyHandlers } from './ipc/archaeology-handlers.js';
 import { ScreenshotWatcher } from './services/screenshot-watcher.js';
+import { ClipboardScreenshotWatcher } from './services/clipboard-screenshot-watcher.js';
 import { registerScreenshotHandlers } from './ipc/screenshot-handlers.js';
 import { buildSupportBundle } from './services/support-bundle.js';
 import {
@@ -103,6 +104,7 @@ let archaeologyRef: SessionArchaeologyService | null = null;
 let externalLaunchIntents: ExternalLaunchIntents | null = null;
 let skillStoreRef: SkillStore | null = null;
 let screenshotWatcherRef: ScreenshotWatcher | null = null;
+let clipboardWatcherRef: ClipboardScreenshotWatcher | null = null;
 export function getM5(): M5Services | null {
   return m5Ref;
 }
@@ -584,8 +586,10 @@ if (!gotLock) {
       skillStoreRef = skillStore;
       skillStore.startWatching();
       registerSkillsHandlers(skillStore, logger.child('ipc'), {
-        // Deferred: taskServiceRef is assigned right below (ADR-0037).
-        usage: (windowDays) => taskServiceRef?.skillUsage(windowDays) ?? new Map(),
+        // Deferred: taskServiceRef is assigned right below (ADR-0037), and
+        // archaeologyRef further down (ADR-0040) — empty usage until then.
+        events: (windowDays) => taskServiceRef?.skillUsageEvents(windowDays) ?? [],
+        externalEvents: async () => (await archaeologyRef?.skillUsageEvents()) ?? [],
       });
       // ADR-0028: project memory — shared rules source, review-correction
       // capture, managed-block sync, external private-memory management.
@@ -676,6 +680,24 @@ if (!gotLock) {
         });
         void screenshotWatcherRef.start();
         registerScreenshotHandlers(screenshotWatcherRef, workspaceHost, logger.child('ipc'));
+
+        // ADR-0039: clipboard image card — WeChat/Snipaste-style captures
+        // never hit the disk, so a metadata-first clipboard poll feeds the
+        // same card pipeline. macOS-only, never under E2E (the OS clipboard
+        // is not test-controllable), env kill switch for opt-out.
+        const cardFunnel = screenshotWatcherRef;
+        if (
+          process.platform === 'darwin' &&
+          !process.env.PI_IDE_E2E &&
+          process.env.PI_IDE_CLIPBOARD_CAPTURE !== '0'
+        ) {
+          clipboardWatcherRef = new ClipboardScreenshotWatcher({
+            logger: logger.child('clipboard'),
+            captureDir: join(app.getPath('userData'), 'clipboard-captures'),
+            announce: (capture) => cardFunnel.announce(capture),
+          });
+          void clipboardWatcherRef.start();
+        }
       }
 
       // ADR-0017: external CLI agent sessions (claude/codex in user terminals).
@@ -892,6 +914,7 @@ if (!gotLock) {
     if (cleanupDone) return;
     event.preventDefault();
     skillStoreRef?.dispose();
+    clipboardWatcherRef?.dispose();
     screenshotWatcherRef?.dispose();
     externalSessionsRef?.dispose(); // before terminals: sessions close into review while the DB is open
     taskServiceRef?.shutdown();

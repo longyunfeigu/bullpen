@@ -503,7 +503,9 @@
   align-items: center;
   gap: 7px;
   font-weight: 600;
-  flex: none;
+  /* Must shrink before the row does: every control to the right is fixed-width,
+     so an unshrinkable name pushes the Off/Auto + Audit cluster off the card. */
+  flex: 0 1 auto;
   max-width: 46%;
   flex-wrap: wrap;
 }
@@ -838,6 +840,7 @@
   align-items: center;
   gap: 6px;
   margin: 14px 0 2px;
+  flex-wrap: wrap;
 }
 .st-sort-chip {
   font-family: inherit;
@@ -854,6 +857,22 @@
   color: var(--bg-card);
   border-color: transparent;
   font-weight: 600;
+}
+/* Consumer filter chips (ADR-0040): color dot mirrors the sparkline stacks. */
+.st-sort-chip.via {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.st-sort-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.st-via-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
 }
 .st-sortrow-hint {
   margin-left: auto;
@@ -895,6 +914,21 @@
 }
 .st-usage-spark i.z {
   background: var(--bg-hover);
+}
+/* Stacked per-consumer bucket (ADR-0040): the column owns the bar shape,
+   segments split its height proportionally to their counts. */
+.st-usage-spark .col {
+  display: inline-flex;
+  flex-direction: column-reverse;
+  width: 3.5px;
+  border-radius: 1.5px;
+  overflow: hidden;
+  flex: none;
+}
+.st-usage-spark .col i {
+  width: 100%;
+  min-height: 1px;
+  border-radius: 0;
 }
 .st-skill-tok {
   flex: none;

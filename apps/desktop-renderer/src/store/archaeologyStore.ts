@@ -31,6 +31,75 @@ export function sessionsInScope(
   );
 }
 
+/** ADR-0041 — status is a per-row fact (badge + button), not a grouping.
+ * The list filters on it instead. */
+export type ArchaeologyFilter = 'all' | 'external' | 'tracked';
+
+export function filterSessions(
+  sessions: DiscoveredSessionDto[],
+  filter: ArchaeologyFilter,
+): DiscoveredSessionDto[] {
+  if (filter === 'all') return sessions;
+  return sessions.filter((item) =>
+    filter === 'tracked' ? item.trackedTaskId !== null : item.trackedTaskId === null,
+  );
+}
+
+export interface SessionDayBucket {
+  key: 'today' | 'yesterday' | 'week' | 'earlier' | 'undated';
+  label: string;
+  sessions: DiscoveredSessionDto[];
+}
+
+const DAY_MS = 86_400_000;
+
+const BUCKET_ORDER: Array<[SessionDayBucket['key'], string]> = [
+  ['today', 'Today'],
+  ['yesterday', 'Yesterday'],
+  ['week', 'Past 7 days'],
+  ['earlier', 'Earlier'],
+  ['undated', 'Undated'],
+];
+
+/** ADR-0041 — the archaeology timeline groups by local calendar day (episodic
+ * recall: "the thing I ran yesterday"), one bucket per recall horizon rather
+ * than per date so a 30-day window doesn't produce 30 headers. Input order is
+ * preserved (the host already sorts by endedAt desc); empty buckets are
+ * omitted. Rounding absorbs DST-shifted days. */
+export function bucketSessionsByDay(
+  sessions: DiscoveredSessionDto[],
+  now = Date.now(),
+): SessionDayBucket[] {
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const buckets: Record<SessionDayBucket['key'], DiscoveredSessionDto[]> = {
+    today: [],
+    yesterday: [],
+    week: [],
+    earlier: [],
+    undated: [],
+  };
+  for (const session of sessions) {
+    const at = session.endedAt === null ? Number.NaN : Date.parse(session.endedAt);
+    if (!Number.isFinite(at)) {
+      buckets.undated.push(session);
+      continue;
+    }
+    const startOfThatDay = new Date(at);
+    startOfThatDay.setHours(0, 0, 0, 0);
+    const daysAgo = Math.round((startOfToday.getTime() - startOfThatDay.getTime()) / DAY_MS);
+    if (daysAgo <= 0) buckets.today.push(session);
+    else if (daysAgo === 1) buckets.yesterday.push(session);
+    else if (daysAgo < 7) buckets.week.push(session);
+    else buckets.earlier.push(session);
+  }
+  return BUCKET_ORDER.filter(([key]) => buckets[key].length > 0).map(([key, label]) => ({
+    key,
+    label,
+    sessions: buckets[key],
+  }));
+}
+
 /** Directories with agent activity that Charter has never opened as projects
  * (the "Agent activity · 30d" list) — grouped by cwd, newest first. */
 export function unknownDirectories(

@@ -68,11 +68,7 @@ import { join } from 'node:path';
 import { GitService } from '@pi-ide/git-service';
 import { openWorkspaceInfo } from '@pi-ide/workspace-service';
 import type { AgentHost, RuntimeKind } from './agent-host.js';
-import {
-  aggregateSkillUsage,
-  type SkillUsageAggregate,
-  type SkillUsageEvent,
-} from './skill-usage.js';
+import type { SkillUsageEvent } from './skill-usage.js';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { SettingsService } from './settings-service.js';
 import type { SkillStore } from './skill-store.js';
@@ -3415,11 +3411,13 @@ export class TaskService {
   }
 
   /**
-   * ADR-0037: per-skill invocation stats for Settings → Skills. Model loads
+   * ADR-0037: per-skill invocation events for Settings → Skills. Model loads
    * come from the tool audit (load_skill), explicit runs from the ledger
-   * above; both keyed by the runtime name recorded at call time.
+   * above; both keyed by the runtime name recorded at call time. Returns raw
+   * events — the skills.usage handler merges them with external CLI events
+   * and aggregates per consumer (ADR-0040).
    */
-  skillUsage(windowDays: number): Map<string, SkillUsageAggregate> {
+  skillUsageEvents(windowDays: number): SkillUsageEvent[] {
     const since = new Date(Date.now() - windowDays * 86_400_000).toISOString();
     const events: SkillUsageEvent[] = [];
     const toolRows = this.db
@@ -3443,7 +3441,7 @@ export class TaskService {
       .prepare('SELECT skill, at FROM skill_invocations WHERE at >= ?')
       .all(since) as Array<{ skill: string; at: string }>;
     for (const row of explicitRows) events.push({ skill: row.skill, at: row.at });
-    return aggregateSkillUsage(events, Date.now(), windowDays);
+    return events;
   }
 
   private persistToolAudit(record: ToolAuditRecord): void {

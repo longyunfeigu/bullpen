@@ -10,6 +10,7 @@ import { Ic, ProviderMark } from './home-icons.js';
 import { MODE_META, type ThinkingLevelId, presentedMeta } from './labels.js';
 import { ModelEffortControl } from './ui.js';
 import { readDragRef } from './dragRefs.js';
+import { contextFilesBlock, splitCharterRefs } from './charterRefs.js';
 import { useSkillSlash } from './SkillSlashPicker.js';
 import { useTerminalStore } from './TerminalPanel.js';
 
@@ -229,7 +230,6 @@ export function HomeView(): React.JSX.Element {
     }
     let goal = intent.trim();
     if (advanced && boundaries.trim()) goal += `\n\nConstraints:\n${boundaries.trim()}`;
-    if (refs.length > 0) goal += `\n\nContext files:\n${refs.map((r) => `- @${r}`).join('\n')}`;
     const acceptance = advanced
       ? criteria
           .split('\n')
@@ -255,7 +255,8 @@ export function HomeView(): React.JSX.Element {
         context: { kind: 'focused' },
         title: titleFromIntent(intent),
         reveal: false,
-        initialPrompt: goal,
+        // External CLIs read images behind @refs themselves — all-textual.
+        initialPrompt: goal + contextFilesBlock(refs),
       });
       if (id) {
         app.openTerminalSession(id);
@@ -274,9 +275,12 @@ export function HomeView(): React.JSX.Element {
     }
 
     setSubmitting(true);
+    // ADR-0039 am.1: a Pi session cannot see a path-only image reference —
+    // image refs ride task.start fileRefs (→ prompt image bytes, ADR-0024).
+    const { fileRefs, textRefs } = splitCharterRefs(refs);
     const ok = await taskStore.createAndStart({
       title: (advanced && titleDraft.trim()) || titleFromIntent(intent),
-      goalMd: goal,
+      goalMd: goal + contextFilesBlock(textRefs),
       acceptance,
       mode,
       model: { providerId, modelId, thinkingLevel: thinking },
@@ -288,6 +292,7 @@ export function HomeView(): React.JSX.Element {
         ? { worktreeSetup: wtSetup.trim() }
         : {}),
       conversationRefTaskIds: conversationRefs.map((ref) => ref.taskId),
+      ...(fileRefs.length > 0 ? { fileRefs } : {}),
     });
     setSubmitting(false);
     if (ok) {

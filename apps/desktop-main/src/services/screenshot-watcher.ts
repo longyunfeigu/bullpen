@@ -85,7 +85,9 @@ async function defaultIsScreenshot(path: string): Promise<boolean> {
   return mdlsSaysScreenshot(path);
 }
 
-function defaultThumbnail(path: string): string {
+/** Card thumbnail for an on-disk capture — shared with the clipboard watcher
+ * (ADR-0039), which writes its PNG first and thumbnails from the same path. */
+export function screenshotThumbnail(path: string): string {
   const image = nativeImage.createFromPath(path);
   if (image.isEmpty()) return '';
   for (const width of THUMB_WIDTHS) {
@@ -214,19 +216,31 @@ export class ScreenshotWatcher {
 
     let thumbDataUrl = '';
     try {
-      thumbDataUrl = (this.options.thumbnail ?? defaultThumbnail)(path);
+      thumbDataUrl = (this.options.thumbnail ?? screenshotThumbnail)(path);
     } catch (error) {
       this.options.logger.warn('screenshot thumbnail failed', { error: errorMessage(error) });
     }
-    const capture: ScreenshotCaptureDto = {
+    this.announce({
       path,
       name: basename(path),
       sizeBytes: stat.size,
       capturedAtMs: Math.round(bornMs),
       thumbDataUrl,
-    };
+    });
+  }
+
+  /** ADR-0039: single announce funnel. Clipboard captures (fully written
+   * into their managed dir before this call) enter here so they join the
+   * same allowlist, recent ring and broadcast as directory captures — one
+   * card pipeline, one renderer read surface. */
+  announce(capture: ScreenshotCaptureDto): void {
+    if (this.disposed || this.announcedSet.has(capture.path)) return;
     this.remember(capture);
-    this.options.logger.info('screenshot captured', { path, sizeBytes: stat.size });
+    this.options.logger.info('screenshot captured', {
+      path: capture.path,
+      sizeBytes: capture.sizeBytes,
+      origin: capture.origin ?? 'file',
+    });
     this.options.broadcast(capture);
   }
 

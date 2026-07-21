@@ -122,7 +122,7 @@ describe('persistence database', () => {
     before.db.close();
 
     const upgraded = open(MIGRATIONS);
-    expect(upgraded.appliedVersions).toEqual([4, 5, 6, 7]);
+    expect(upgraded.appliedVersions).toEqual([4, 5, 6, 7, 8]);
     const names = (
       upgraded.db
         .prepare(
@@ -214,7 +214,7 @@ describe('persistence database', () => {
     before.db.close();
 
     const upgraded = open(MIGRATIONS);
-    expect(upgraded.appliedVersions).toEqual([7]);
+    expect(upgraded.appliedVersions).toEqual([7, 8]);
     const status = (id: string) =>
       (
         upgraded.db

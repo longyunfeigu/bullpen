@@ -1646,6 +1646,31 @@
   display: flex;
   flex-direction: column;
 }
+.arch-filters {
+  display: flex;
+  gap: 6px;
+  padding: 2px 2px 8px;
+}
+.arch-chip {
+  padding: 3px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.arch-chip:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.arch-chip.active {
+  border-color: var(--fg);
+  background: var(--fg);
+  color: var(--fg-inverse);
+  font-weight: 620;
+}
 .arch-sec {
   padding: 12px 2px 5px;
   color: var(--fg-muted);

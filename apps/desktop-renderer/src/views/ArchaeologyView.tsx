@@ -1,7 +1,10 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { DiscoveredSessionDto } from '@pi-ide/ipc-contracts';
 import { useAppStore } from '../store/appStore.js';
 import {
+  type ArchaeologyFilter,
+  bucketSessionsByDay,
+  filterSessions,
   sessionsInScope,
   unknownDirectories,
   useArchaeologyStore,
@@ -12,9 +15,19 @@ import { timeAgo } from './SessionRail.js';
 /**
  * ADR-0038 — the session-archaeology page: every agent conversation that ever
  * ran in this scope (a project path, a discovered directory, or the whole
- * machine), Charter-tracked and discovered alike, newest first. Discovered
- * rows adopt with one click; tracked rows open their existing Session.
+ * machine), Charter-tracked and discovered alike. Discovered rows adopt with
+ * one click; tracked rows open their existing Session.
+ *
+ * ADR-0041 — the list is organized time-first (Today / Yesterday / …) because
+ * that is how users recall a session; tracked-vs-external is a per-row badge
+ * and a filter chip, never a grouping.
  */
+
+const FILTER_CHIPS: Array<{ key: ArchaeologyFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'external', label: 'External' },
+  { key: 'tracked', label: 'Tracked' },
+];
 
 function pathTail(path: string): string {
   const tail = path.replace(/\/+$/, '').split('/').pop();
@@ -77,6 +90,7 @@ export function ArchaeologyView(): React.JSX.Element {
   const closeArchaeology = useAppStore((s) => s.closeArchaeology);
   const openArchaeology = useAppStore((s) => s.openArchaeology);
   const store = useArchaeologyStore();
+  const [filter, setFilter] = useState<ArchaeologyFilter>('all');
 
   useEffect(() => {
     void store.scan();
@@ -84,8 +98,14 @@ export function ArchaeologyView(): React.JSX.Element {
   }, []);
 
   const scoped = useMemo(() => sessionsInScope(store.sessions, scope), [store.sessions, scope]);
-  const discovered = scoped.filter((item) => item.trackedTaskId === null);
-  const tracked = scoped.filter((item) => item.trackedTaskId !== null);
+  const externalCount = scoped.filter((item) => item.trackedTaskId === null).length;
+  const counts: Record<ArchaeologyFilter, number> = {
+    all: scoped.length,
+    external: externalCount,
+    tracked: scoped.length - externalCount,
+  };
+  const filtered = useMemo(() => filterSessions(scoped, filter), [scoped, filter]);
+  const buckets = useMemo(() => bucketSessionsByDay(filtered), [filtered]);
   const directories = useMemo(
     () => (scope === null ? unknownDirectories(store.sessions) : []),
     [store.sessions, scope],
@@ -129,17 +149,41 @@ export function ArchaeologyView(): React.JSX.Element {
             </div>
           ) : null}
 
-          {discovered.length > 0 ? (
-            <>
-              <div className="arch-sec">Discovered outside Charter · {discovered.length}</div>
-              {discovered.map((session) => (
+          {scoped.length > 0 ? (
+            <div className="arch-filters">
+              {FILTER_CHIPS.map((chip) => (
+                <button
+                  key={chip.key}
+                  className={`arch-chip ${filter === chip.key ? 'active' : ''}`}
+                  data-testid={`arch-filter-${chip.key}`}
+                  onClick={() => setFilter(chip.key)}
+                >
+                  {chip.label} · {counts[chip.key]}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {buckets.map((bucket) => (
+            <React.Fragment key={bucket.key}>
+              <div className="arch-sec">
+                {bucket.label} · {bucket.sessions.length}
+              </div>
+              {bucket.sessions.map((session) => (
                 <SessionRow
                   key={`${session.cli}:${session.sessionId}`}
                   session={session}
                   scope={scope}
                 />
               ))}
-            </>
+            </React.Fragment>
+          ))}
+
+          {scoped.length > 0 && filtered.length === 0 ? (
+            <div className="arch-empty" data-testid="arch-filter-empty">
+              No {filter === 'tracked' ? 'tracked' : 'external'} conversations
+              {scope ? ' in this project' : ''}.
+            </div>
           ) : null}
 
           {scope === null && directories.length > 0 ? (
@@ -170,19 +214,6 @@ export function ArchaeologyView(): React.JSX.Element {
                     <Ic name="chevron" size={12} className="arch-dir-chevron" />
                   </span>
                 </button>
-              ))}
-            </>
-          ) : null}
-
-          {tracked.length > 0 ? (
-            <>
-              <div className="arch-sec">Already tracked by Charter · {tracked.length}</div>
-              {tracked.map((session) => (
-                <SessionRow
-                  key={`${session.cli}:${session.sessionId}`}
-                  session={session}
-                  scope={scope}
-                />
               ))}
             </>
           ) : null}

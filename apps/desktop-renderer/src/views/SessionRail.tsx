@@ -541,10 +541,13 @@ export function SessionRail(): React.JSX.Element {
       app.setHomePick(true);
       void workspaceStore.openPath(projectPath);
     }
+    // ADR-0042: switch the nav section first — it restores that group's last
+    // surface — THEN apply this action's explicit intent (the composer), so
+    // the restore never overrides it.
+    setView('sessions');
     app.closeTaskRoom();
     app.setSurface('home');
     app.focusComposer();
-    setView('sessions');
   };
 
   // ADR-0024 (mock B+D): Sessions ⇄ Files segmented tabs. The attention dot on
@@ -897,18 +900,17 @@ export function SessionRail(): React.JSX.Element {
                 title={`${project.path} — open project files`}
                 onClick={() => {
                   // ADR-0029: "open project files" = the Editor surface plus
-                  // the rail's Files tree (the one project tree).
+                  // the rail's Files tree (the one project tree). ADR-0042:
+                  // setProjectTool pairs the rail's Files view itself.
                   setProjectsPanelOpen(false);
                   if (active) {
                     app.setProjectTool('editor');
-                    setView('files');
                     return;
                   }
                   app.setHomePick(true);
                   void workspaceStore
                     .openPath(project.path)
                     .then(() => useAppStore.getState().setProjectTool('editor'));
-                  setView('files');
                 }}
               >
                 <Ic name="folder" size={14} />

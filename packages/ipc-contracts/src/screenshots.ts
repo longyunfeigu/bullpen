@@ -27,6 +27,8 @@ export const ScreenshotCaptureSchema = z
     capturedAtMs: z.number().int().nonnegative(),
     /** Small JPEG data URL for the card; empty when thumbnailing failed. */
     thumbDataUrl: z.string().max(MAX_SCREENSHOT_THUMB_CHARS),
+    /** ADR-0039: where the capture came from. Absent = 'file' (v1 payloads). */
+    origin: z.enum(['file', 'clipboard']).optional(),
   })
   .strict();
 

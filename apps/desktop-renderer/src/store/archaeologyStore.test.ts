@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { DiscoveredSessionDto } from '@pi-ide/ipc-contracts';
-import { isDiscoveryStale, sessionsInScope, unknownDirectories } from './archaeologyStore.js';
+import {
+  bucketSessionsByDay,
+  filterSessions,
+  isDiscoveryStale,
+  sessionsInScope,
+  unknownDirectories,
+} from './archaeologyStore.js';
 
 function session(partial: Partial<DiscoveredSessionDto>): DiscoveredSessionDto {
   return {
@@ -75,6 +81,59 @@ describe('unknownDirectories (Agent activity list)', () => {
       { cwd: '/b', count: 1, lastAt: '2026-07-20T00:00:00Z', clis: ['claude'] },
       { cwd: '/a', count: 2, lastAt: '2026-07-10T00:00:00Z', clis: ['claude', 'codex'] },
     ]);
+  });
+});
+
+describe('bucketSessionsByDay (ADR-0041 time-first timeline)', () => {
+  // Local-time constructors keep the test timezone-agnostic: both `now` and
+  // the session timestamps shift together with the host tz.
+  const now = new Date(2026, 6, 21, 9, 30).getTime(); // July 21, 09:30 local
+  const at = (...d: [number, number, number, number, number]) => new Date(...d).toISOString();
+  const s = (tail: string, endedAt: string | null) =>
+    session({ sessionId: `6f3a92c1-0000-4000-8000-00000000000${tail}`, endedAt });
+
+  it('buckets by local calendar day, keeps input order, omits empty buckets', () => {
+    const buckets = bucketSessionsByDay(
+      [
+        s('1', at(2026, 6, 21, 8, 0)), // today
+        s('2', at(2026, 6, 21, 0, 5)), // today, just past midnight
+        s('3', at(2026, 6, 20, 23, 55)), // yesterday, just before midnight
+        s('4', at(2026, 6, 15, 12, 0)), // 6 days ago → still past-7-days
+        s('5', at(2026, 6, 14, 12, 0)), // 7 days ago → earlier
+        s('6', null), // undated tail
+      ],
+      now,
+    );
+    expect(buckets.map((b) => [b.key, b.sessions.map((x) => x.sessionId.slice(-1))])).toEqual([
+      ['today', ['1', '2']],
+      ['yesterday', ['3']],
+      ['week', ['4']],
+      ['earlier', ['5']],
+      ['undated', ['6']],
+    ]);
+  });
+
+  it('drops empty buckets entirely instead of rendering hollow headers', () => {
+    const buckets = bucketSessionsByDay([s('1', at(2026, 6, 20, 10, 0))], now);
+    expect(buckets.map((b) => b.key)).toEqual(['yesterday']);
+  });
+
+  it('future and unparsable timestamps degrade to today / undated', () => {
+    const buckets = bucketSessionsByDay([s('1', at(2026, 6, 22, 1, 0)), s('2', 'not-a-date')], now);
+    expect(buckets.map((b) => b.key)).toEqual(['today', 'undated']);
+  });
+});
+
+describe('filterSessions (status is a filter, not a grouping)', () => {
+  const list = [
+    session({ sessionId: '6f3a92c1-0000-4000-8000-000000000001' }),
+    session({ sessionId: '6f3a92c1-0000-4000-8000-000000000002', trackedTaskId: 'task-1' }),
+  ];
+
+  it('splits on trackedTaskId and passes everything through for all', () => {
+    expect(filterSessions(list, 'all')).toHaveLength(2);
+    expect(filterSessions(list, 'external').map((x) => x.sessionId.slice(-1))).toEqual(['1']);
+    expect(filterSessions(list, 'tracked').map((x) => x.sessionId.slice(-1))).toEqual(['2']);
   });
 });
 

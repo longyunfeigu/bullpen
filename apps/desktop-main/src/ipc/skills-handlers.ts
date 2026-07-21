@@ -1,16 +1,29 @@
 import { dialog } from 'electron';
-import type { Logger } from '@pi-ide/foundation';
+import { errorMessage, type Logger } from '@pi-ide/foundation';
 import { registerHandlers } from './router.js';
 import type { SkillStore } from '../services/skill-store.js';
-import { composeSkillUsage, type SkillUsageAggregate } from '../services/skill-usage.js';
+import {
+  aggregateSkillUsage,
+  composeSkillUsage,
+  joinExternalSkillEvents,
+  type ConsumerSkillUsageEvent,
+  type ExternalSkillEvent,
+  type SkillUsageEvent,
+} from '../services/skill-usage.js';
 
 export interface SkillsHandlerDeps {
   /**
-   * ADR-0037: invocation aggregation lives with the task database. The
+   * ADR-0037: the invocation ledgers live with the task database. The
    * callback indirection tolerates the TaskService being constructed after
    * these handlers register (usage reads empty until then).
    */
-  usage?: (windowDays: number) => Map<string, SkillUsageAggregate>;
+  events?: (windowDays: number) => SkillUsageEvent[];
+  /**
+   * ADR-0040: raw Skill invocations parsed out of external CLI transcripts
+   * (session archaeology, also constructed later). Failures degrade to
+   * Charter-only numbers — the panel never breaks over a transcript read.
+   */
+  externalEvents?: () => Promise<ExternalSkillEvent[]>;
 }
 
 const USAGE_WINDOW_DAYS_DEFAULT = 45;
@@ -62,12 +75,23 @@ export function registerSkillsHandlers(
       'skills.setEnabled': async ({ id, enabled }) => ({ skill: skills.setEnabled(id, enabled) }),
       'skills.read': async ({ id, relPath }) => skills.readFile(id, relPath),
       // ADR-0037: usage insight — catalog joined with ledger counts + the
-      // preamble cost each enabled skill charges on every turn.
+      // preamble cost each enabled skill charges on every turn. ADR-0040
+      // merges in external CLI invocations, split per consumer.
       'skills.usage': async ({ windowDays }) => {
         const days = windowDays ?? USAGE_WINDOW_DAYS_DEFAULT;
         const catalog = skills.list();
         const estimates = skills.preambleTokenEstimates();
-        const usage = deps.usage?.(days) ?? new Map<string, SkillUsageAggregate>();
+        const charter: ConsumerSkillUsageEvent[] = (deps.events?.(days) ?? []).map((event) => ({
+          ...event,
+          consumer: 'charter' as const,
+        }));
+        let external: ConsumerSkillUsageEvent[] = [];
+        try {
+          external = joinExternalSkillEvents((await deps.externalEvents?.()) ?? [], catalog);
+        } catch (e) {
+          logger.warn('external skill usage unavailable', { error: errorMessage(e) });
+        }
+        const usage = aggregateSkillUsage([...charter, ...external], Date.now(), days);
         return {
           windowDays: days,
           since: new Date(Date.now() - days * 86_400_000).toISOString(),

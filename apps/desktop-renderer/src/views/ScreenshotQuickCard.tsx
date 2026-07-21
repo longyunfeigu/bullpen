@@ -137,6 +137,10 @@ export function ScreenshotQuickCard(): React.JSX.Element | null {
 
   if (!current) return null;
 
+  // ADR-0039: clipboard captures ride the same pipeline; only the header
+  // tells the user where the image came from.
+  const fromClipboard = current.origin === 'clipboard';
+  const cardTitle = fromClipboard ? 'Clipboard image' : 'New screenshot';
   const primaryLabel =
     route.kind === 'external'
       ? `Feed to ${route.cli}`
@@ -157,7 +161,7 @@ export function ScreenshotQuickCard(): React.JSX.Element | null {
       data-testid="screenshot-card"
       data-screenshot-card
       role="dialog"
-      aria-label="New screenshot"
+      aria-label={cardTitle}
       onMouseEnter={() => setEngaged(true)}
       onMouseLeave={() => setEngaged(false)}
       onFocus={() => setEngaged(true)}
@@ -167,10 +171,10 @@ export function ScreenshotQuickCard(): React.JSX.Element | null {
     >
       <div className="screenshot-card-head">
         <span className="screenshot-card-glyph" aria-hidden>
-          ⌘⇧
+          {fromClipboard ? '⌘C' : '⌘⇧'}
         </span>
         <span className="screenshot-card-title">
-          <b>New screenshot</b>
+          <b>{cardTitle}</b>
           <small>
             {new Date(current.capturedAtMs).toLocaleTimeString([], {
               hour: '2-digit',

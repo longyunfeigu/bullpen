@@ -1397,9 +1397,11 @@ export const CHANNELS = {
   ),
   // Usage insight (ADR-0037): invocation counts aggregated from the tool audit
   // + explicit-invocation ledger, plus each enabled skill's preamble cost.
+  // v2 (ADR-0040): rows carry a per-consumer split (Charter / Claude Code /
+  // Codex) fed by external CLI transcripts on top of the in-app ledgers.
   'skills.usage': ch(
     'skills.usage',
-    1,
+    2,
     z.object({ windowDays: z.number().int().min(1).max(365).optional() }).strict(),
     z.object({
       windowDays: z.number().int().positive(),

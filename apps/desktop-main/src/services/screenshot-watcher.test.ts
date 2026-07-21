@@ -122,6 +122,26 @@ describe('ScreenshotWatcher', () => {
     expect(captures).toHaveLength(0);
   });
 
+  it('announce() registers foreign captures in the same allowlist, once (ADR-0039)', () => {
+    makeWatcher();
+    const capture: ScreenshotCaptureDto = {
+      path: join(dir, 'Clipboard 2026-07-21 at 09.00.00.png'),
+      name: 'Clipboard 2026-07-21 at 09.00.00.png',
+      sizeBytes: 5,
+      capturedAtMs: 1_700_000_000_000,
+      thumbDataUrl: '',
+      origin: 'clipboard',
+    };
+    watcher!.announce(capture);
+    watcher!.announce(capture); // dedupe: one card per path
+    expect(captures).toHaveLength(1);
+    expect(watcher!.seen(capture.path)).toBe(true);
+    expect(watcher!.recent()).toHaveLength(1);
+    watcher!.dispose();
+    watcher!.announce({ ...capture, path: join(dir, 'other.png') });
+    expect(captures).toHaveLength(1);
+  });
+
   it('keeps waiting while the file is still growing, then announces the final size', async () => {
     await makeWatcher({ settleMs: 60 }).start();
     const path = join(dir, 'Screenshot Growing.png');

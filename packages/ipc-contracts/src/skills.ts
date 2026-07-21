@@ -64,8 +64,29 @@ export const SkillDtoSchema = z.object({
 export type SkillDto = z.infer<typeof SkillDtoSchema>;
 
 /**
+ * Who ran the skill (ADR-0040): Charter's own ledgers, or an external CLI
+ * whose transcripts we can read. Order is fixed — 'charter' first, then the
+ * DISCOVERED_CLIS of archaeology.ts — and the UI renders it verbatim.
+ */
+export const SKILL_CONSUMERS = ['charter', 'claude', 'codex'] as const;
+export const SkillConsumerSchema = z.enum(SKILL_CONSUMERS);
+export type SkillConsumer = z.infer<typeof SkillConsumerSchema>;
+
+/** One consumer's slice of a skill's usage (ADR-0040). */
+export const SkillConsumerUsageSchema = z.object({
+  uses: z.number().int().nonnegative(),
+  /** ISO time of this consumer's most recent invocation inside the window. */
+  lastUsedAt: z.string().nullable(),
+  /** Same bucket count as the merged weekly (usageWeekCount(windowDays)). */
+  weekly: z.array(z.number().int().nonnegative()),
+});
+export type SkillConsumerUsage = z.infer<typeof SkillConsumerUsageSchema>;
+
+/**
  * Ledger-derived usage + per-turn context cost for one catalog skill
  * (ADR-0037). Joined to SkillDto by `name` so the catalog schema stays put.
+ * Top-level uses/lastUsedAt/weekly are merged across all consumers; the
+ * per-consumer split lives in byConsumer (ADR-0040).
  */
 export const SkillUsageDtoSchema = z.object({
   /** Runtime invocation name (matches SkillDto.name). */
@@ -76,11 +97,19 @@ export const SkillUsageDtoSchema = z.object({
    * nothing until invoked).
    */
   preambleTokens: z.number().int().nonnegative(),
-  /** load_skill loads + explicit `/skill:name` runs inside the window. */
+  /** Invocations inside the window, merged across all consumers. */
   uses: z.number().int().nonnegative(),
   /** ISO time of the most recent invocation inside the window, if any. */
   lastUsedAt: z.string().nullable(),
-  /** Per-week invocation buckets, oldest → newest. */
+  /** Per-week invocation buckets, oldest → newest, merged across consumers. */
   weekly: z.array(z.number().int().nonnegative()),
+  byConsumer: z.object({
+    /** In-app: load_skill tool calls + explicit `/skill:name` runs. */
+    charter: SkillConsumerUsageSchema,
+    /** Claude Code transcripts (Skill tool_use events, ADR-0040). */
+    claude: SkillConsumerUsageSchema,
+    /** Reserved: no verified Codex invocation format yet — always zeros. */
+    codex: SkillConsumerUsageSchema,
+  }),
 });
 export type SkillUsageDto = z.infer<typeof SkillUsageDtoSchema>;

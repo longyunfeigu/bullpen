@@ -3,13 +3,18 @@ import { useSkillsStore } from '../store/skillsStore.js';
 import { useAppStore } from '../store/appStore.js';
 import { Ic } from './home-icons.js';
 import {
+  CONSUMERS,
   CONTEXT_WINDOW_TOKENS,
+  consumerBreakdown,
   declutterCandidates,
   insightColor,
   lastUsedLabel,
   preambleTotalTokens,
+  projectUsage,
   sortSkillsForInsight,
+  sparkStacks,
   usageByName,
+  type ConsumerFilter,
   type SkillInsightSort,
 } from './skills-insight.js';
 
@@ -51,6 +56,7 @@ function SkillsBlock(): React.JSX.Element {
   const [auditText, setAuditText] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [sort, setSort] = useState<SkillInsightSort>('catalog');
+  const [via, setVia] = useState<ConsumerFilter>('all');
   const [hoverName, setHoverName] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewChecked, setReviewChecked] = useState<Set<string>>(new Set());
@@ -61,7 +67,11 @@ function SkillsBlock(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const byName = useMemo(() => usageByName(usage), [usage]);
+  // Raw rows keep the merged numbers (badges, tooltips, declutter);
+  // projected rows follow the Via filter (counts, sparklines, sorts).
+  const rawByName = useMemo(() => usageByName(usage), [usage]);
+  const projected = useMemo(() => projectUsage(usage, via), [usage, via]);
+  const byName = useMemo(() => usageByName(projected), [projected]);
   const totalTokens = useMemo(
     () => preambleTotalTokens(usage, overheadTokens),
     [usage, overheadTokens],
@@ -74,8 +84,8 @@ function SkillsBlock(): React.JSX.Element {
   );
   const sorted = useMemo(() => sortSkillsForInsight(skills, byName, sort), [skills, byName, sort]);
   const candidates = useMemo(
-    () => declutterCandidates(skills, byName, usageWindowDays),
-    [skills, byName, usageWindowDays],
+    () => declutterCandidates(skills, rawByName, usageWindowDays),
+    [skills, rawByName, usageWindowDays],
   );
 
   const openAudit = async (id: string): Promise<void> => {
@@ -104,8 +114,9 @@ function SkillsBlock(): React.JSX.Element {
   };
 
   const openReview = (): void => {
-    // Never-used candidates are preselected; costly-but-used ones opt in.
-    setReviewChecked(new Set(candidates.filter((c) => c.usage.uses === 0).map((c) => c.skill.id)));
+    // Fully-unused candidates are preselected; costly-but-used and
+    // externally-used ones opt in (ADR-0040).
+    setReviewChecked(new Set(candidates.filter((c) => c.preselect).map((c) => c.skill.id)));
     setReviewOpen(true);
   };
 
@@ -358,6 +369,34 @@ function SkillsBlock(): React.JSX.Element {
               {option.label}
             </button>
           ))}
+          <span className="st-skill-cap" style={{ margin: '0 0 0 10px' }}>
+            Via
+          </span>
+          <button
+            className={`st-sort-chip ${via === 'all' ? 'on' : ''}`}
+            data-testid="skills-via-all"
+            title="Count invocations from Charter and every readable external CLI"
+            onClick={() => setVia('all')}
+          >
+            All
+          </button>
+          {CONSUMERS.map((consumer) => (
+            <button
+              key={consumer.id}
+              className={`st-sort-chip via ${via === consumer.id ? 'on' : ''}`}
+              data-testid={`skills-via-${consumer.id}`}
+              disabled={consumer.id === 'codex'}
+              title={
+                consumer.id === 'codex'
+                  ? 'Codex transcript parsing is not supported yet — counts are always 0'
+                  : `Only count invocations made via ${consumer.label}`
+              }
+              onClick={() => setVia(consumer.id)}
+            >
+              <i className="st-via-dot" style={{ background: consumer.color }} />
+              {consumer.label}
+            </button>
+          ))}
           <span className="st-sortrow-hint">last {usageWindowDays} days</span>
         </div>
       ) : null}
@@ -369,8 +408,10 @@ function SkillsBlock(): React.JSX.Element {
       ) : (
         sorted.map((skill) => {
           const row = byName.get(skill.name);
+          const rawRow = rawByName.get(skill.name);
           const last = lastUsedLabel(row?.lastUsedAt ?? null, Date.now());
           const sparkMax = Math.max(1, ...(row?.weekly ?? [0]));
+          const stacks = row ? sparkStacks(row, via) : [];
           return (
             <React.Fragment key={skill.id}>
               <div
@@ -411,10 +452,10 @@ function SkillsBlock(): React.JSX.Element {
                       {skill.scriptCount} script{skill.scriptCount > 1 ? 's' : ''}
                     </span>
                   ) : null}
-                  {usageLoaded && skill.enabled && row && row.uses === 0 ? (
+                  {usageLoaded && skill.enabled && rawRow && rawRow.uses === 0 ? (
                     <span
                       className="st-skill-badge unused"
-                      title={`No invocations in the last ${usageWindowDays} days`}
+                      title={`No invocations via Charter or any external CLI in the last ${usageWindowDays} days`}
                     >
                       unused {usageWindowDays}d
                     </span>
@@ -427,20 +468,33 @@ function SkillsBlock(): React.JSX.Element {
                   <span
                     className="st-skill-usage"
                     data-testid={`skill-usage-${skill.id}`}
-                    title={`${row?.uses ?? 0} invocation${(row?.uses ?? 0) === 1 ? '' : 's'} in the last ${usageWindowDays} days${last ? ` · last ${last}` : ''}`}
+                    title={`${row?.uses ?? 0}${via === 'all' ? '' : ` ${CONSUMERS.find((c) => c.id === via)?.label}`} invocation${(row?.uses ?? 0) === 1 ? '' : 's'} in the last ${usageWindowDays} days${last ? ` · last ${last}` : ''}${rawRow ? `\n${consumerBreakdown(rawRow, Date.now())}` : ''}`}
                   >
                     <span className="st-usage-count">
                       {row?.uses ?? 0}
                       <small>×</small>
                     </span>
                     <span className="st-usage-spark" aria-hidden="true">
-                      {(row?.weekly ?? []).map((count, i) => (
-                        <i
-                          key={i}
-                          className={count === 0 ? 'z' : ''}
-                          style={{ height: `${Math.max(2, (count / sparkMax) * 14)}px` }}
-                        />
-                      ))}
+                      {(row?.weekly ?? []).map((count, i) => {
+                        const segments = stacks[i] ?? [];
+                        if (count === 0 || segments.length === 0) {
+                          return <i key={i} className="z" style={{ height: '2px' }} />;
+                        }
+                        return (
+                          <span
+                            key={i}
+                            className="col"
+                            style={{ height: `${Math.max(2, (count / sparkMax) * 14)}px` }}
+                          >
+                            {segments.map((seg) => (
+                              <i
+                                key={seg.consumer}
+                                style={{ flex: seg.count, background: seg.color }}
+                              />
+                            ))}
+                          </span>
+                        );
+                      })}
                     </span>
                   </span>
                 ) : null}

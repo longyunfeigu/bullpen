@@ -100,6 +100,38 @@ describe('parseClaudeTranscript (ADR-0038)', () => {
       '/Users/dev/git/blog/config.toml',
     ]);
     expect(summary.skills).toEqual(['baoyu-format-markdown']);
+    expect(summary.skillEvents).toEqual([
+      { skill: 'baoyu-format-markdown', at: '2026-07-17T09:01:00.000Z' },
+    ]);
+  });
+
+  it('skill events skip sidechains and unstamped lines (ADR-0040)', () => {
+    const extended =
+      claudeTranscript() +
+      '\n' +
+      lines(
+        // Subagent Skill loads never count toward usage.
+        {
+          type: 'assistant',
+          isSidechain: true,
+          timestamp: '2026-07-17T09:05:00.000Z',
+          message: {
+            content: [{ type: 'tool_use', name: 'Skill', input: { skill: 'from-sidechain' } }],
+          },
+        },
+        // A line without a timestamp still lists the skill, but no event.
+        {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'tool_use', name: 'Skill', input: { skill: 'unstamped' } }],
+          },
+        },
+      );
+    const summary = parseClaudeTranscript(extended);
+    expect(summary.skills).toEqual(['baoyu-format-markdown', 'unstamped']);
+    expect(summary.skillEvents).toEqual([
+      { skill: 'baoyu-format-markdown', at: '2026-07-17T09:01:00.000Z' },
+    ]);
   });
 
   it("prefers the CLI's own ai-title when present, ignores empty ones", () => {
@@ -292,5 +324,20 @@ describe('SessionArchaeologyService.scan (read-only fs discovery)', () => {
       projects: () => [],
     });
     await expect(service.scan()).resolves.toEqual([]);
+    await expect(service.skillUsageEvents()).resolves.toEqual([]);
+  });
+
+  it('skillUsageEvents walks only the Claude store and tags the consumer (ADR-0040)', async () => {
+    const service = new SessionArchaeologyService({
+      logger: silentLogger,
+      homeDir: await fakeHome(),
+      knownSessions: () => new Map(),
+      projects: () => [],
+    });
+    // The codex rollout in the fake home has no skill traces; the non-uuid
+    // agenda.jsonl is not a session transcript and must not be walked.
+    await expect(service.skillUsageEvents()).resolves.toEqual([
+      { skill: 'baoyu-format-markdown', at: '2026-07-17T09:01:00.000Z', consumer: 'claude' },
+    ]);
   });
 });
