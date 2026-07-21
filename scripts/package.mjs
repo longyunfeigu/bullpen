@@ -2,12 +2,13 @@
 // Build + package. `--dir-only` produces the unpacked app for smoke tests;
 // default produces installable artifacts for the current platform.
 import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
 import { root } from './build-lib.mjs';
 import { readProductPackage, validateReleasePolicy } from './release-lib.mjs';
 
 const dirOnly = process.argv.includes('--dir-only');
 const signingMode = process.env.CHARTER_SIGNING_MODE ?? 'unsigned';
-const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const electronBuilderCli = join(root, 'node_modules', 'electron-builder', 'cli.js');
 const requestedPlatforms = [
   ['--mac', '--mac'],
   ['--win', '--win'],
@@ -22,20 +23,13 @@ console.log(
   `[package] Charter ${pkg.version} (${policy.channel}, ${policy.signed ? 'signed' : 'unsigned'})`,
 );
 
-execFileSync('node', ['scripts/build.mjs'], { cwd: root, stdio: 'inherit' });
+execFileSync(process.execPath, ['scripts/build.mjs'], { cwd: root, stdio: 'inherit' });
 
-const args = [
-  'electron-builder',
-  '--config',
-  'electron-builder.yml',
-  '--publish',
-  'never',
-  ...requestedPlatforms,
-];
+const args = ['--config', 'electron-builder.yml', '--publish', 'never', ...requestedPlatforms];
 if (dirOnly) args.push('--dir');
 
 console.log(`[package] running electron-builder ${dirOnly ? '(--dir smoke)' : ''}…`);
-execFileSync(npx, args, {
+execFileSync(process.execPath, [electronBuilderCli, ...args], {
   cwd: root,
   stdio: 'inherit',
   env: {

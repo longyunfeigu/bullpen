@@ -52,6 +52,7 @@ nsis:
   allowToChangeInstallationDirectory: true
 
 linux:
+  executableName: charter
   target:
     - target: tar.gz
       arch: [x64]

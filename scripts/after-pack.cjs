@@ -12,9 +12,11 @@ function electronBinaryPath(context) {
     case 'win32':
       return path.join(context.appOutDir, `${name}.exe`);
     default:
-      return path.join(context.appOutDir, name.toLowerCase());
+      return path.join(context.appOutDir, context.packager.executableName);
   }
 }
+
+exports.electronBinaryPath = electronBinaryPath;
 
 exports.default = async function afterPack(context) {
   const binary = electronBinaryPath(context);

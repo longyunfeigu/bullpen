@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { root } from './build-lib.mjs';
 
 const releaseDir = join(root, 'release');
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const playwrightCli = join(root, 'node_modules', '@playwright', 'test', 'cli.js');
 const scratch = mkdtempSync(join(tmpdir(), 'charter-install-smoke-'));
 let mountedDmg = null;
 let executable = null;
@@ -103,11 +103,15 @@ try {
     throw new Error(`Installed executable was not found: ${executable ?? '(none)'}`);
   }
   console.log(`[install-smoke] staged ${executable}`);
-  execFileSync(npm, ['run', 'test:package:e2e'], {
-    cwd: root,
-    stdio: 'inherit',
-    env: { ...process.env, CHARTER_PACKAGED_EXECUTABLE: executable },
-  });
+  execFileSync(
+    process.execPath,
+    [playwrightCli, 'test', '--config', 'tests/release/playwright.config.ts'],
+    {
+      cwd: root,
+      stdio: 'inherit',
+      env: { ...process.env, CHARTER_PACKAGED_EXECUTABLE: executable },
+    },
+  );
 
   uninstallWindows();
   console.log('[install-smoke] clean install, launch, and uninstall PASS');
