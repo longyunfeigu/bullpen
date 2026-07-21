@@ -135,9 +135,10 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
       // User edits the same file in the editor while the agent is paused.
       await page.keyboard.press(`${mod}+p`);
       await expect(page.getByTestId('quick-open')).toBeVisible();
-      await page.keyboard.type('index');
-      await expect(page.getByTestId('quickopen-item-src/index.ts')).toBeVisible();
-      await page.keyboard.press('Enter');
+      await page.getByRole('textbox', { name: 'File name' }).fill('index');
+      const indexResult = page.getByTestId('quickopen-item-src/index.ts');
+      await expect(indexResult).toBeVisible();
+      await indexResult.click();
       await expect(page.getByTestId('tab-src/index.ts')).toBeVisible();
       // Wait for the model content to actually render before positioning the
       // cursor — clicking an empty editor would drop the typing at line 1.
@@ -145,13 +146,22 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
       await page.locator('.monaco-editor').first().click();
       await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End');
       await page.keyboard.press('End');
-      await page.keyboard.type('\n// keep me');
+      await page.keyboard.insertText('\n// keep me');
       await expect(page.locator('.monaco-editor').first()).toContainText('// keep me');
+      // Observe the dirty transition before waiting for it to clear; otherwise
+      // a fast count=0 check can pass against the pre-render state while the
+      // asynchronous save response is still being projected into the store.
+      await expect(page.getByTestId('status-dirty')).toContainText('1 unsaved');
       await page.keyboard.press(`${mod}+s`);
       // The edit must land at the end of the file (patch context lines intact).
       await expect
         .poll(() => readFileSync(join(fixture, 'src/index.ts'), 'utf8'))
         .toMatch(/\}\s*\n\/\/ keep me/);
+      // Cmd/Ctrl+S starts an async RPC. Disk bytes can be visible before the
+      // renderer has consumed the save response and cleared its dirty flag;
+      // continuing in that window would make the later agent-write broadcast
+      // look like an external overwrite of unsaved editor text.
+      await expect(page.getByTestId('status-dirty')).toHaveCount(0);
 
       // Let the agent continue: the stale patch must fail with a version conflict.
       await page.getByTestId('q-option-0').click();
@@ -160,7 +170,18 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
         ignoreCase: true,
       });
 
-      // The agent re-reads and retries; both the user's line and the change survive.
+      // The agent re-reads and retries. Assert the retry itself completed so a
+      // regression reports the gateway result instead of only the settled task
+      // state (a zero-change failed retry correctly settles as Answered/IDLE).
+      // The failed stale call renders as the dedicated conflict card above;
+      // the ordinary tool row is therefore the retry only.
+      const patchCalls = page.getByTestId('tl-tool-apply_patch');
+      await expect(patchCalls).toHaveCount(1, { timeout: 20000 });
+      const retry = patchCalls.first();
+      await retry.locator('button').click();
+      await expect(retry).toHaveAttribute('data-state', 'SUCCEEDED');
+
+      // Both the user's line and the successful agent change survive.
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
       });

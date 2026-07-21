@@ -7,6 +7,8 @@ directories:
   output: release
   buildResources: build-resources
 
+asar: true
+
 files:
   - package.json
   - apps/desktop-main/dist/**
@@ -27,15 +29,20 @@ afterPack: scripts/after-pack.cjs
 
 mac:
   category: public.app-category.developer-tools
+  artifactName: '${productName}-${version}-mac-${arch}.${ext}'
+  entitlements: build-resources/entitlements.mac.plist
+  entitlementsInherit: build-resources/entitlements.mac.inherit.plist
   target:
     - target: dmg
       arch: [arm64]
     - target: zip
       arch: [arm64]
-  identity: null
-  hardenedRuntime: false
+  # Required for future Developer ID notarization. Unsigned Preview builds use
+  # an ad-hoc identity because scripts/package.mjs disables identity discovery.
+  hardenedRuntime: true
 
 win:
+  artifactName: '${productName}-${version}-windows-${arch}-setup.${ext}'
   target:
     - target: nsis
       arch: [x64]
@@ -51,4 +58,6 @@ linux:
   category: Development
   artifactName: '${productName}-${version}-linux-preview.${ext}'
 
+# GitHub Actions owns draft/prerelease publication so a local package command
+# can never mutate Releases implicitly. Signing and publishing are independent.
 publish: null

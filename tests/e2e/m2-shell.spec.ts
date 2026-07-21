@@ -115,8 +115,10 @@ test.describe('M2 shell, settings and persistence', () => {
     const { app, page } = await launchApp();
     try {
       await page.getByTestId('palette-chip').click();
-      await page.keyboard.type('Open Diagnostics');
-      await page.keyboard.press('Enter');
+      const command = page.getByRole('textbox', { name: 'Command' });
+      await expect(command).toBeVisible();
+      await command.fill('Open Diagnostics');
+      await command.press('Enter');
       await expect(page.getByTestId('overlay-diagnostics')).toBeVisible();
       await expect(page.getByText('OK —')).toBeVisible();
     } finally {

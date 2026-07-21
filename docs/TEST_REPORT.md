@@ -1,71 +1,55 @@
-# Test Report
+# Charter 1.0.0-beta.1 Test Report
 
 ## Build identity
 
-- Version:
-- Commit:
-- Pi SDK version:
-- Electron version:
-- Date:
+- Version: `1.0.0-beta.1`
+- Commit: release candidate; the immutable commit is recorded by tag `v1.0.0-beta.1`
+- Pi SDK: `@earendil-works/pi-coding-agent@0.80.6`
+- Electron: `43.1.0`
+- Date: 2026-07-21
+- Release scope: zero-cost, unsigned GitHub Prerelease
+
+This report qualifies the public Beta. It does not qualify a signed/notarized Stable release.
 
 ## Automated suites
 
-| Suite | Platform | Result | Duration | Artifact |
-| --- | --- | --- | --- | --- |
-| Replay V3 — full unit/integration | macOS | PASS — 398/398 (projection engine 19: per-fact levels, no session upgrade, Story Time grouping/idle folding, chapters ≤8, coverage intervals, id-backed relations, 10k perf; ReplayService 10: pagination cursor, cache, evidence belongs-to-task boundary, ask fail-closed, receipt manifest hash reproducible; renderer registry/filters 6) | ~7s | Vitest |
-| Replay V3 — Electron E2E | macOS | PASS — 4/4 `replay-v3.spec.ts`: result-first recap without autoplay, no A–E navigation, no numeric confidence, evidence in ≤3 interactions, shared fact across depths and story/real, transport + keyboard, 1024/390 no-overflow + reachable Verify receipt, ask with citations + boundary, receipt HTML+JSON export, honest verification states, approval relations + timeline Verify entry, Changes-panel path anchor, Home-card recap entry, 10k-event ledger search/scrub | ~1.1m | `tests/e2e/replay-v3.spec.ts` |
-| Replay V3 — adapted regressions | macOS | PASS — p2 replay test (V3 assertions) + external-cli lifecycle test (Observed boundary, Explore search, per-fact levels). Known unrelated failures on this machine: ⌘K load-flake (documented pre-V3); 3 external-cli tests that launch the real Claude Code binary instead of the test shim (environment, pre-existing) | — | `tests/e2e/p2-parallel-replay.spec.ts`, `tests/e2e/external-cli.spec.ts` |
-| Replay V3 — contracts, boundaries, TypeScript and production build | macOS | PASS — boundary 234, TypeScript clean, build clean. `prettier --check` fails only on pre-existing unformatted `docs/design/*` prototype files (committed before this work) | — | npm scripts |
-| Replay V2 — full unit/integration | macOS | PASS — 367/367 | 3.47s | Vitest |
-| Replay V2 — live provider structured streams | macOS | PASS — Claude Code 2.1.210 stream-json + Codex CLI 0.144.4 JSONL; exact response received, no tools/files | 6.8s + 11.6s | direct CLI smoke |
-| Replay V2 — managed-agent Electron E2E | macOS | PASS | See Playwright output | `tests/e2e/p2-parallel-replay.spec.ts` |
-| Replay V2 — real PTY external session E2E | macOS | PASS — observed terminal + per-write evidence + D detail | See Playwright output | `tests/e2e/external-cli.spec.ts` |
-| Replay V2 — contracts, boundaries, TypeScript and production build | macOS | PASS — boundary 217, TypeScript clean, build clean | See command output | npm scripts |
-| Replay V2 — visual and interaction QA | macOS, 1440×900 + 1024×768 | PASS — A–E managed; A/D/E external; scrub, mode switching and evidence inspection | Playwright Electron + image inspection | temporary QA captures |
-| Full unit/integration suite | macOS | PASS — 358/358 | 3.48s | Vitest |
-| Coordinated skins — settings unit | macOS | PASS — 5/5 | 0.29s | Vitest |
-| Coordinated skins — Electron E2E | macOS | PASS — 3/3 | 7.3s | `tests/e2e/m2-shell.spec.ts` |
-| Coordinated skins — production build | macOS | PASS | 3.2s | Vite/Electron build |
-| Coordinated skins — visual QA | macOS, 1440×900 + 1024×640 | PASS — three editor skins + picker; no console errors, clipping or horizontal overflow | 3.6s | `/tmp/charter-skin-*.png` |
+| Suite | Platform | Result | Evidence |
+| --- | --- | --- | --- |
+| Static checks | macOS arm64 | PASS — Prettier, TypeScript, 346 boundary files | `npm run check` |
+| Unit/integration | macOS arm64 | PASS — 805/805 across 94 files | `npm test` |
+| Performance | macOS arm64 | PASS — 6/6; search first-200 p95 ≈254 ms; 10k replay p95 ≈35 ms | `npm run test:perf` |
+| Electron E2E | macOS arm64 | PASS — 138 passed, 19 feature/environment-gated skips, 0 failed, local retries disabled | `npm run test:e2e` |
+| Security | macOS arm64 | PASS — repository secret scan; 139 Vitest security cases; 2 packaged-boundary Electron cases | `npm run test:security` |
+| Reliability soak | macOS arm64 | PASS — 50 task laps, one worker, no restart, clean exit | `npm run test:soak` |
+| Dependency audit | installed production tree | PASS — audited resolutions enforced; `npm audit` reports 0 vulnerabilities | `node scripts/dependency-safety.mjs --check`; `npm audit --audit-level=high` |
+| Package/install smoke | macOS arm64 | PASS — DMG mount, clean copy, app launch, cleanup | `npm run package`; `npm run test:install:e2e` |
+| Packaged application | macOS arm64 | PASS — real packaged executable, `app://`, isolated renderer, correct version, no page errors | `npm run test:package:e2e` |
+
+The GitHub candidate workflow repeats native package and install smoke tests on macOS, Windows, and Linux before the tag is created. The tag-triggered release workflow repeats the complete release gates and only publishes assets after every job passes.
 
 ## E2E acceptance
 
-| ID | macOS | Windows | Linux Preview | Evidence | Notes |
-| --- | --- | --- | --- | --- | --- |
-| E2E-001 | | | | | |
-| E2E-002 | | | | | |
-| E2E-003 | | | | | |
-| E2E-004 | | | | | |
-| E2E-005 | | | | | |
-| E2E-006 | | | | | |
-| E2E-007 | | | | | |
-| E2E-008 | | | | | |
-| E2E-009 | | | | | |
-| E2E-010 | | | | | |
-| E2E-011 | | | | | |
-| E2E-012 | | | | | |
-| E2E-013 | | | | | |
-| E2E-014 | | | | | |
-| E2E-015 | | | | | |
-| E2E-016 | | | | | |
-| E2E-017 | | | | | |
-| E2E-018 | | | | | |
-| E2E-019 | | | | | |
-| E2E-020 | | | | | |
-| E2E-021 | | | | | |
-| E2E-022 | | | | | |
-| E2E-023 | | | | | |
-| E2E-024 | | | | | |
-
-## Security, integrity, reliability and performance gates
-
-| Gate | Result | Evidence | Open issue |
+| ID | Local result | Evidence | Release note |
 | --- | --- | --- | --- |
-| Data integrity | | | |
-| Permission/R3/R4 | | | |
-| Path boundary | | | |
-| Secret leakage | | | |
-| Crash recovery | | | |
-| Soak test | | | |
-| Performance | | | |
-| Packaging/update | | | |
+| E2E-001–022 | PASS | `tests/e2e/*.spec.ts`, `tests/security/*.spec.ts` | Full macOS Electron run is green |
+| E2E-023 | PASS | `tests/e2e/m12-release.spec.ts`; `packages/persistence/src/database.test.ts` | Old schema migrates through v7; task remains readable; injected failure restores a byte-identical backup |
+| E2E-024 | PASS (macOS); native matrix required before tag | `tests/release/packaged.spec.ts`; `scripts/install-smoke.mjs`; GitHub candidate workflow | Launches the packaged binary, not the development Electron entry point |
+
+## Release gates
+
+| Gate | Result | Evidence / limitation |
+| --- | --- | --- |
+| Data integrity and rollback | PASS | 50-lap soak, migration restore, rollback matrix, E2E-023 |
+| Permission R3/R4 | PASS | Security suite; R3 approval and R4 fail-closed policy |
+| Path boundary | PASS | Traversal, symlink and race coverage in the security suite |
+| Secret leakage | PASS | Repository scan plus renderer storage, heap, log and support-bundle checks |
+| Crash recovery | PASS | Worker, Renderer, LSP/PTY degradation and interrupted-task recovery coverage |
+| Performance | PASS | All six performance budgets met |
+| SBOM/licenses/checksums | PASS | SPDX SBOM, dependency inventory, third-party notices, manifest and SHA-256 files generated with release artifacts |
+| Unsigned Beta packaging | PASS on macOS; native CI matrix required before tag | Ad-hoc macOS signature verified; Gatekeeper rejection is expected and documented |
+| Signed/notarized Stable | BLOCKED | Requires paid Apple Developer ID/notarization and Windows code-signing credentials |
+| Fixed real-provider 20-task product evaluation | OPEN | Not claimed by this Beta; requires provider credentials and product-owner sign-off |
+
+## Release decision
+
+`1.0.0-beta.1` is approved for an **unsigned GitHub Prerelease** after the native candidate matrix and tag release workflow pass. Stable remains blocked and the release policy rejects an unsigned stable version.

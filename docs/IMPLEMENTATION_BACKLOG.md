@@ -137,17 +137,17 @@
 | M11-06 | 安全与性能门槛报告：§16.4/16.5/A11Y/PRIV 全项对照 + npm audit + 未达项分析 | M11-01..05,M11-07 | DONE | docs/M11_SECURITY_PERFORMANCE_REPORT.md；ADR-0027；npm audit 1 low+1 moderate（DOMPurify/monaco，已缓解，无 Critical/High） |
 | M11-07 | 隐私设置落地（PRIV-001..003）：诚实降级（无传输 banner，规则 9）+ 字段先行 + 真实脱敏崩溃预览 + 本地数据面板 + 一键删除历史/缓存 | M2-04,M10-04 | DONE | privacy-service.ts（dataSummary/crashPreview/clearHistory 三通道）+ SettingsView PrivacySection；unit 3 例 + privacy-settings.spec；impl-shots 三张 |
 
-## Milestone 12: 安装、更新与 Stable
+## Milestone 12: 安装、更新与发布
 
 | 任务 | 交付 | 依赖 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| M12-01 | macOS/Windows/Linux package pipelines | M10,M11 | NOT_STARTED |  |
-| M12-02 | 签名/公证配置与 secrets procedure | M12-01 | NOT_STARTED |  |
-| M12-03 | Stable/Beta update channels 与 rollback | M12-01,M2-03 | NOT_STARTED |  |
-| M12-04 | SBOM、第三方许可证、隐私与用户文档 | M12-01 | NOT_STARTED |  |
-| M12-05 | 干净机器安装/升级/卸载矩阵 | M12-03 | NOT_STARTED |  |
-| M12-06 | E2E-001..024 与 Release Gates 全量 | 全部 | NOT_STARTED |  |
-| M12-07 | Beta 修复、RC 冻结、Stable 发布 | M12-06 | NOT_STARTED |  |
+| M12-01 | macOS/Windows/Linux package pipelines | M10,M11 | DONE | CI candidate matrix + tag-triggered native release matrix；mac 本地 DMG/ZIP 已验证，远端三平台结果在打 tag 前回填 |
+| M12-02 | 签名/公证配置与 secrets procedure | M12-01 | VERIFIED (Beta) / BLOCKED (Stable) | `docs/SIGNING.md` + ADR-0043；无证书 Beta 仅允许 prerelease，Stable policy fail-closed；付费证书留作 Stable handoff |
+| M12-03 | Stable/Beta update channels 与 rollback | M12-01,M2-03 | VERIFIED (Beta) / BLOCKED (Stable) | GitHub Prerelease 手动下载通道 + E2E-023 migration/restore；无 updater 服务，不宣称自动升级或 Stable |
+| M12-04 | SBOM、第三方许可证、隐私与用户文档 | M12-01 | VERIFIED | SPDX SBOM、license inventory、THIRD_PARTY_NOTICES、manifest/checksums + SECURITY/PRIVACY/recovery/limitations/release notes |
+| M12-05 | 干净机器安装/升级/卸载矩阵 | M12-03 | DONE | mac DMG 真安装/启动/清理通过；Windows NSIS 与 Linux tar native CI smoke 已实现，远端结果在打 tag 前回填 |
+| M12-06 | E2E-001..024 与 Release Gates 全量 | 全部 | DONE | 本地 138 E2E + 19 条件 skip、E2E-023/024、805 unit、139+2 security、6 perf、50-lap soak；tag workflow 再跑全量 |
+| M12-07 | Beta 修复、RC 冻结、Stable 发布 | M12-06 | DONE (Beta RC) / BLOCKED (Stable) | `1.0.0-beta.1` 零成本 unsigned RC；Stable 需 Apple/Windows 证书、notarization、真实 20-task eval 与 owner sign-off |
 
 ## 完成规则
 

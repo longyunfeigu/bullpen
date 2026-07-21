@@ -347,6 +347,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const model = getModel(target);
     if (!model) return;
     clearTimeout(autosaveTimers.get(target));
+    // doc.save carries the current model value, so any older trailing
+    // doc.update mirror is redundant. Letting it fire after the save can race
+    // with an agent write and restore the pre-agent buffer in DocumentStore.
+    clearTimeout(updateTimers.get(target));
+    updateTimers.delete(target);
     const result = await rpcResult('doc.save', { path: target, content: model.getValue() });
     if (result.ok) {
       savedVersions.set(target, model.getAlternativeVersionId());

@@ -1,7 +1,7 @@
 # HANDOFF — 自主构建会话交接文档
 
 > 目的：上下文 compact/新会话后，从这里无损接续。规范源仍是 `docs/PRODUCT_ENGINEERING_SPEC.md` + `docs/IMPLEMENTATION_BACKLOG.md`；本文件只记录"规范里没有、但接续必须知道"的事实。
-> 最后更新：2026-07-13，M7 完成并提交后。
+> 最后更新：2026-07-21，M12 unsigned Beta release candidate 完成。
 >
 > **M8 起的细粒度待办已单列到 `docs/TODO_M8_M12.md`——新会话读完本文件后从那里执行。**
 
@@ -19,7 +19,9 @@
 | M8 Agent 写入/计划/审查 | VERIFIED | (见 git log) |
 | M9 验证/报告/历史 | VERIFIED | (见 git log) |
 | **PIVOT 双形态壳层（ADR-0004）** | VERIFIED | (本轮提交) |
-| M10–M12 | NOT_STARTED | 见 `docs/TODO_M8_M12.md` |
+| M10 | VERIFIED | (见 git log) |
+| M11 | VERIFIED | (见 git log) |
+| M12 unsigned Beta | DONE（tag 前候选） | `docs/TEST_REPORT.md`、ADR-0043；signed Stable BLOCKED |
 
 证据基线（pivot 提交时）：**238 个单元/集成测试**（32 文件）、**32 个 E2E** 连续两轮全绿；`npm run check` 干净（boundary 151 文件）。
 
@@ -50,7 +52,7 @@ M7 交付与接续点详见 `docs/TODO_M8_M12.md` 顶部"已完成状态"。
 - **M9**：VerificationService（runner/stale/superseded）、真实 Final Report（现在 TaskService.buildFinalReport 是骨架，标注 unverified）、E2E-016/017/018。
 - **M10**：恢复页（markOrphanedRunsInterrupted 已有）、DB 备份恢复演练、支持包脱敏导出（redact 基建在 foundation）、soak、无孤儿进程（E2E-007 已测一部分）。
 - **M11**：CSP 已上（main/index.ts），需安全测试矩阵（tests/security/ 目录已建但空）、性能 fixtures（createLargeTreeFixture 已有）、a11y 补强、vitest.security.config.ts / vitest.perf.config.ts 尚未创建（package.json 脚本引用了它们）。
-- **M12**：electron-builder 已配置并验证过 --dir 打包+启动（M1 时）；缺 scripts/release-verify.mjs、SECURITY.md、PRIVACY.md、SBOM/许可证清单、TEST_REPORT.md 填充、最终 STATUS。签名/公证无证书 → 记录为发布阻断项。
+- **M12**：`release:verify`、E2E-023/024、三平台 native package/install workflow、SBOM/许可证/manifest/checksums、SECURITY/PRIVACY/recovery/limitations/release notes 均完成；macOS unsigned DMG 已真实安装启动。ADR-0043 将零成本构建强制限定为 GitHub Prerelease；paid signing/notarization、Stable updater、真实 20-task eval 与 owner sign-off 留作 Stable 阻断项。
 
 ## 已知妥协/待记录事项（诚实清单）
 

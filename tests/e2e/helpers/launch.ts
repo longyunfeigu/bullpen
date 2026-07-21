@@ -1,5 +1,12 @@
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
-import { mkdtempSync } from 'node:fs';
+import {
+  _electron as electron,
+  chromium,
+  type Browser,
+  type ElectronApplication,
+  type Page,
+} from '@playwright/test';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +19,37 @@ export interface LaunchedApp {
   userDataDir: string;
 }
 
+export interface LaunchedPackagedApp {
+  browser: Browser;
+  page: Page;
+  process: ChildProcessWithoutNullStreams;
+  userDataDir: string;
+  output: () => string;
+  close: () => Promise<void>;
+}
+
 const root = join(__dirname, '../../..');
+
+export function packagedExecutablePath(): string {
+  const explicit = process.env.CHARTER_PACKAGED_EXECUTABLE;
+  if (explicit) return explicit;
+  const candidates =
+    process.platform === 'darwin'
+      ? [
+          join(root, 'release/mac-arm64/Charter.app/Contents/MacOS/Charter'),
+          join(root, 'release/mac/Charter.app/Contents/MacOS/Charter'),
+        ]
+      : process.platform === 'win32'
+        ? [join(root, 'release/win-unpacked/Charter.exe')]
+        : [join(root, 'release/linux-unpacked/charter')];
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) {
+    throw new Error(
+      `Packaged Charter executable not found. Checked: ${candidates.join(', ')}. Run npm run package first.`,
+    );
+  }
+  return found;
+}
 
 /** Launch the packaged-mode app (app:// protocol, production CSP) with an isolated user-data dir. */
 export async function launchApp(
@@ -57,4 +94,83 @@ export async function launchApp(
     }
   }
   return { app, page, userDataDir };
+}
+
+/** Launch the actual electron-builder output, never the repository Electron shim. */
+export async function launchPackagedApp(
+  options: {
+    executablePath?: string;
+    userDataDir?: string;
+    env?: Record<string, string>;
+  } = {},
+): Promise<LaunchedPackagedApp> {
+  const userDataDir = options.userDataDir ?? mkdtempSync(join(tmpdir(), 'charter-packaged-e2e-'));
+  const executablePath = options.executablePath ?? packagedExecutablePath();
+  const child = spawn(executablePath, ['--remote-debugging-port=0'], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PI_IDE_USER_DATA: userDataDir,
+      PI_IDE_E2E: '1',
+      ...options.env,
+    },
+  });
+  let output = '';
+  const devtoolsUrl = await new Promise<string>((resolveUrl, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`Packaged app did not expose DevTools within 30s.\n${output}`));
+    }, 30_000);
+    const onData = (chunk: Buffer) => {
+      output = `${output}${chunk.toString()}`.slice(-20_000);
+      const match = output.match(/DevTools listening on (ws:\/\/\S+)/);
+      const url = match?.[1];
+      if (url) {
+        clearTimeout(timeout);
+        resolveUrl(url);
+      }
+    };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    child.once('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once('exit', (code, signal) => {
+      clearTimeout(timeout);
+      reject(
+        new Error(`Packaged app exited before DevTools was ready (${code ?? signal}).\n${output}`),
+      );
+    });
+  });
+  const browser = await chromium.connectOverCDP(devtoolsUrl);
+  const context = browser.contexts()[0];
+  if (!context) throw new Error(`Packaged app exposed no browser context.\n${output}`);
+  const page = context.pages()[0] ?? (await context.waitForEvent('page'));
+  await page.waitForLoadState('domcontentloaded');
+  const enter = page.getByTestId('home-open-ide');
+  await enter.waitFor({ state: 'visible', timeout: 4000 }).catch(() => undefined);
+  if (await enter.isVisible().catch(() => false)) await enter.click();
+  return {
+    browser,
+    page,
+    process: child,
+    userDataDir,
+    output: () => output,
+    close: async () => {
+      await browser.close().catch(() => undefined);
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGTERM');
+        await new Promise<void>((resolveExit) => {
+          const timeout = setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+            resolveExit();
+          }, 5_000);
+          child.once('exit', () => {
+            clearTimeout(timeout);
+            resolveExit();
+          });
+        });
+      }
+    },
+  };
 }

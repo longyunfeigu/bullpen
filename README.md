@@ -24,7 +24,7 @@ Charter is a local-first desktop Agent IDE where the Charter Agent, Claude Code,
 <p align="center"><sub>Conversation, live file activity, code, verification, and the final decision—one Session, one screen.</sub></p>
 
 > [!IMPORTANT]
-> Charter is a **development preview**. The core desktop workflow is implemented and tested, but packaging, signing, update delivery, and stable-release migration guarantees are still in progress. Building from source is the supported way to try it today.
+> Charter is a **development preview**. Credential-free Beta artifacts are published as unsigned GitHub prereleases with checksums and an SBOM. They may be blocked by operating-system trust policy; build from source if unsigned applications are not permitted. Signed Stable distribution remains open.
 
 ## Why Charter
 
@@ -227,6 +227,13 @@ Charter is more than a chat surface around a model API. It combines agent orches
 
 ## Quick start
 
+### Download the unsigned beta
+
+Download the current artifacts and `SHA256SUMS.txt` from
+[GitHub Releases](https://github.com/longyunfeigu/Charter/releases). The macOS and Windows binaries
+are unsigned and not notarized; read the [known limitations](docs/KNOWN_LIMITATIONS.md) before launch.
+Updates are manual in this preview.
+
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) **22.19 or newer** (Node 24 is used in CI)
@@ -357,7 +364,8 @@ CHARTER_README_SHOTS=1 npx playwright test \
 Charter is being developed in public toward its first stable desktop release.
 
 - The Session-first shell, managed agent path, external CLI accounting, live file presence, code context, Preview, Terminal, Verification, Review, Replay, Memory, skills, and core security boundaries are implemented.
-- Stable installers, signing/notarization, update channels, migration guarantees, and final release qualification are not complete.
+- Credential-free macOS/Windows/Linux packaging, release manifests, checksums, SBOM/license inventory, packaged-app smoke tests, and database upgrade/restore rehearsals are implemented for the unsigned Beta channel.
+- Signing/notarization, automatic updates, real-provider fixed-task qualification, and final Stable release remain blocked/open.
 - The intended stable targets are macOS and Windows; Linux is a preview target.
 
 See [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for the evidence-backed status of each milestone and [RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) for the remaining release gates.

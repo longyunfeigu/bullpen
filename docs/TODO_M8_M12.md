@@ -3,7 +3,7 @@
 > 本文件是"M7 完成后"的接续待办清单，供新的 session 直接读取执行。
 > **先读顺序**：`CLAUDE.md` → `docs/HANDOFF.md`（架构事实 + 环境坑）→ 本文件 → `docs/IMPLEMENTATION_STATUS.md`。
 > 规范源仍是 `docs/PRODUCT_ENGINEERING_SPEC.md` + `docs/IMPLEMENTATION_BACKLOG.md`；冲突时以验收标准为准，偏离记 ADR。
-> 最后更新：2026-07-13，M7（Tool Gateway 与权限系统）完成并提交后。
+> 最后更新：2026-07-21，M12 unsigned Beta release candidate 完成。
 
 ## 已完成状态（截至本文件）
 
@@ -11,7 +11,8 @@
 | --- | --- |
 | M1 工程基线 → M8 Agent 写入、计划与审查 | VERIFIED |
 | **M9 验证、完成报告与任务历史** | **VERIFIED**（E2E-016/017/018 绿，全套 29 E2E 连续两轮绿） |
-| M10–M12 | NOT_STARTED（本文件的待办） |
+| M10–M11 | VERIFIED |
+| M12 | DONE（unsigned Beta RC）；signed/notarized Stable 因付费证书与产品验收 BLOCKED |
 
 M9 交付要点（M10+ 可直接复用）：
 
@@ -172,7 +173,11 @@ M7 交付物（新会话可直接复用）：
 - electron-builder 已配置并验证过 `--dir` 打包 + 启动（M1）。
 - 迁移带 checksum + 备份（升级路径基础）。
 
-### 待办
+### M12 Beta 交付状态（2026-07-21）
+
+以下原待办均已落地：`release-verify.mjs` 全门禁、E2E-023/024、三平台 native packaging/install CI、GitHub Prerelease workflow、SPDX SBOM/许可证/校验和、SECURITY/PRIVACY/recovery/limitations/release notes，以及 ADR-0043 的 unsigned-only prerelease policy。macOS DMG 已完成真实挂载、复制、启动、清理；远端 candidate matrix 通过后才允许创建 tag。
+
+### 原待办（保留作验收索引）
 
 1. **`scripts/release-verify.mjs`**（缺）：串联 `check`+`test`+`test:e2e`+`test:security`+`test:perf`+`package`，输出 gate 报告；`npm run release:verify`。
 2. **文档**：`SECURITY.md`、`PRIVACY.md`、`docs/TEST_REPORT.md`（填充最终证据）、许可证清单 + SBOM（可用 `license-checker` 或手工）。
@@ -192,7 +197,7 @@ node scripts/build.mjs # 构建 main/preload/worker/renderer 产物（E2E 前必
 npx playwright test --config tests/e2e/playwright.config.ts            # 全套 E2E
 npx playwright test --config tests/e2e/playwright.config.ts m8-xxx     # 单文件
 npm run package       # electron-builder 打包
-npm run release:verify # M12 才有（需先建 scripts/release-verify.mjs）
+npm run release:verify # M12 全量发布门禁
 ```
 
 E2E 环境变量：`PI_IDE_FORCE_MOCK=1`（用 mock runtime）、`PI_IDE_OPEN_WORKSPACE=<dir>`（自动开工作区）、`PI_IDE_E2E=1`、`PI_IDE_USER_DATA=<dir>`（隔离用户数据）。

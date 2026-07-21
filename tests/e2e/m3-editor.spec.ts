@@ -56,7 +56,10 @@ test.describe('M3 workspace and editor', () => {
       await page.getByTestId('tree-item-src').click();
       await page.getByTestId('tree-item-src/util.ts').click();
       await page.locator('.monaco-editor').first().click();
-      await page.keyboard.type('// user unsaved work\n');
+      // Insert the text as one input transaction. Per-key typing can interleave
+      // with Monaco's suggestion/format events when the full suite is loaded.
+      await page.keyboard.insertText('// user unsaved work\n');
+      await expect(page.locator('.monaco-editor').first()).toContainText('user unsaved work');
       await expect(page.getByTestId('status-dirty')).toBeVisible();
 
       // External process rewrites the file on disk.

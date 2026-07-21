@@ -139,15 +139,13 @@ test.describe('Semantic Replay UI — real Electron surface', () => {
         await expect(page.getByTestId('terminal-panel')).toBeVisible();
         await expect(page.locator('.xterm')).toBeVisible({ timeout: 15000 });
         await page.locator('.xterm').click();
-        await page.keyboard.type('echo replay-ready');
-        await page.keyboard.press('Enter');
+        await writeActiveTerminal(page, 'echo replay-ready\r');
         await expect(page.getByTestId('terminal-panel')).toContainText('replay-ready', {
           timeout: 15000,
         });
         // Use the absolute fixture executable so user shell functions/aliases
         // for the installed vendor CLIs cannot bypass this deterministic run.
-        await page.keyboard.type(join(bin, provider));
-        await page.keyboard.press('Enter');
+        await writeActiveTerminal(page, `${join(bin, provider)}\r`);
 
         await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText(
           provider === 'claude' ? /claude/i : /codex/i,
@@ -197,6 +195,19 @@ test.describe('Semantic Replay UI — real Electron surface', () => {
     });
   }
 });
+
+async function writeActiveTerminal(page: Page, data: string): Promise<void> {
+  const result = await page.evaluate(async (nextData) => {
+    const listed = (await window.product.rpc['terminal.list']!({})) as {
+      ok: boolean;
+      data?: { items: Array<{ id: string }> };
+    };
+    const terminal = listed.data?.items.at(-1);
+    if (!listed.ok || !terminal) throw new Error('No active terminal');
+    return window.product.rpc['terminal.write']!({ id: terminal.id, data: nextData });
+  }, data);
+  expect(result.ok).toBe(true);
+}
 
 function createObservedAgentBin(provider: 'claude' | 'codex', fixture: string): string {
   const bin = mkdtempSync(join(tmpdir(), `charter-replay-${provider}-`));

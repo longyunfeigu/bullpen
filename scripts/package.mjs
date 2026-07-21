@@ -3,16 +3,39 @@
 // default produces installable artifacts for the current platform.
 import { execFileSync } from 'node:child_process';
 import { root } from './build-lib.mjs';
+import { readProductPackage, validateReleasePolicy } from './release-lib.mjs';
 
 const dirOnly = process.argv.includes('--dir-only');
+const signingMode = process.env.CHARTER_SIGNING_MODE ?? 'unsigned';
+const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const requestedPlatforms = [
+  ['--mac', '--mac'],
+  ['--win', '--win'],
+  ['--linux', '--linux'],
+]
+  .filter(([flag]) => process.argv.includes(flag))
+  .map(([, builderFlag]) => builderFlag);
+
+const pkg = readProductPackage(root);
+const policy = validateReleasePolicy({ version: pkg.version, signingMode });
+console.log(
+  `[package] Charter ${pkg.version} (${policy.channel}, ${policy.signed ? 'signed' : 'unsigned'})`,
+);
 
 execFileSync('node', ['scripts/build.mjs'], { cwd: root, stdio: 'inherit' });
 
-const args = ['electron-builder', '--config', 'electron-builder.yml'];
+const args = [
+  'electron-builder',
+  '--config',
+  'electron-builder.yml',
+  '--publish',
+  'never',
+  ...requestedPlatforms,
+];
 if (dirOnly) args.push('--dir');
 
 console.log(`[package] running electron-builder ${dirOnly ? '(--dir smoke)' : ''}…`);
-execFileSync('npx', args, {
+execFileSync(npx, args, {
   cwd: root,
   stdio: 'inherit',
   env: {
@@ -21,7 +44,9 @@ execFileSync('npx', args, {
     ELECTRON_BUILDER_BINARIES_MIRROR:
       process.env.ELECTRON_BUILDER_BINARIES_MIRROR ??
       'https://npmmirror.com/mirrors/electron-builder-binaries/',
-    CSC_IDENTITY_AUTO_DISCOVERY: 'false',
+    // Preview releases are deliberately unsigned. A future paid signing run
+    // opts in explicitly and may use either an installed identity or CSC_LINK.
+    ...(policy.signed ? {} : { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }),
   },
 });
 console.log('[package] done');

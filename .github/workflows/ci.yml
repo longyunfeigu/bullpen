@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -29,7 +32,17 @@ jobs:
         run: npm run test:e2e
 
   package-smoke:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: mac
+          - os: windows-latest
+            target: win
+          - os: ubuntu-latest
+            target: linux
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,4 +50,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run package -- --dir-only
+      - run: npm run package -- --${{ matrix.target }}
+        env:
+          CHARTER_SIGNING_MODE: unsigned
+      - name: Packaged Electron smoke (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run test:install:e2e
+      - name: Packaged Electron smoke
+        if: runner.os != 'Linux'
+        run: npm run test:install:e2e

@@ -62,9 +62,16 @@ test('skills: manager (toggle/audit) + "/" picker + /skill: task through the moc
 
     // ---- composer "/" picker: only enabled skills, filter + insert ----
     const intent = page.getByTestId('home-intent');
-    await intent.click();
-    await intent.press('/');
-    await expect(page.getByTestId('home-skill-picker')).toBeVisible();
+    const picker = page.getByTestId('home-skill-picker');
+    // Skills load asynchronously from the main process. Repeat the harmless
+    // empty-composer shortcut until that catalog is ready instead of racing it.
+    await expect
+      .poll(async () => {
+        await intent.fill('');
+        await intent.press('/');
+        return picker.isVisible().catch(() => false);
+      })
+      .toBe(true);
     await expect(page.getByTestId('home-skill-item-pdf-fill')).toBeVisible();
     // The explicit-only skill still appears in "/" — that is its invocation path.
     await expect(page.getByTestId('home-skill-item-deploy-staging')).toContainText('explicit-only');
@@ -105,9 +112,9 @@ test('skills: manager (toggle/audit) + "/" picker + /skill: task through the moc
     // …and the skill vanishes from the "/" picker immediately.
     await page.getByRole('dialog', { name: 'Manage pdf-fill' }).getByLabel('Close').click();
     await page.getByTestId('rail-view-sessions').click();
-    await intent.click();
+    await intent.fill('');
     await intent.press('/');
-    await expect(page.getByTestId('home-skill-picker')).toBeVisible();
+    await expect(picker).toBeVisible();
     await expect(page.getByTestId('home-skill-item-deploy-staging')).toBeVisible();
     await expect(page.getByTestId('home-skill-item-pdf-fill')).toHaveCount(0);
   } finally {

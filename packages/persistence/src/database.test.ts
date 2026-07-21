@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProductFailure } from '@pi-ide/foundation';
@@ -75,13 +75,15 @@ describe('persistence database', () => {
     }
   });
 
-  it('restores the pre-migration backup when a migration fails', () => {
+  it('E2E-023 fault injection: restores the byte-identical pre-migration database', () => {
     const first = open([M1]);
     first.db.prepare('INSERT INTO items (id, value) VALUES (?, ?)').run('a', 'hello');
     first.db.close();
+    const before = readFileSync(join(dir, 'app.db'));
 
     const broken: Migration = { version: 2, name: 'broken', up: 'THIS IS NOT SQL;' };
     expect(() => open([M1, broken])).toThrowError(ProductFailure);
+    expect(readFileSync(join(dir, 'app.db'))).toEqual(before);
 
     // Database must still be usable at version 1 with data intact.
     const reopened = open([M1]);

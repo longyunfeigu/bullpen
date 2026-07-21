@@ -28,9 +28,18 @@ test.describe('M5 git workflow', () => {
       await page.getByLabel('Close').click();
 
       // Stage and verify against the CLI.
-      await page.getByTestId('stage-src/util.ts').click();
+      // The status refresh can replace the list between pointer-down and click;
+      // repeat this idempotent action until Git itself confirms the transition.
+      await expect
+        .poll(async () => {
+          const stageBtn = page.getByTestId('stage-src/util.ts');
+          if (await stageBtn.isVisible().catch(() => false)) {
+            await stageBtn.click().catch(() => undefined);
+          }
+          return git(fixture, ['status', '--porcelain']);
+        })
+        .toContain('M  src/util.ts');
       await expect(page.getByTestId('scm-group-staged')).toBeVisible();
-      await expect.poll(() => git(fixture, ['status', '--porcelain'])).toContain('M  src/util.ts');
 
       // Unstage round-trip. The SCM list re-renders on every git refresh, which
       // can swallow a click that lands on the re-render boundary — retry the
