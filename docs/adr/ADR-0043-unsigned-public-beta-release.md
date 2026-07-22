@@ -29,6 +29,16 @@ not require them, but an unsigned binary cannot honestly claim the trust propert
 8. Keep signed/notarized Stable, the real-provider fixed 20-task evaluation, and automatic update
    delivery as open Stable gates. M12 may be preview-complete without relabeling those gates as passed.
 
+## Amendment (2026-07-22, product owner decision)
+
+Decision 1's GitHub **prerelease** flag is dropped: betas publish as full "Latest" releases so the
+repository sidebar features them (GitHub never surfaces prerelease-only repos there — the sidebar
+fell back to a bare tag count). `v1.0.0-beta.2` was flipped in place; the workflow now passes
+`--latest` instead of `--prerelease --latest=false`. Everything substantive is unchanged: the
+SemVer prerelease channel and its policy gate (decision 5 — unsigned stable is still a build
+error), the "Unsigned Preview" title, and every trust caveat in the release notes. This is a
+presentation-level change only; signed Stable gates (decision 8) remain open.
+
 ## Alternatives
 
 - Self-signed certificates: rejected for public distribution because consumer operating systems do
