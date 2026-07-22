@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promises as fs, realpathSync } from 'node:fs';
+import { request } from 'node:http';
 import { join, sep } from 'node:path';
 import { errorMessage, type Logger } from '@pi-ide/foundation';
 
@@ -24,6 +25,8 @@ interface LsofListener {
 
 /** Bind addresses reachable via http://localhost:<port>. Explicit LAN-only binds are excluded. */
 const LOOPBACK_OR_ANY = new Set(['127.0.0.1', 'localhost', '::1', '*', '::', '0.0.0.0']);
+const PREVIEW_PROBE_BYTES = 8 * 1024;
+const PREVIEW_PROBE_TIMEOUT_MS = 900;
 
 /** Parse `lsof -nP -iTCP -sTCP:LISTEN -Fpcn` machine output. */
 export function parseLsofListeners(stdout: string): LsofListener[] {
@@ -97,6 +100,126 @@ export function attributeListeners(
   return out.sort((a, b) => a.port - b.port || a.pid - b.pid);
 }
 
+interface PreviewProbeResponse {
+  statusCode: number;
+  contentType: string;
+  location: string | null;
+  bodyPrefix: string;
+}
+
+/** Live web is for rendered pages, not arbitrary JSON/control APIs that happen
+ * to listen from the project cwd (for example the Claude browser bridge). */
+export function isRenderablePreviewResponse(response: PreviewProbeResponse): boolean {
+  const mime = response.contentType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  if (mime === 'text/html' || mime === 'application/xhtml+xml') return true;
+  if (mime) return false;
+  const prefix = response.bodyPrefix
+    .replace(/^\uFEFF/, '')
+    .trimStart()
+    .toLowerCase();
+  return /^(?:<!doctype\s+html\b|<html\b|<head\b|<body\b)/.test(prefix);
+}
+
+function requestPreview(
+  hostname: '127.0.0.1' | '::1',
+  port: number,
+  path: string,
+): Promise<PreviewProbeResponse | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: PreviewProbeResponse | null): void => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const req = request(
+      {
+        hostname,
+        port,
+        path,
+        method: 'GET',
+        headers: {
+          Accept: 'text/html,application/xhtml+xml;q=0.9',
+          Range: `bytes=0-${PREVIEW_PROBE_BYTES - 1}`,
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        let length = 0;
+        const complete = (): void => {
+          const contentType = Array.isArray(res.headers['content-type'])
+            ? (res.headers['content-type'][0] ?? '')
+            : (res.headers['content-type'] ?? '');
+          const rawLocation = res.headers.location;
+          finish({
+            statusCode: res.statusCode ?? 0,
+            contentType,
+            location: Array.isArray(rawLocation) ? (rawLocation[0] ?? null) : (rawLocation ?? null),
+            bodyPrefix: Buffer.concat(chunks, length).toString('utf8'),
+          });
+        };
+        res.on('data', (chunk: Buffer) => {
+          if (length >= PREVIEW_PROBE_BYTES) return;
+          const remaining = PREVIEW_PROBE_BYTES - length;
+          const piece = chunk.subarray(0, remaining);
+          chunks.push(piece);
+          length += piece.length;
+          if (length >= PREVIEW_PROBE_BYTES) {
+            complete();
+            res.destroy();
+          }
+        });
+        res.on('end', complete);
+        res.on('error', () => finish(null));
+      },
+    );
+    req.setTimeout(PREVIEW_PROBE_TIMEOUT_MS, () => req.destroy());
+    req.on('error', () => finish(null));
+    req.end();
+  });
+}
+
+async function probePreviewHost(
+  hostname: '127.0.0.1' | '::1',
+  port: number,
+  path = '/',
+  redirects = 0,
+): Promise<boolean | null> {
+  const response = await requestPreview(hostname, port, path);
+  if (!response) return null;
+  if (
+    response.statusCode >= 300 &&
+    response.statusCode < 400 &&
+    response.location &&
+    redirects < 3
+  ) {
+    try {
+      const baseHost = hostname === '::1' ? '[::1]' : hostname;
+      const next = new URL(response.location, `http://${baseHost}:${port}/`);
+      const nextPort = Number(next.port || 80);
+      if (
+        next.protocol === 'http:' &&
+        (next.hostname === 'localhost' ||
+          next.hostname === '127.0.0.1' ||
+          next.hostname === '[::1]' ||
+          next.hostname === '::1') &&
+        nextPort === port
+      ) {
+        return probePreviewHost(hostname, port, `${next.pathname}${next.search}`, redirects + 1);
+      }
+    } catch {
+      return false;
+    }
+  }
+  return isRenderablePreviewResponse(response);
+}
+
+async function isPreviewablePort(port: number): Promise<boolean> {
+  const ipv4 = await probePreviewHost('127.0.0.1', port);
+  if (ipv4 !== null) return ipv4;
+  return (await probePreviewHost('::1', port)) ?? false;
+}
+
 /** Scripts that mark a project as "web-ish" — the Preview tab shows an empty
  * state instead of hiding when one exists (ADR-0022 tab-visibility rule).
  * Order matters: the first present script becomes the one-click dev command. */
@@ -152,7 +275,14 @@ export class PreviewService {
       if (listeners.length === 0) return [];
       const pids = [...new Set(listeners.map((l) => l.pid))].join(',');
       const cwdOut = await run('lsof', ['-a', '-p', pids, '-d', 'cwd', '-Fpn']);
-      return attributeListeners(listeners, parseLsofCwds(cwdOut), realRoot);
+      const attributed = attributeListeners(listeners, parseLsofCwds(cwdOut), realRoot);
+      const previewable = await Promise.all(
+        attributed.map(async (listener) => ({
+          listener,
+          previewable: await isPreviewablePort(listener.port),
+        })),
+      );
+      return previewable.filter((row) => row.previewable).map((row) => row.listener);
     } catch (e) {
       this.logger.warn('preview port detection failed', {
         error: errorMessage(e),

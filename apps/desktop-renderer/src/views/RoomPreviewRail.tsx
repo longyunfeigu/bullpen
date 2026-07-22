@@ -3,6 +3,7 @@ import type { TaskDto } from '@pi-ide/ipc-contracts';
 import { rpcResult } from '../bridge.js';
 import { useAppStore } from '../store/appStore.js';
 import { LivePreview } from './LivePreview.js';
+import { SessionArtifactView } from './SessionArtifactView.js';
 
 /**
  * The Room's live window (ADR-0022 am.2): a persistent, resizable preview
@@ -21,8 +22,14 @@ function savedWidth(): number {
 
 export function RoomPreviewRail({ task }: { task: TaskDto }): React.JSX.Element {
   const app = useAppStore();
+  const focused = useAppStore(
+    (state) => state.sessionTool === 'preview' && state.sessionToolExpanded,
+  );
   const [width, setWidth] = useState(savedWidth);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [mode, setMode] = useState<'artifact' | 'live'>('live');
+  const [artifactCount, setArtifactCount] = useState(0);
+  const modeTouched = useRef(false);
 
   const clamp = useCallback(
     (value: number): number =>
@@ -34,8 +41,29 @@ export function RoomPreviewRail({ task }: { task: TaskDto }): React.JSX.Element 
     window.localStorage.setItem(WIDTH_KEY, String(width));
   }, [width]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async (): Promise<void> => {
+      const response = await rpcResult('artifact.list', { taskId: task.id });
+      if (cancelled || !response.ok) return;
+      setArtifactCount(response.data.artifacts.length);
+      if (!modeTouched.current && response.data.artifacts.length > 0) setMode('artifact');
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [task.id]);
+
   return (
-    <div className="tr-preview" data-testid="room-preview-rail" style={{ width }}>
+    <div
+      className={`tr-preview ${focused ? 'focus' : ''}`}
+      data-testid="room-preview-rail"
+      data-preview-layout={focused ? 'focus' : 'quick'}
+      style={{ width }}
+    >
       <div
         className="tr-preview-splitter"
         role="separator"
@@ -60,8 +88,35 @@ export function RoomPreviewRail({ task }: { task: TaskDto }): React.JSX.Element 
         }}
       />
       <div className="tr-preview-head">
-        <span className="tr-preview-title">Live preview</span>
-        <span className="tr-preview-sub">the task's own tree · any state</span>
+        <span className="tr-preview-title">Session preview</span>
+        <div className="tr-preview-modes" role="tablist" aria-label="Preview mode">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'artifact'}
+            className={mode === 'artifact' ? 'active' : ''}
+            data-testid="preview-mode-artifacts"
+            onClick={() => {
+              modeTouched.current = true;
+              setMode('artifact');
+            }}
+          >
+            Artifacts {artifactCount > 0 ? artifactCount : ''}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'live'}
+            className={mode === 'live' ? 'active' : ''}
+            data-testid="preview-mode-live"
+            onClick={() => {
+              modeTouched.current = true;
+              setMode('live');
+            }}
+          >
+            Live web
+          </button>
+        </div>
         <span className="pv-sp" />
         <button
           className="ghostbtn"
@@ -72,7 +127,11 @@ export function RoomPreviewRail({ task }: { task: TaskDto }): React.JSX.Element 
           ✕
         </button>
       </div>
-      <LivePreview task={task} variant="rail" />
+      {mode === 'artifact' ? (
+        <SessionArtifactView task={task} focused={focused} />
+      ) : (
+        <LivePreview task={task} variant="rail" />
+      )}
     </div>
   );
 }
@@ -83,14 +142,20 @@ export function PreviewBadge({ task }: { task: TaskDto }): React.JSX.Element | n
   const open = useAppStore((s) => s.previewRailTaskId === task.id);
   const [firstPort, setFirstPort] = useState<number | null>(null);
   const [available, setAvailable] = useState(false);
+  const [artifactCount, setArtifactCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const probe = async (): Promise<void> => {
-      const res = await rpcResult('task.previewPorts', { taskId: task.id });
-      if (cancelled || !res.ok) return;
-      setFirstPort(res.data.ports[0]?.port ?? null);
-      setAvailable(res.data.ports.length > 0 || res.data.webish);
+      const [res, artifactRes] = await Promise.all([
+        rpcResult('task.previewPorts', { taskId: task.id }),
+        rpcResult('artifact.list', { taskId: task.id }),
+      ]);
+      if (cancelled) return;
+      if (res.ok) setFirstPort(res.data.ports[0]?.port ?? null);
+      const count = artifactRes.ok ? artifactRes.data.artifacts.length : 0;
+      setArtifactCount(count);
+      setAvailable((res.ok && (res.data.ports.length > 0 || res.data.webish)) || count > 0);
     };
     void probe();
     const timer = window.setInterval(() => void probe(), 5000);
@@ -115,7 +180,15 @@ export function PreviewBadge({ task }: { task: TaskDto }): React.JSX.Element | n
       onClick={() => (open ? app.closePreviewRail() : app.openPreviewRail(task.id))}
     >
       <span className="tr-pvbadge-dot" aria-hidden />
-      {open ? 'Preview · live' : firstPort !== null ? `Preview :${firstPort}` : 'Preview'}
+      {open
+        ? artifactCount > 0
+          ? `Artifacts ${artifactCount}`
+          : 'Preview live'
+        : artifactCount > 0
+          ? `Artifacts ${artifactCount}`
+          : firstPort !== null
+            ? `Preview :${firstPort}`
+            : 'Preview'}
     </button>
   );
 }

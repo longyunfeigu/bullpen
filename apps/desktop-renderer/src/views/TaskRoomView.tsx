@@ -23,6 +23,7 @@ import { hasDragRef } from './dragRefs.js';
 import { useSkillSlash } from './SkillSlashPicker.js';
 import {
   EMPTY_CODE_CONTEXT_REFS,
+  EMPTY_ARTIFACT_REFS,
   EMPTY_FILE_REFS,
   useDraftStore,
   type TerminalOutputRef,
@@ -44,6 +45,7 @@ import { CodeContextAttachments } from './CodeContextAttachments.js';
 import { sessionDisplayTitle } from '../store/sessionAttention.js';
 import { OrchestrationFleet, OrchestrationWorkerBand } from './OrchestrationFleet.js';
 import { useOrchestrationStore } from '../store/orchestrationStore.js';
+import { ArtifactFeedbackAttachments } from './ArtifactFeedbackAttachments.js';
 
 const EMPTY_TERMINAL_REFS: TerminalOutputRef[] = [];
 const EMPTY_ORCHESTRATION_PERMISSIONS: PermissionCardDto[] = [];
@@ -260,110 +262,115 @@ export function TaskRoomView(): React.JSX.Element {
         </button>
         <div className="session-identity">
           <div className="session-identity-title">
-            <span className="tr-title" title={sessionDisplayTitle(task)}>
-              {sessionDisplayTitle(task)}
-            </span>
-            <StateBadge
-              state={task.state}
-              {...(answered ? { label: 'Answered', tone: 'ok' as const } : {})}
-            />
-          </div>
-          <div className="session-identity-meta">
-            <span className="tr-proj" data-testid="task-room-project" title={task.projectPath}>
-              <Ic name="folder" size={11} />
-              {task.projectName}
-            </span>
-            {task.worktree ? (
-              <WorktreeChip task={task} />
-            ) : (
-              <span className="tr-proj">
-                <Ic name="branch" size={11} />
-                <span className="mono">main</span>
+            <div className="session-identity-name">
+              <span className="tr-title" title={sessionDisplayTitle(task)}>
+                {sessionDisplayTitle(task)}
               </span>
-            )}
-            <span className="session-agent-chip" data-testid="session-agent-chip">
-              <Ic name={task.external ? 'terminal' : 'bot'} size={11} />
-              {sessionAgentLabel(task)}
-            </span>
-            {task.external ? (
-              <span
-                className="tr-extchip"
-                data-testid="task-room-external-chip"
-                title="External CLI session — process state and file evidence stay attached to this Session."
-              >
-                external
-              </span>
-            ) : null}
+              <StateBadge
+                state={task.state}
+                {...(answered ? { label: 'Answered', tone: 'ok' as const } : {})}
+              />
+            </div>
           </div>
-        </div>
-        {fleetAvailable ? (
-          <nav className="task-room-switcher" aria-label="Session views">
-            <button
-              className={sessionRoomView === 'conversation' ? 'active' : ''}
-              data-testid="task-room-conversation-tab"
-              aria-current={sessionRoomView === 'conversation' ? 'page' : undefined}
-              onClick={() => app.setSessionRoomView('conversation')}
-            >
-              主会话
-            </button>
-            <button
-              className={sessionRoomView === 'fleet' ? 'active' : ''}
-              data-testid="task-room-fleet-tab"
-              aria-current={sessionRoomView === 'fleet' ? 'page' : undefined}
-              onClick={() => app.setSessionRoomView('fleet')}
-            >
-              <span>⌁ 编队 {commanderWorkers.length}</span>
-              {orchestrationNeeds > 0 ? <b>{orchestrationNeeds}</b> : null}
-            </button>
-          </nav>
-        ) : null}
-        <span className="tr-sp" />
-        <PreviewBadge task={task} />
-        <div className="session-more" ref={moreRef}>
-          <button
-            className="session-more-button"
-            data-testid="session-more"
-            aria-label="More Session actions"
-            aria-haspopup="menu"
-            aria-expanded={moreOpen}
-            onClick={() => setMoreOpen(!moreOpen)}
-          >
-            <span>More</span>
-            <Ic name="chevron" size={11} />
-          </button>
-          {moreOpen ? (
-            <div className="session-more-menu" role="menu">
-              <button
-                data-testid="replay-open"
-                onClick={() => {
-                  setMoreOpen(false);
-                  store.openReplay();
-                }}
-              >
-                <Ic name="play" size={12} /> Replay Session
-              </button>
-              {files[0] && sameProject && !task.worktree ? (
-                <button
-                  data-testid="task-room-edit-file"
-                  onClick={() => {
-                    setMoreOpen(false);
-                    openFileInEditor(files[0]!);
-                  }}
+          <div className="session-identity-secondary">
+            <div className="session-identity-meta">
+              <span className="tr-proj" data-testid="task-room-project" title={task.projectPath}>
+                <Ic name="folder" size={11} />
+                {task.projectName}
+              </span>
+              {task.worktree ? (
+                <WorktreeChip task={task} />
+              ) : (
+                <span className="tr-proj">
+                  <Ic name="branch" size={11} />
+                  <span className="mono">main</span>
+                </span>
+              )}
+              <span className="session-agent-chip" data-testid="session-agent-chip">
+                <Ic name={task.external ? 'terminal' : 'bot'} size={11} />
+                {sessionAgentLabel(task)}
+              </span>
+              {task.external ? (
+                <span
+                  className="tr-extchip"
+                  data-testid="task-room-external-chip"
+                  title="External CLI session — process state and file evidence stay attached to this Session."
                 >
-                  <Ic name="pencil" size={12} /> Edit first changed file
-                </button>
-              ) : null}
-              {canArchiveTask(task) ? (
-                <ConfirmDangerButton
-                  label="Archive…"
-                  confirmLabel="Confirm — archive"
-                  testid="task-archive"
-                  quiet
-                  onConfirm={() => void store.archiveTask(task.id)}
-                />
+                  external
+                </span>
               ) : null}
             </div>
-          ) : null}
+            <div className="session-header-actions">
+              {fleetAvailable ? (
+                <nav className="task-room-switcher" aria-label="Session views">
+                  <button
+                    className={sessionRoomView === 'conversation' ? 'active' : ''}
+                    data-testid="task-room-conversation-tab"
+                    aria-current={sessionRoomView === 'conversation' ? 'page' : undefined}
+                    onClick={() => app.setSessionRoomView('conversation')}
+                  >
+                    主会话
+                  </button>
+                  <button
+                    className={sessionRoomView === 'fleet' ? 'active' : ''}
+                    data-testid="task-room-fleet-tab"
+                    aria-current={sessionRoomView === 'fleet' ? 'page' : undefined}
+                    onClick={() => app.setSessionRoomView('fleet')}
+                  >
+                    <span>⌁ 编队 {commanderWorkers.length}</span>
+                    {orchestrationNeeds > 0 ? <b>{orchestrationNeeds}</b> : null}
+                  </button>
+                </nav>
+              ) : null}
+              <PreviewBadge task={task} />
+              <div className="session-more" ref={moreRef}>
+                <button
+                  className="session-more-button"
+                  data-testid="session-more"
+                  aria-label="More Session actions"
+                  aria-haspopup="menu"
+                  aria-expanded={moreOpen}
+                  onClick={() => setMoreOpen(!moreOpen)}
+                >
+                  <span>More</span>
+                  <Ic name="chevron" size={11} />
+                </button>
+                {moreOpen ? (
+                  <div className="session-more-menu" role="menu">
+                    <button
+                      data-testid="replay-open"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        store.openReplay();
+                      }}
+                    >
+                      <Ic name="play" size={12} /> Replay Session
+                    </button>
+                    {files[0] && sameProject && !task.worktree ? (
+                      <button
+                        data-testid="task-room-edit-file"
+                        onClick={() => {
+                          setMoreOpen(false);
+                          openFileInEditor(files[0]!);
+                        }}
+                      >
+                        <Ic name="pencil" size={12} /> Edit first changed file
+                      </button>
+                    ) : null}
+                    {canArchiveTask(task) ? (
+                      <ConfirmDangerButton
+                        label="Archive…"
+                        confirmLabel="Confirm — archive"
+                        testid="task-archive"
+                        quiet
+                        onConfirm={() => void store.archiveTask(task.id)}
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -375,6 +382,8 @@ export function TaskRoomView(): React.JSX.Element {
         <div
           ref={canvasBodyRef}
           className={`tr-body session-canvas-body ${app.sessionToolExpanded ? 'tool-expanded' : ''} ${
+            app.sessionTool === 'preview' && app.sessionToolExpanded ? 'preview-focused' : ''
+          } ${
             app.sessionSplit[task.id] !== undefined || app.sessionSplitDragging
               ? 'split-manual'
               : ''
@@ -606,6 +615,7 @@ function RoomComposer({
   const codeRefs = useDraftStore((s) => s.codeRefs[task.id] ?? EMPTY_CODE_CONTEXT_REFS);
   // ADR-0024: file / folder / image chips riding the next turn.
   const fileRefs = useDraftStore((s) => s.fileRefs[task.id] ?? EMPTY_FILE_REFS);
+  const artifactRefs = useDraftStore((s) => s.artifactRefs[task.id] ?? EMPTY_ARTIFACT_REFS);
   const setInput = (text: string): void => useDraftStore.getState().setDraft(task.id, text);
   const ref = useRef<HTMLTextAreaElement>(null);
   const composerFocusSeq = useAppStore((s) => s.composerFocusSeq);
@@ -700,6 +710,7 @@ function RoomComposer({
         : {}),
       codeRefs,
       fileRefs,
+      artifactRefs,
     });
     if (ok) {
       useDraftStore.getState().clearPreviewRef(task.id);
@@ -724,7 +735,9 @@ function RoomComposer({
         ? 'Use the attached code selection as context for this turn.'
         : fileRefs.length > 0
           ? 'Use the attached files as context for this turn.'
-          : '');
+          : artifactRefs.length > 0
+            ? 'Please address the attached artifact feedback.'
+            : '');
     if (!text && !previewRef) return;
     let delivered = false;
     if (planOpen) {
@@ -752,6 +765,7 @@ function RoomComposer({
           },
           codeRefs,
           fileRefs,
+          artifactRefs,
         );
       } else {
         delivered = await store.send(
@@ -760,6 +774,7 @@ function RoomComposer({
           undefined,
           codeRefs,
           fileRefs,
+          artifactRefs,
         );
       }
     } else {
@@ -768,7 +783,7 @@ function RoomComposer({
         modelDirty && providerId && modelId
           ? { providerId, modelId, thinkingLevel: thinking }
           : undefined;
-      delivered = await store.send(text, 'steer', override, codeRefs, fileRefs);
+      delivered = await store.send(text, 'steer', override, codeRefs, fileRefs, artifactRefs);
       if (delivered) setModelDirty(false);
     }
     if (!delivered) return;
@@ -778,6 +793,7 @@ function RoomComposer({
     // Plan-change feedback rides codeRefs only — file chips stay for the next
     // real turn instead of silently vanishing unsent (ADR-0024).
     if (!planOpen) useDraftStore.getState().clearFileRefs(task.id);
+    if (!planOpen) useDraftStore.getState().clearArtifactRefs(task.id);
     if (previewRef) useDraftStore.getState().clearPreviewRef(task.id);
   };
 
@@ -844,7 +860,11 @@ function RoomComposer({
   );
 
   const hasAttachments =
-    terminalRefs.length > 0 || Boolean(previewRef) || codeRefs.length > 0 || fileRefs.length > 0;
+    terminalRefs.length > 0 ||
+    Boolean(previewRef) ||
+    codeRefs.length > 0 ||
+    fileRefs.length > 0 ||
+    artifactRefs.length > 0;
   const sendButton = (
     <button
       className={`hm-send ${input.trim() || hasAttachments ? 'ready' : ''}`}
@@ -977,6 +997,7 @@ function RoomComposer({
         <div className="tr-ccard">
           <CodeContextAttachments taskId={task.id} refs={codeRefs} />
           <FileContextAttachments taskId={task.id} refs={fileRefs} />
+          <ArtifactFeedbackAttachments taskId={task.id} refs={artifactRefs} />
           {previewChip}
           {terminalRefChips}
           {pickerMenu}
@@ -1024,6 +1045,7 @@ function RoomComposer({
         <div className="hm-card">
           <CodeContextAttachments taskId={task.id} refs={codeRefs} />
           <FileContextAttachments taskId={task.id} refs={fileRefs} />
+          <ArtifactFeedbackAttachments taskId={task.id} refs={artifactRefs} />
           {previewChip}
           {terminalRefChips}
           <div className="hm-chiprow">

@@ -7,15 +7,18 @@ export const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
+  "img-src 'self' data: artifact:",
   "font-src 'self' data:",
   "worker-src 'self' blob:",
-  "connect-src 'self'",
+  "media-src 'self' artifact:",
+  // PDF.js fetches immutable, capability-tokened artifact snapshots. The
+  // protocol host never exposes arbitrary filesystem paths.
+  "connect-src 'self' artifact:",
   "object-src 'none'",
   // ADR-0022: the acceptance-gate preview iframes the task's OWN dev server —
   // loopback http only. Every other directive is unchanged; widening this
   // further must fail the pin test.
-  'frame-src http://localhost:* http://127.0.0.1:*',
+  'frame-src artifact: http://localhost:* http://127.0.0.1:*',
   "base-uri 'none'",
   "form-action 'none'",
 ].join('; ');
@@ -29,4 +32,4 @@ export const CSP = [
 export const DEV_CSP = CSP.replace(
   "script-src 'self'",
   "script-src 'self' 'unsafe-inline'",
-).replace("connect-src 'self'", "connect-src 'self' ws:");
+).replace("connect-src 'self' artifact:", "connect-src 'self' artifact: ws:");

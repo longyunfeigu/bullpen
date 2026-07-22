@@ -16,26 +16,27 @@ describe('renderer CSP pin', () => {
   );
 
   it('frame-src allows loopback http only (ADR-0022) — nothing else changed', () => {
-    expect(directives.get('frame-src')).toBe('http://localhost:* http://127.0.0.1:*');
+    expect(directives.get('frame-src')).toBe('artifact: http://localhost:* http://127.0.0.1:*');
   });
 
   it('the rest of the policy is byte-stable', () => {
     expect(directives.get('default-src')).toBe("'self'");
     expect(directives.get('script-src')).toBe("'self'");
     expect(directives.get('style-src')).toBe("'self' 'unsafe-inline'");
-    expect(directives.get('img-src')).toBe("'self' data:");
+    expect(directives.get('img-src')).toBe("'self' data: artifact:");
     expect(directives.get('font-src')).toBe("'self' data:");
     expect(directives.get('worker-src')).toBe("'self' blob:");
-    expect(directives.get('connect-src')).toBe("'self'");
+    expect(directives.get('media-src')).toBe("'self' artifact:");
+    expect(directives.get('connect-src')).toBe("'self' artifact:");
     expect(directives.get('object-src')).toBe("'none'");
     expect(directives.get('base-uri')).toBe("'none'");
     expect(directives.get('form-action')).toBe("'none'");
-    expect(directives.size).toBe(11);
+    expect(directives.size).toBe(12);
   });
 
   it('dev CSP only relaxes script inline + ws (vite HMR)', () => {
     expect(DEV_CSP).toContain("script-src 'self' 'unsafe-inline'");
-    expect(DEV_CSP).toContain("connect-src 'self' ws:");
-    expect(DEV_CSP).toContain('frame-src http://localhost:* http://127.0.0.1:*');
+    expect(DEV_CSP).toContain("connect-src 'self' artifact: ws:");
+    expect(DEV_CSP).toContain('frame-src artifact: http://localhost:* http://127.0.0.1:*');
   });
 });

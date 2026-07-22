@@ -107,6 +107,26 @@ describe('externalInjectText (ADR-0030: unsent input-line references)', () => {
     expect(externalInjectText({ kind: 'file', path: 'a.md', isFolder: false })).not.toContain('\r');
     expect(externalInjectText({ kind: 'selection', code: selection() })).not.toContain('\r');
   });
+
+  it('serializes artifact feedback for Claude/Codex without submitting it', () => {
+    const text = externalInjectText({
+      kind: 'artifact',
+      artifact: {
+        id: 'artifact-1',
+        taskId: 'task-1',
+        path: 'reports/data.csv',
+        contentHash: 'b'.repeat(64),
+        artifactKind: 'table',
+        anchor: { type: 'table', startRow: 2, endRow: 3, startColumn: 1, endColumn: 2 },
+        note: 'Recalculate these rows.',
+        createdAt: '2026-07-22T00:00:00.000Z',
+      },
+    });
+    expect(text).toContain('<artifact_feedback_context>');
+    expect(text).toContain('reports/data.csv');
+    expect(text).toContain('Recalculate these rows.');
+    expect(text).not.toContain('\r');
+  });
 });
 
 describe('externalTitleFromPrompt (session named by the first user message)', () => {

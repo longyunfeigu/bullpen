@@ -4,6 +4,7 @@ import type { TerminalManager } from '@pi-ide/terminal-service';
 import { openWorkspaceInfo, WorkspaceWatcher, type FsChange } from '@pi-ide/workspace-service';
 import type { ChangeSet } from '@pi-ide/change-service';
 import {
+  formatPromptWithArtifactFeedback,
   formatPromptWithCodeContext,
   type ExternalInjectRefDto,
   type TaskWorktreeDto,
@@ -155,9 +156,9 @@ export function externalResumeCommand(cli: string, sessionId?: string | null): s
  * Never contains a CR: injection must land in the input line unsent.
  */
 export function externalInjectText(ref: ExternalInjectRefDto): string {
-  return ref.kind === 'file'
-    ? `@${ref.path}${ref.isFolder ? '/' : ''} `
-    : `${formatPromptWithCodeContext('', [ref.code])}\n`;
+  if (ref.kind === 'file') return `@${ref.path}${ref.isFolder ? '/' : ''} `;
+  if (ref.kind === 'selection') return `${formatPromptWithCodeContext('', [ref.code])}\n`;
+  return `${formatPromptWithArtifactFeedback('', [ref.artifact])}\n`;
 }
 
 /**
@@ -1188,12 +1189,24 @@ export class ExternalSessionService {
       cli: session.cli,
       captureGrade: session.captureGrade,
       kind: ref.kind,
-      path: ref.kind === 'file' ? ref.path : ref.code.path,
+      path:
+        ref.kind === 'file'
+          ? ref.path
+          : ref.kind === 'selection'
+            ? ref.code.path
+            : ref.artifact.path,
       ...(ref.kind === 'selection'
         ? {
             startLine: ref.code.startLine,
             endLine: ref.code.endLine,
             selectionHash: ref.code.selectionHash,
+          }
+        : {}),
+      ...(ref.kind === 'artifact'
+        ? {
+            contentHash: ref.artifact.contentHash,
+            artifactKind: ref.artifact.artifactKind,
+            anchor: ref.artifact.anchor,
           }
         : {}),
     });

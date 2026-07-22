@@ -2443,23 +2443,28 @@ button.tr-extlive {
 
 /* ---------- M13 direction 05: Session-local command center ---------- */
 .task-room-switcher {
-  min-height: 34px;
+  height: var(--session-header-control-height, 30px);
+  min-height: var(--session-header-control-height, 30px);
   display: inline-flex;
   align-items: center;
+  box-sizing: border-box;
   gap: 3px;
-  padding: 3px;
+  padding: 2px;
   border: 1px solid var(--border-soft);
-  border-radius: 9px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--bg-hover) 74%, transparent);
+  flex: none;
 }
 .task-room-switcher button {
-  min-height: 26px;
+  height: 24px;
+  min-height: 24px;
   display: inline-flex;
   align-items: center;
+  box-sizing: border-box;
   gap: 6px;
   padding: 0 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   color: var(--fg-muted);
   font: 600 10.5px var(--font-ui);
@@ -3206,17 +3211,6 @@ button.tr-extlive {
 }
 
 @container task-room (max-width: 760px) {
-  .session-identity-head {
-    flex-wrap: wrap;
-  }
-  .task-room-switcher {
-    order: 5;
-    width: 100%;
-  }
-  .task-room-switcher button {
-    flex: 1;
-    justify-content: center;
-  }
   .orch-command-head {
     flex-wrap: wrap;
   }

@@ -2,6 +2,7 @@ import type { AgentMode } from '@pi-ide/agent-contract';
 import { create } from 'zustand';
 import type {
   ChangeSetDto,
+  ArtifactFeedbackRefDto,
   CodeContextRefDto,
   FileContextRefDto,
   ModelDescriptorDto,
@@ -91,6 +92,7 @@ interface TaskStore {
     codeRefs?: CodeContextRefDto[];
     /** ADR-0024: file / folder / image references for the first turn. */
     fileRefs?: FileContextRefDto[];
+    artifactRefs?: ArtifactFeedbackRefDto[];
   }): Promise<boolean>;
   send(
     text: string,
@@ -100,6 +102,7 @@ interface TaskStore {
     codeRefs?: CodeContextRefDto[],
     /** ADR-0024: file / folder / image references for this turn. */
     fileRefs?: FileContextRefDto[],
+    artifactRefs?: ArtifactFeedbackRefDto[],
   ): Promise<boolean>;
   stop(): Promise<void>;
   /** Restart an INTERRUPTED/FAILED task's run (M10 recovery). */
@@ -157,6 +160,7 @@ interface TaskStore {
     preview: PreviewAttachmentDto,
     codeRefs?: CodeContextRefDto[],
     fileRefs?: FileContextRefDto[],
+    artifactRefs?: ArtifactFeedbackRefDto[],
   ): Promise<boolean>;
 
   // PIVOT-005: Home fast path — one-line intent charters a task.
@@ -384,6 +388,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       ...(input.preview ? { preview: input.preview } : {}),
       codeRefs: input.codeRefs ?? [],
       fileRefs: input.fileRefs ?? [],
+      artifactRefs: input.artifactRefs ?? [],
     });
     if (!okOrToast(start)) return false;
     if (start.data.queued) {
@@ -392,7 +397,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     return true;
   },
 
-  async send(text, during, model, codeRefs = [], fileRefs = []) {
+  async send(text, during, model, codeRefs = [], fileRefs = [], artifactRefs = []) {
     const taskId = get().activeTaskId;
     if (!taskId) return false;
     const res = await rpcResult('task.message', {
@@ -402,6 +407,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       ...(model ? { model } : {}),
       codeRefs,
       fileRefs,
+      artifactRefs,
     });
     if (!okOrToast(res)) return false;
     // ADR-0016: an override updates the task's model — refresh so the composer
@@ -425,7 +431,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       await useExternalStore.getState().resumeTask(task);
       return;
     }
-    const res = await rpcResult('task.start', { taskId, codeRefs: [], fileRefs: [] });
+    const res = await rpcResult('task.start', {
+      taskId,
+      codeRefs: [],
+      fileRefs: [],
+      artifactRefs: [],
+    });
     if (!res.ok) useAppStore.getState().pushToast('error', res.error.userMessage);
     else if (res.data.queued) {
       useAppStore.getState().pushToast('info', 'Queued: all agent slots are busy.');
@@ -467,7 +478,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     set({ prDraft: null });
   },
 
-  async sendPreviewFeedback(text, preview, codeRefs = [], fileRefs = []) {
+  async sendPreviewFeedback(text, preview, codeRefs = [], fileRefs = [], artifactRefs = []) {
     const taskId = get().activeTaskId;
     if (!taskId) return false;
     const res = await rpcResult('task.message', {
@@ -477,6 +488,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       preview,
       codeRefs,
       fileRefs,
+      artifactRefs,
     });
     if (!okOrToast(res)) return false;
     return true;

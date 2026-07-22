@@ -26,6 +26,7 @@ import type {
   ChangeSetDto,
   ChangeSetFileDto,
   CodeContextRefDto,
+  ArtifactFeedbackRefDto,
   PermissionCardDto,
   PlanEditDto,
   PrDraftDto,
@@ -38,6 +39,7 @@ import type {
 import {
   fileRefsForEventPayload,
   formatPromptWithCodeContext,
+  formatPromptWithArtifactFeedback,
   formatPromptWithFileContext,
   projectActivity,
   type FileContextRefDto,
@@ -101,6 +103,8 @@ interface LaunchExtras {
   codeRefs?: CodeContextRefDto[];
   /** ADR-0024: file / folder / image references attached to this turn. */
   fileRefs?: FileContextRefDto[];
+  /** Semantic feedback pinned to immutable artifact versions. */
+  artifactRefs?: ArtifactFeedbackRefDto[];
 }
 
 function countPatchLines(patch: string | null): { additions: number; deletions: number } {
@@ -2683,6 +2687,7 @@ export class TaskService {
       ...(extras?.previewMeta ? { preview: extras.previewMeta } : {}),
       ...(extras?.codeRefs?.length ? { codeRefs: extras.codeRefs } : {}),
       ...(extras?.fileRefs?.length ? { fileRefs: fileRefsForEventPayload(extras.fileRefs) } : {}),
+      ...(extras?.artifactRefs?.length ? { artifactRefs: extras.artifactRefs } : {}),
     });
     this.setState(taskId, task.state === 'READY' ? 'EXPLORING' : 'IN_PROGRESS');
 
@@ -2706,9 +2711,12 @@ export class TaskService {
           ? [`<skill_catalog_refresh>\n${refreshedSkills}\n</skill_catalog_refresh>`]
           : []),
         ...(refreshedRules ? [refreshedRules] : []),
-        formatPromptWithFileContext(
-          formatPromptWithCodeContext(expandedCommand.text, extras?.codeRefs ?? []),
-          extras?.fileRefs ?? [],
+        formatPromptWithArtifactFeedback(
+          formatPromptWithFileContext(
+            formatPromptWithCodeContext(expandedCommand.text, extras?.codeRefs ?? []),
+            extras?.fileRefs ?? [],
+          ),
+          extras?.artifactRefs ?? [],
         ),
       ].join('\n\n'),
       ...(extras?.images?.length ? { images: extras.images } : {}),
@@ -2795,6 +2803,7 @@ export class TaskService {
         ...(attachments?.fileRefs?.length
           ? { fileRefs: fileRefsForEventPayload(attachments.fileRefs) }
           : {}),
+        ...(attachments?.artifactRefs?.length ? { artifactRefs: attachments.artifactRefs } : {}),
       });
       // ADR-0019: active-session replies also receive the current linked
       // catalog; explicit commands are expanded from the same live revision.
@@ -2809,9 +2818,12 @@ export class TaskService {
           ? [`<skill_catalog_refresh>\n${currentSkills}\n</skill_catalog_refresh>`]
           : []),
         ...(currentRules ? [currentRules] : []),
-        formatPromptWithFileContext(
-          formatPromptWithCodeContext(expandedCommand.text, attachments?.codeRefs ?? []),
-          attachments?.fileRefs ?? [],
+        formatPromptWithArtifactFeedback(
+          formatPromptWithFileContext(
+            formatPromptWithCodeContext(expandedCommand.text, attachments?.codeRefs ?? []),
+            attachments?.fileRefs ?? [],
+          ),
+          attachments?.artifactRefs ?? [],
         ),
       ].join('\n\n');
       if (during === 'steer') this.host.steer(runId, expanded, attachments?.images);

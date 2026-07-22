@@ -40,7 +40,7 @@ describe('preview injection boundary (ADR-0022 am.2, M11-01)', () => {
 
   it('CSP frame-src grants loopback http only (matches the injection gate)', () => {
     const frameSrc = CSP.split('; ').find((d) => d.startsWith('frame-src'));
-    expect(frameSrc).toBe('frame-src http://localhost:* http://127.0.0.1:*');
+    expect(frameSrc).toBe('frame-src artifact: http://localhost:* http://127.0.0.1:*');
   });
 
   it('picker script is posts-only and self-cleaning — static audit', () => {

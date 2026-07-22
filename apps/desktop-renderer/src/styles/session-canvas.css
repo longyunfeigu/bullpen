@@ -5,28 +5,69 @@
 
 /* ---------- Session identity ---------- */
 .session-identity-head {
-  min-height: 72px;
-  gap: 11px;
-  padding: 9px 15px;
+  --session-header-control-height: 30px;
+  min-height: 78px;
+  gap: 14px;
+  padding: 8px 14px;
   background: color-mix(in srgb, var(--bg-editor) 92%, var(--bg-titlebar));
 }
 
 .session-identity {
+  flex: 1 1 0;
   min-width: 0;
   display: grid;
-  gap: 6px;
+  gap: 5px;
 }
 
-.session-identity-title,
-.session-identity-meta {
+.session-identity-title {
+  min-width: 0;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.session-identity-name,
+.session-identity-meta,
+.session-header-actions {
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 7px;
 }
 
+.session-identity-name {
+  overflow: hidden;
+}
+
+.session-identity-name [data-testid='task-state'] {
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 8px !important;
+  border: 0 !important;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  line-height: 1;
+}
+
+.session-identity-secondary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.session-identity-meta {
+  overflow: hidden;
+}
+
+.session-header-actions {
+  flex: none;
+}
+
 .session-identity-title .tr-title {
-  max-width: min(44vw, 620px);
+  max-width: none;
   color: var(--fg);
   font-family: var(--font-display);
   font-size: 18px;
@@ -37,17 +78,24 @@
 .session-identity-meta .tr-proj,
 .session-agent-chip,
 .session-identity-meta .tr-extchip {
-  min-height: 24px;
+  flex: none;
+  height: var(--session-header-control-height);
+  min-height: var(--session-header-control-height);
   display: inline-flex;
   align-items: center;
+  box-sizing: border-box;
   gap: 5px;
-  padding: 3px 8px;
+  padding: 0 9px;
   border: 1px solid var(--border-soft);
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--fg-muted);
   font-size: 10.5px;
   line-height: 1;
+}
+
+.session-identity-meta > .tr-proj:first-child {
+  flex: 0 1 auto;
 }
 
 .session-identity-meta .tr-wtbtn {
@@ -63,17 +111,27 @@
 }
 
 .session-more-button {
-  min-height: 28px;
+  height: var(--session-header-control-height);
+  min-height: var(--session-header-control-height);
   display: inline-flex;
   align-items: center;
+  box-sizing: border-box;
   gap: 5px;
   padding: 0 9px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--fg-muted);
   font: 11px var(--font-ui);
   cursor: pointer;
+}
+
+.session-header-actions .tr-pvbadge {
+  height: var(--session-header-control-height);
+  min-height: var(--session-header-control-height);
+  box-sizing: border-box;
+  padding: 0 11px;
+  border-radius: 8px;
 }
 
 .session-more-button:hover {
@@ -1351,7 +1409,7 @@ button.hm-board-now:hover {
   }
 
   .session-identity-title .tr-title {
-    max-width: 42vw;
+    max-width: none;
     font-size: 16px;
   }
 
@@ -1438,7 +1496,7 @@ button.hm-board-now:hover {
   }
 
   .session-identity-title .tr-title {
-    max-width: 310px;
+    max-width: none;
   }
 
   /* The follow-up composer reuses Home's card inside the room. */
@@ -1473,6 +1531,37 @@ button.hm-board-now:hover {
   .session-tool-canvas {
     transition: none;
   }
+}
+
+/* Preview Focus temporarily gives the existing Session canvas to artifacts.
+ * The conversation remains mounted in state and returns at the previous split. */
+.session-canvas-body.preview-focused,
+.session-canvas-body.preview-focused.tool-expanded,
+.session-canvas-body.preview-focused.split-manual {
+  display: flex;
+}
+
+.session-canvas-body.preview-focused > .tr-main {
+  display: none;
+}
+
+.session-canvas-body.preview-focused > .session-split-handle {
+  display: none;
+}
+
+.session-canvas-body.preview-focused > .session-tool-canvas,
+.session-canvas-body.preview-focused.tool-expanded > .session-tool-canvas,
+.session-canvas-body.preview-focused.split-manual > .session-tool-canvas {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: 1 1 100%;
+  border-top: 0;
+  border-left: 0;
+}
+
+.session-tool-canvas[data-active-tool='preview'] .session-tool-expand span {
+  display: inline;
 }
 
 /* M11-05 A11Y-005: accessible diff text mode + view toggle. */

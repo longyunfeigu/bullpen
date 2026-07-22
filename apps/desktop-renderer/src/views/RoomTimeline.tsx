@@ -6,7 +6,11 @@ import type {
   TaskPlanDto,
   TimelineEventDto,
 } from '@pi-ide/ipc-contracts';
-import { CodeContextRefsSchema, toolPaths } from '@pi-ide/ipc-contracts';
+import {
+  ArtifactFeedbackRefsSchema,
+  CodeContextRefsSchema,
+  toolPaths,
+} from '@pi-ide/ipc-contracts';
 import { useTaskStore } from '../store/taskStore.js';
 import { useAppStore } from '../store/appStore.js';
 import { useEditorStore } from '../store/editorStore.js';
@@ -26,6 +30,7 @@ import { Markdown } from './Markdown.js';
 import { roomCopyFor, type RoomCopy } from './roomCopy.js';
 import { SentCodeContext } from './CodeContextAttachments.js';
 import { SentFileRefs, type SentFileRefPayload } from './FileContextAttachments.js';
+import { SentArtifactFeedback } from './ArtifactFeedbackAttachments.js';
 import {
   computeWindow,
   growWindow,
@@ -603,6 +608,8 @@ function eventNode(
         : recorded.acceptance;
       const parsedCodeRefs = CodeContextRefsSchema.safeParse(payload.codeRefs ?? []);
       const codeRefs = parsedCodeRefs.success ? parsedCodeRefs.data : [];
+      const parsedArtifactRefs = ArtifactFeedbackRefsSchema.safeParse(payload.artifactRefs ?? []);
+      const artifactRefs = parsedArtifactRefs.success ? parsedArtifactRefs.data : [];
       // ADR-0024: file / folder / image references that rode this message.
       const fileRefs: SentFileRefPayload[] = Array.isArray(payload.fileRefs)
         ? payload.fileRefs.flatMap((value) => {
@@ -656,6 +663,7 @@ function eventNode(
             ) : null}
             <SentCodeContext refs={codeRefs} />
             <SentFileRefs refs={fileRefs} />
+            <SentArtifactFeedback refs={artifactRefs} />
           </Bubble>
           <TaskContext
             acceptance={acceptance}

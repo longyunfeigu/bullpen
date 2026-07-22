@@ -137,6 +137,51 @@ test.describe('Session Rail Workbench', () => {
     }
   });
 
+  // ADR-0046: the session the user enters defines the working context — the
+  // rail's Files tree must show the files of the opened session's project,
+  // not whichever project happened to be bound before.
+  test('entering a session moves the working context to its project', async () => {
+    const fixtureA = realpathSync(createGitFixture());
+    const fixtureB = realpathSync(createGitFixture());
+    const nameA = fixtureA.split('/').pop()!;
+    const nameB = fixtureB.split('/').pop()!;
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixtureA, PI_IDE_FORCE_MOCK: '1' },
+      home: 'keep',
+    });
+    try {
+      await expect(page.getByTestId('home-sidebar')).toBeVisible();
+      // Record a session in project A.
+      await page.getByTestId('home-new-task').click();
+      await expect(page.getByTestId('home-model')).toContainText(/mock/i, { timeout: 15000 });
+      await page.getByTestId('home-mode-auto').click();
+      await page.getByTestId('home-intent').fill('[scenario:edit-basic] direction d walk');
+      await page.getByTestId('home-submit').click();
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30000,
+      });
+
+      // Bind the working context to project B — Files now shows B.
+      await page.evaluate(async (path) => {
+        await window.product.rpc['workspace.open']!({ path });
+      }, fixtureB);
+      await page.getByTestId('rail-tab-sessions').click();
+      await expect(page.getByTestId('rail-context')).toContainText(nameB);
+
+      // Entering A's session pulls the context back to A while the room stays.
+      await page.locator('[data-testid^="home-task-"]').first().click();
+      await expect(page.getByTestId('task-room')).toBeVisible();
+      await expect(page.getByTestId('rail-context')).toContainText(nameA);
+      await page.getByTestId('rail-tab-files').click();
+      const filesPane = page.getByTestId('session-files-pane');
+      await expect(filesPane).toContainText(nameA);
+      await expect(filesPane).toContainText('README.md');
+      await expect(page.getByTestId('task-room')).toBeVisible();
+    } finally {
+      await app.close();
+    }
+  });
+
   // Projects choose working context; the one shared Composer then chooses the
   // Agent backend. These are not separate product entry points.
   test('binds a project, then starts a native Agent from the shared Composer', async () => {

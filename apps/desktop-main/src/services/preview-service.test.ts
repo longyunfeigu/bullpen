@@ -6,6 +6,7 @@ import {
   attributeListeners,
   cwdInsideRoot,
   devCommandForRoot,
+  isRenderablePreviewResponse,
   isWebishRoot,
   parseLsofCwds,
   parseLsofListeners,
@@ -87,6 +88,46 @@ describe('attribution (never crosses trees)', () => {
     mkdirSync(sibling);
     expect(cwdInsideRoot(root, root)).toBe(true);
     expect(cwdInsideRoot(sibling, root)).toBe(false);
+  });
+});
+
+describe('renderable HTTP service filtering', () => {
+  it('keeps actual HTML pages and rejects project-local JSON control APIs', () => {
+    expect(
+      isRenderablePreviewResponse({
+        statusCode: 200,
+        contentType: 'text/html; charset=utf-8',
+        location: null,
+        bodyPrefix: '<!doctype html><title>App</title>',
+      }),
+    ).toBe(true);
+    expect(
+      isRenderablePreviewResponse({
+        statusCode: 404,
+        contentType: 'application/json; charset=utf-8',
+        location: null,
+        bodyPrefix: '{"error":"unknown endpoint"}',
+      }),
+    ).toBe(false);
+  });
+
+  it('sniffs HTML only when the server omits a content type', () => {
+    expect(
+      isRenderablePreviewResponse({
+        statusCode: 200,
+        contentType: '',
+        location: null,
+        bodyPrefix: '\n<html><body>App</body></html>',
+      }),
+    ).toBe(true);
+    expect(
+      isRenderablePreviewResponse({
+        statusCode: 200,
+        contentType: 'text/plain',
+        location: null,
+        bodyPrefix: '<html><body>Not served as a page</body></html>',
+      }),
+    ).toBe(false);
   });
 });
 

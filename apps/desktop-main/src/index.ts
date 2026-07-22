@@ -81,6 +81,8 @@ import {
 import { CtlServer } from './services/ctl-server.js';
 import { registerOrchestrationHandlers } from './ipc/orchestration-handlers.js';
 import { installTerminalControlIntegration } from './services/terminal-control-integration.js';
+import { ArtifactService } from './services/artifact-service.js';
+import { registerArtifactHandlers } from './ipc/artifact-handlers.js';
 
 const DEV_SERVER_URL = process.env.PI_IDE_DEV_SERVER_URL;
 const isDev = Boolean(DEV_SERVER_URL);
@@ -135,6 +137,16 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'app',
     privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true },
+  },
+  {
+    scheme: 'artifact',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      corsEnabled: true,
+    },
   },
 ]);
 
@@ -663,6 +675,9 @@ if (!gotLock) {
         terminalControlRef,
       );
       taskServiceRef = taskService;
+      const artifactService = new ArtifactService(state.db, taskService, logger.child('artifacts'));
+      protocol.handle('artifact', (request) => artifactService.handleResource(request));
+      registerArtifactHandlers(artifactService, logger.child('ipc'));
       // ADR-0028: preamble <project_rules> + review-correction capture.
       taskService.attachMemoryHooks(memoryService);
       taskService.markOrphanedRunsInterrupted();
@@ -679,6 +694,7 @@ if (!gotLock) {
         settings,
         modelCatalog,
         logger.child('ipc'),
+        artifactService,
       );
       registerM7Handlers(taskService, logger.child('ipc'));
       registerM8Handlers(taskService, logger.child('ipc'));
@@ -752,7 +768,7 @@ if (!gotLock) {
         logger.child('external'),
         externalLaunchIntents,
       );
-      registerExternalHandlers(externalSessionsRef, logger.child('ipc'));
+      registerExternalHandlers(externalSessionsRef, logger.child('ipc'), artifactService);
       ctlServerRef = new CtlServer({
         socketPath: ctlSocketPath,
         identities: terminalIdentitiesRef,

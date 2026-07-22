@@ -15,6 +15,7 @@ interface WorkspaceStore {
   init(): Promise<void>;
   openViaDialog(): Promise<void>;
   openPath(path: string): Promise<void>;
+  followProject(path: string | null): Promise<void>;
   closeWorkspace(): Promise<void>;
   setTrust(trusted: boolean): Promise<void>;
   loadDir(dir: string): Promise<void>;
@@ -106,6 +107,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const result = await rpcResult('workspace.open', { path });
     if (!result.ok) {
       useAppStore.getState().pushToast('error', `${result.error.userMessage}`);
+    }
+  },
+
+  async followProject(path) {
+    // ADR-0046: the session the user enters defines the working context — the
+    // workspace (and with it the rail's Files tree, editor and composer
+    // binding) moves to that session's project. homePick pins the current
+    // surface: following context must never yank the user into the IDE
+    // surface the way an explicit project open does (PIVOT-006).
+    if (!path || get().workspace?.path === path) return;
+    useAppStore.getState().setHomePick(true);
+    const result = await rpcResult('workspace.open', { path });
+    if (!result.ok) {
+      useAppStore.getState().setHomePick(false);
+      useAppStore.getState().pushToast('error', result.error.userMessage);
     }
   },
 

@@ -12,9 +12,19 @@ import { createGitFixture, createTsSmallFixture } from './helpers/fixtures';
  */
 
 /** Start a tiny http server with a given cwd; resolves its port. */
-function startServer(cwd: string, body: string): Promise<{ child: ChildProcess; port: number }> {
-  const script = `const s=require('http').createServer((q,r)=>{r.setHeader('content-type','text/html');r.end(${JSON.stringify(
-    `<main><h1>${body}</h1><button id="pay">Pay now</button></main>`,
+function startServer(
+  cwd: string,
+  body: string,
+  contentType = 'text/html',
+): Promise<{ child: ChildProcess; port: number }> {
+  const response =
+    contentType === 'text/html'
+      ? `<main><h1>${body}</h1><button id="pay">Pay now</button></main>`
+      : JSON.stringify({ error: body });
+  const script = `const s=require('http').createServer((q,r)=>{r.setHeader('content-type',${JSON.stringify(
+    contentType,
+  )});r.end(${JSON.stringify(
+    response,
   )})});s.listen(0,'127.0.0.1',()=>console.log('PORT:'+s.address().port));`;
   const child = spawn(process.execPath, ['-e', script], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
   return new Promise((resolve, reject) => {
@@ -69,6 +79,7 @@ test.describe('Preview gate (ADR-0022)', () => {
     });
     let wtServer: ChildProcess | null = null;
     let mainServer: ChildProcess | null = null;
+    let controlServer: ChildProcess | null = null;
     try {
       await startWorktreeTask(page, '[scenario:edit-basic] coupon hint fix');
       const worktree = findWorktree(userDataDir);
@@ -78,6 +89,8 @@ test.describe('Preview gate (ADR-0022)', () => {
       wtServer = wt.child;
       const main = await startServer(fixture, 'MAIN tree');
       mainServer = main.child;
+      const control = await startServer(worktree, 'unknown endpoint', 'application/json');
+      controlServer = control.child;
 
       await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
@@ -89,6 +102,7 @@ test.describe('Preview gate (ADR-0022)', () => {
       // The worktree's server is listed; the main tree's is NOT (the boundary).
       await expect(page.getByTestId(`preview-port-${wt.port}`)).toBeVisible({ timeout: 15000 });
       await expect(page.getByTestId(`preview-port-${main.port}`)).toHaveCount(0);
+      await expect(page.getByTestId(`preview-port-${control.port}`)).toHaveCount(0);
 
       // The iframe actually renders the task's own tree.
       const frame = page.getByTestId('preview-frame');
@@ -138,6 +152,7 @@ test.describe('Preview gate (ADR-0022)', () => {
     } finally {
       wtServer?.kill();
       mainServer?.kill();
+      controlServer?.kill();
       await app.close();
     }
   });

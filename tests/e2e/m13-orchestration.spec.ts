@@ -147,11 +147,15 @@ test.describe('M13 session orchestration', () => {
       const identityName = await page.locator('.session-identity-name').boundingBox();
       const identityMeta = await page.locator('.session-identity-meta').boundingBox();
       const roomSwitcher = await page.locator('.task-room-switcher').boundingBox();
+      const moreButton = await page.getByTestId('session-more').boundingBox();
       expect(identityName).not.toBeNull();
       expect(identityMeta).not.toBeNull();
       expect(roomSwitcher).not.toBeNull();
-      expect(identityName!.x + identityName!.width).toBeLessThanOrEqual(roomSwitcher!.x);
-      expect(roomSwitcher!.y + roomSwitcher!.height).toBeLessThanOrEqual(identityMeta!.y);
+      expect(moreButton).not.toBeNull();
+      expect(Math.abs(roomSwitcher!.y - identityMeta!.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(roomSwitcher!.height - identityMeta!.height)).toBeLessThanOrEqual(1);
+      expect(Math.abs(moreButton!.y - identityMeta!.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(moreButton!.height - identityMeta!.height)).toBeLessThanOrEqual(1);
       await page.screenshot({ path: '/tmp/charter-session-header-layout.png' });
       await page.getByTestId('task-room-fleet-tab').click();
       const fleetOutput = page.getByTestId('orchestration-native-terminal').locator('.xterm-rows');

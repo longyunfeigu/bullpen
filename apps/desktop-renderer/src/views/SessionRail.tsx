@@ -259,7 +259,12 @@ function TerminalSessionRow({
         data-testid={`session-terminal-${terminalId}`}
         data-session-key={`terminal:${terminalId}`}
         title={`${providerLabel(provider)} · ${item.contextLabel}`}
-        onClick={() => app.openTerminalSession(terminalId)}
+        onClick={() => {
+          // ADR-0046: entering a session moves the working context (and the
+          // Files tree) to its project.
+          void useWorkspaceStore.getState().followProject(item.projectPath);
+          app.openTerminalSession(terminalId);
+        }}
       >
         <ProviderMark provider={provider} />
         <span className="sr-session-copy">
@@ -562,6 +567,11 @@ export function SessionRail(): React.JSX.Element {
         void useTaskStore.getState().openTask(entry.task.id);
         app.openTaskRoom(entry.task.id);
       } else {
+        // ADR-0046: keyboard navigation follows the project context too.
+        const item = useTerminalStore
+          .getState()
+          .items.find((candidate) => candidate.id === entry.terminalId);
+        void useWorkspaceStore.getState().followProject(item?.projectPath ?? null);
         app.openTerminalSession(entry.terminalId);
       }
     };

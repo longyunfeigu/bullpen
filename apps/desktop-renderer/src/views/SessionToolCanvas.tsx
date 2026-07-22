@@ -130,16 +130,32 @@ export function SessionToolCanvas(props: {
           className="session-tool-expand"
           data-testid="session-tool-expand"
           aria-pressed={expanded}
-          title={expanded ? 'Restore balanced Session view' : 'Give the tool canvas more room'}
+          title={
+            tool === 'preview'
+              ? expanded
+                ? 'Return to the conversation and Quick Preview'
+                : 'Open Preview as a full Session workspace'
+              : expanded
+                ? 'Restore balanced Session view'
+                : 'Give the tool canvas more room'
+          }
           onClick={() => {
-            // Explicit stop jump: a hand-dragged ratio yields to the button,
-            // while the Diff auto-expand never overrides a manual ratio.
-            app.setSessionSplit(task.id, null);
+            // Preview Focus temporarily covers the split, so the user's exact
+            // conversation ratio can return unchanged with Back to Session.
+            if (tool !== 'preview') app.setSessionSplit(task.id, null);
             app.setSessionToolExpanded(!expanded);
           }}
         >
           <Ic name="layout" size={13} />
-          <span>{expanded ? 'Balance' : 'Expand'}</span>
+          <span>
+            {tool === 'preview'
+              ? expanded
+                ? 'Back to Session'
+                : 'Focus'
+              : expanded
+                ? 'Balance'
+                : 'Expand'}
+          </span>
         </button>
       </header>
 

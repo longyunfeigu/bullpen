@@ -8,6 +8,7 @@ import type { AgentHost } from '../services/agent-host.js';
 import type { SecretService } from '../services/secret-service.js';
 import type { SettingsService } from '../services/settings-service.js';
 import type { ModelCatalogService } from '../services/model-catalog.js';
+import type { ArtifactService } from '../services/artifact-service.js';
 
 export function registerM6Handlers(
   tasks: TaskService,
@@ -16,6 +17,7 @@ export function registerM6Handlers(
   settings: SettingsService,
   catalog: ModelCatalogService,
   logger: Logger,
+  artifacts?: ArtifactService,
 ): void {
   registerHandlers(
     {
@@ -33,7 +35,10 @@ export function registerM6Handlers(
           conversationRefTaskIds: payload.conversationRefTaskIds,
         }),
       }),
-      'task.start': async ({ taskId, prompt, preview, codeRefs, fileRefs }) => {
+      'task.start': async ({ taskId, prompt, preview, codeRefs, fileRefs, artifactRefs }) => {
+        const validArtifactRefs = artifacts
+          ? await artifacts.validateFeedbackRefs(artifactRefs)
+          : artifactRefs;
         // ADR-0022 am.2: a follow-up seeded from preview feedback carries the
         // screenshot into its first run (same processing as task.message).
         const attachment = preview ? await processPreviewAttachment(tasks, taskId, preview) : null;
@@ -46,10 +51,11 @@ export function registerM6Handlers(
         const result = await tasks.startTask(
           taskId,
           prompt,
-          attachment || codeRefs.length > 0 || fileRefs.length > 0
+          attachment || codeRefs.length > 0 || fileRefs.length > 0 || validArtifactRefs.length > 0
             ? {
                 ...(codeRefs.length > 0 ? { codeRefs } : {}),
                 ...(fileRefs.length > 0 ? { fileRefs } : {}),
+                ...(validArtifactRefs.length > 0 ? { artifactRefs: validArtifactRefs } : {}),
                 ...(images.length > 0 ? { images } : {}),
                 ...(attachment ? { previewMeta: attachment.meta } : {}),
               }
@@ -57,7 +63,19 @@ export function registerM6Handlers(
         );
         return { task: result.task, queued: result.queued };
       },
-      'task.message': async ({ taskId, text, during, model, preview, codeRefs, fileRefs }) => {
+      'task.message': async ({
+        taskId,
+        text,
+        during,
+        model,
+        preview,
+        codeRefs,
+        fileRefs,
+        artifactRefs,
+      }) => {
+        const validArtifactRefs = artifacts
+          ? await artifacts.validateFeedbackRefs(artifactRefs)
+          : artifactRefs;
         // ADR-0022: marquee feedback — persist the screenshot, attach the
         // timeline meta, and hand the pixels to the runtime with the text.
         const attachment = preview ? await processPreviewAttachment(tasks, taskId, preview) : null;
@@ -73,10 +91,11 @@ export function registerM6Handlers(
             text,
             during,
             model,
-            attachment || codeRefs.length > 0 || fileRefs.length > 0
+            attachment || codeRefs.length > 0 || fileRefs.length > 0 || validArtifactRefs.length > 0
               ? {
                   ...(codeRefs.length > 0 ? { codeRefs } : {}),
                   ...(fileRefs.length > 0 ? { fileRefs } : {}),
+                  ...(validArtifactRefs.length > 0 ? { artifactRefs: validArtifactRefs } : {}),
                   ...(images.length > 0 ? { images } : {}),
                   ...(attachment ? { previewMeta: attachment.meta } : {}),
                 }

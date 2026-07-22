@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ArtifactFeedbackRefSchema } from './artifacts.js';
 
 export const MAX_CODE_CONTEXT_REFS = 6;
 export const MAX_CODE_CONTEXT_REF_CHARS = 16_000;
@@ -90,6 +91,7 @@ export const ExternalInjectRefSchema = z.discriminatedUnion('kind', [
     })
     .strict(),
   z.object({ kind: z.literal('selection'), code: CodeContextRefSchema }).strict(),
+  z.object({ kind: z.literal('artifact'), artifact: ArtifactFeedbackRefSchema }).strict(),
 ]);
 
 export type ExternalInjectRefDto = z.infer<typeof ExternalInjectRefSchema>;

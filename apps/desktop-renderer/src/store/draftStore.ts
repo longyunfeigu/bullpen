@@ -5,6 +5,7 @@ import {
   MAX_FILE_CONTEXT_IMAGES,
   MAX_FILE_CONTEXT_REFS,
   type CodeContextRefDto,
+  type ArtifactFeedbackRefDto,
   type FileContextRefDto,
 } from '@pi-ide/ipc-contracts';
 
@@ -22,6 +23,8 @@ interface DraftStore {
   codeRefs: Record<string, CodeContextRefDto[]>;
   /** ADR-0024: file / folder / image references waiting for the next turn. */
   fileRefs: Record<string, FileContextRefDto[]>;
+  /** Semantic artifact anchors waiting for the next managed Session turn. */
+  artifactRefs: Record<string, ArtifactFeedbackRefDto[]>;
   setDraft(taskId: string, text: string): void;
   clearDraft(taskId: string): void;
   addTerminalRef(taskId: string, ref: TerminalOutputRef): void;
@@ -38,6 +41,9 @@ interface DraftStore {
   ): 'added' | 'duplicate' | 'limit' | 'image-limit';
   removeFileRef(taskId: string, refId: string): void;
   clearFileRefs(taskId: string): void;
+  addArtifactRef(taskId: string, ref: ArtifactFeedbackRefDto): 'added' | 'duplicate' | 'limit';
+  removeArtifactRef(taskId: string, refId: string): void;
+  clearArtifactRefs(taskId: string): void;
 }
 
 export interface TerminalOutputRef {
@@ -54,6 +60,8 @@ export const EMPTY_CODE_CONTEXT_REFS: CodeContextRefDto[] = [];
 
 /** Stable selector fallback for file references (ADR-0024). */
 export const EMPTY_FILE_REFS: FileContextRefDto[] = [];
+
+export const EMPTY_ARTIFACT_REFS: ArtifactFeedbackRefDto[] = [];
 
 /** A picked element / drawn region from the live preview, waiting in the
  * composer (ADR-0022 am.2). `dataBase64` is null when capture failed —
@@ -73,6 +81,7 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   previewRefs: {},
   codeRefs: {},
   fileRefs: {},
+  artifactRefs: {},
   setDraft(taskId, text) {
     set({ drafts: { ...get().drafts, [taskId]: text } });
   },
@@ -163,5 +172,32 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
     const fileRefs = { ...get().fileRefs };
     delete fileRefs[taskId];
     set({ fileRefs });
+  },
+  addArtifactRef(taskId, ref) {
+    const current = get().artifactRefs[taskId] ?? [];
+    const duplicate = current.some(
+      (item) =>
+        item.path === ref.path &&
+        item.contentHash === ref.contentHash &&
+        JSON.stringify(item.anchor) === JSON.stringify(ref.anchor) &&
+        item.note === ref.note,
+    );
+    if (duplicate) return 'duplicate';
+    if (current.length >= 4) return 'limit';
+    set({ artifactRefs: { ...get().artifactRefs, [taskId]: [...current, ref] } });
+    return 'added';
+  },
+  removeArtifactRef(taskId, refId) {
+    set({
+      artifactRefs: {
+        ...get().artifactRefs,
+        [taskId]: (get().artifactRefs[taskId] ?? []).filter((ref) => ref.id !== refId),
+      },
+    });
+  },
+  clearArtifactRefs(taskId) {
+    const artifactRefs = { ...get().artifactRefs };
+    delete artifactRefs[taskId];
+    set({ artifactRefs });
   },
 }));

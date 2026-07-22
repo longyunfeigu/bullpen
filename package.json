@@ -35,7 +35,8 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.80.6",
     "@vscode/ripgrep": "1.18.0",
-    "node-pty": "1.1.0"
+    "node-pty": "1.1.0",
+    "pdfjs-dist": "6.1.200"
   },
   "devDependencies": {
     "@electron/fuses": "2.1.3",

@@ -48,6 +48,70 @@ function basicPlan(): TaskPlan {
   };
 }
 
+function artifactPdfFixture(): string {
+  const stream = [
+    'BT',
+    '/F1 20 Tf',
+    '72 720 Td',
+    '(Artifact PDF preview) Tj',
+    '0 -36 Td',
+    '/F2 18 Tf',
+    '(nnnnnn) Tj',
+    'ET',
+    '',
+  ].join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}endstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /ZapfDingbats >>',
+  ];
+  let source = '%PDF-1.4\n% Charter artifact fixture\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(source.length);
+    source += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = source.length;
+  source += `xref\n0 ${objects.length + 1}\n`;
+  source += '0000000000 65535 f \n';
+  source += offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+    .join('');
+  source += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return source;
+}
+
+function artifactCjkPdfFixture(): string {
+  const stream = ['BT', '/F1 20 Tf', '72 720 Td', '<6F14793A65876863> Tj', 'ET', ''].join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}endstream`,
+    '<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [6 0 R] >>',
+    '<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 4 >> >>',
+  ];
+  let source = '%PDF-1.4\n% Charter CJK CMap fixture\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(source.length);
+    source += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = source.length;
+  source += `xref\n0 ${objects.length + 1}\n`;
+  source += '0000000000 65535 f \n';
+  source += offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+    .join('');
+  source += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return source;
+}
+
 /** Extract `[key:value]` markers from the prompt for parameterized scenarios. */
 export function promptParam(prompt: string, key: string): string | undefined {
   const m = prompt.match(new RegExp(`\\[${key}:([^\\]]+)\\]`));
@@ -478,6 +542,115 @@ export const SCENARIOS: Record<string, Scenario> = {
     },
     { kind: 'wait', ms: 1400 },
     { kind: 'assistant', text: 'Done with the live edits.' },
+  ],
+
+  /** Artifact-platform hook: rich formats plus two immutable CSV versions. */
+  'artifact-showcase': () => [
+    {
+      kind: 'tool',
+      toolName: 'propose_plan',
+      input: {
+        summary: 'Create a small analytics artifact set.',
+        steps: [
+          { title: 'Create the metrics table', expectedFiles: ['artifacts/metrics.csv'] },
+          { title: 'Create the static report', expectedFiles: ['artifacts/report.html'] },
+          { title: 'Create the chart image', expectedFiles: ['artifacts/chart.svg'] },
+          { title: 'Create the PDF review fixture', expectedFiles: ['artifacts/document.pdf'] },
+          {
+            title: 'Create the CJK PDF fixture',
+            expectedFiles: ['artifacts/chinese-document.pdf'],
+          },
+        ],
+      },
+      reason: 'plan before writing artifact fixtures',
+    },
+    {
+      kind: 'tool',
+      toolName: 'create_file',
+      input: {
+        path: 'artifacts/metrics.csv',
+        content:
+          'Region,Revenue,Note\nNorth,120,"On plan"\nSouth,98,"Refunds, pending"\nWest,143,"Two-line\ncomment"\n',
+        reason: 'create a quoted multiline CSV artifact',
+      },
+      reason: 'create table artifact version one',
+    },
+    {
+      kind: 'tool',
+      toolName: 'create_file',
+      input: {
+        path: 'artifacts/report.html',
+        content:
+          '<!doctype html><html><head><link rel="stylesheet" href="report.css"></head><body><main><p class="eyebrow">Q3 SIGNAL</p><h1>Revenue pulse</h1><button id="refresh">Refresh forecast</button><img src="chart.svg" alt="Revenue chart"></main><script>document.querySelector("#refresh").onclick=()=>document.body.dataset.refreshed="yes";</script></body></html>',
+        reason: 'create a local-asset static HTML artifact',
+      },
+      reason: 'create HTML artifact',
+    },
+    {
+      kind: 'tool',
+      toolName: 'create_file',
+      input: {
+        path: 'artifacts/report.css',
+        content:
+          'body{font:16px Georgia;background:#f4ead7;color:#26231e;padding:48px}main{max-width:680px;margin:auto}h1{font-size:56px}.eyebrow{letter-spacing:.2em;color:#b94e32}img{width:100%;margin-top:30px}',
+        reason: 'create a local stylesheet for HTML preview',
+      },
+      reason: 'create HTML local asset',
+    },
+    {
+      kind: 'tool',
+      toolName: 'create_file',
+      input: {
+        path: 'artifacts/chart.svg',
+        content:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 240"><rect width="600" height="240" fill="#fffaf0"/><path d="M30 190L160 120L290 145L430 55L570 80" fill="none" stroke="#b94e32" stroke-width="12"/><g fill="#26766e"><circle cx="160" cy="120" r="10"/><circle cx="430" cy="55" r="10"/></g></svg>',
+        reason: 'create an image artifact',
+      },
+      reason: 'create SVG artifact',
+    },
+    {
+      kind: 'tool',
+      toolName: 'create_file',
+      input: {
+        path: 'artifacts/document.pdf',
+        content: artifactPdfFixture(),
+        reason: 'create a deterministic PDF artifact with an unmapped symbol font',
+      },
+      reason: 'create PDF artifact',
+    },
+    {
+      kind: 'tool',
+      toolName: 'create_file',
+      input: {
+        path: 'artifacts/chinese-document.pdf',
+        content: artifactCjkPdfFixture(),
+        reason: 'create a deterministic PDF artifact that requires the bundled Chinese CMap',
+      },
+      reason: 'create Chinese PDF artifact',
+    },
+    {
+      kind: 'tool',
+      toolName: 'read_file',
+      input: { path: 'artifacts/metrics.csv' },
+      reason: 'read table before revision',
+    },
+    {
+      kind: 'tool',
+      toolName: 'apply_patch',
+      input: {
+        path: 'artifacts/metrics.csv',
+        patch:
+          '--- artifacts/metrics.csv\n+++ artifacts/metrics.csv\n@@ -1,5 +1,5 @@\n Region,Revenue,Note\n-North,120,"On plan"\n+North,132,"Forecast raised"\n South,98,"Refunds, pending"\n West,143,"Two-line\n comment"\n',
+        baseHash: '$lastReadHash',
+        reason: 'publish table artifact version two',
+      },
+      reason: 'revise CSV artifact',
+    },
+    {
+      kind: 'assistant',
+      text: 'The table, static report and chart are ready for anchored review. (deterministic mock answer)',
+      chunkSize: 24,
+    },
   ],
 
   'edit-hunks': () => [

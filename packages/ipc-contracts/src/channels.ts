@@ -54,6 +54,11 @@ import {
   MAX_DISCOVERED_SESSIONS,
 } from './archaeology.js';
 import { OrchestrationSnapshotSchema } from './orchestration.js';
+import {
+  ArtifactDescriptorSchema,
+  ArtifactFeedbackRefsSchema,
+  ArtifactOpenResultSchema,
+} from './artifacts.js';
 
 const SettingsStateSchema = z.object({
   effective: SettingsSchema,
@@ -677,6 +682,41 @@ export const CHANNELS = {
       .strict(),
     z.object({ delivered: z.boolean(), terminalId: z.string() }),
   ),
+  /** Immutable, task-owned artifacts projected from the existing change ledger. */
+  'artifact.list': ch(
+    'artifact.list',
+    1,
+    z.object({ taskId: z.string().min(1) }).strict(),
+    z.object({ artifacts: z.array(ArtifactDescriptorSchema).max(10_000) }),
+  ),
+  'artifact.open': ch(
+    'artifact.open',
+    1,
+    z
+      .object({
+        taskId: z.string().min(1),
+        path: z.string().min(1).max(2000),
+        contentHash: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/u)
+          .optional(),
+        htmlMode: z.enum(['safe', 'interactive']).default('safe'),
+      })
+      .strict(),
+    ArtifactOpenResultSchema,
+  ),
+  'artifact.reveal': ch(
+    'artifact.reveal',
+    1,
+    z
+      .object({
+        taskId: z.string().min(1),
+        path: z.string().min(1).max(2000),
+        action: z.enum(['reveal', 'open']).default('reveal'),
+      })
+      .strict(),
+    z.object({ ok: z.boolean() }),
+  ),
   /** ADR-0038: read-only discovery of the CLI agents' own transcript stores.
    * Newest first, capped; `enabled:false` means discovery is off (E2E without
    * a fake home) and the renderer hides every archaeology surface. */
@@ -832,6 +872,8 @@ export const CHANNELS = {
         codeRefs: CodeContextRefsSchema,
         /** ADR-0024: file / folder / image references for the first turn. */
         fileRefs: FileContextRefsSchema,
+        /** Semantic feedback pinned to immutable artifact hashes. */
+        artifactRefs: ArtifactFeedbackRefsSchema,
       })
       .strict(),
     z.object({ task: TaskDtoSchema, queued: z.boolean() }),
@@ -852,6 +894,8 @@ export const CHANNELS = {
         codeRefs: CodeContextRefsSchema,
         /** ADR-0024: file / folder / image references for this runtime turn. */
         fileRefs: FileContextRefsSchema,
+        /** Semantic feedback pinned to immutable artifact hashes. */
+        artifactRefs: ArtifactFeedbackRefsSchema,
       })
       .strict(),
     z.object({ delivered: z.enum(['started', 'steered', 'queued']) }),

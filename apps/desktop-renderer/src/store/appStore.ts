@@ -298,6 +298,23 @@ function readStoredSessionSplit(taskId: string): number | null {
   return Number.isFinite(raw) && raw >= 20 && raw <= 80 ? raw : null;
 }
 
+/** ADR-0046: opening a Session makes its project the working context, so the
+ * rail's Files tree always shows the files of the session being looked at.
+ * Deferred imports — taskStore and workspaceStore both import this module, so
+ * static imports would cycle. */
+async function followTaskProject(taskId: string): Promise<void> {
+  try {
+    const [{ useTaskStore }, { useWorkspaceStore }] = await Promise.all([
+      import('./taskStore.js'),
+      import('./workspaceStore.js'),
+    ]);
+    const task = useTaskStore.getState().tasks.find((t) => t.id === taskId);
+    if (task) await useWorkspaceStore.getState().followProject(task.projectPath);
+  } catch {
+    // Context alignment is best-effort — the room itself has already opened.
+  }
+}
+
 export const useAppStore = create<AppStore>((set, get) => {
   /** ADR-0042 — openers of group-owned surfaces keep the rail in step: when
    * the surface belongs to a different nav group than the rail shows, flip the
@@ -447,7 +464,12 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ peek: null, sessionTool: 'summary', sessionToolExpanded: false });
     },
     openPreviewRail(taskId) {
-      set({ previewRailTaskId: taskId, peek: null, sessionTool: 'preview' });
+      set({
+        previewRailTaskId: taskId,
+        peek: null,
+        sessionTool: 'preview',
+        sessionToolExpanded: false,
+      });
     },
     closePreviewRail() {
       set({ previewRailTaskId: null, sessionTool: 'summary', sessionToolExpanded: false });
@@ -543,6 +565,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         ...(peek && peek.taskId !== taskId ? { peek: null } : {}),
         ...crossRailPatch('sessions'),
       });
+      void followTaskProject(taskId);
     },
 
     setSessionRoomView(sessionRoomView) {
