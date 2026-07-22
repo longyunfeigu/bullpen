@@ -1,12 +1,16 @@
 import { expect, test } from '@playwright/test';
+import { createRequire } from 'node:module';
 import { launchApp } from './helpers/launch';
+
+// The status bar mirrors package.json — never hardcode the release here.
+const { version } = createRequire(import.meta.url)('../../package.json') as { version: string };
 
 test.describe('M1 engineering baseline', () => {
   test('renderer is isolated and typed IPC works end to end', async () => {
     const { app, page } = await launchApp();
     try {
       await expect(page.getByTestId('workbench')).toBeVisible();
-      await expect(page.getByTestId('status-version')).toHaveText('v1.0.0-beta.1');
+      await expect(page.getByTestId('status-version')).toHaveText(`v${version}`);
 
       // Renderer isolation (spec §12.3): no Node globals, bridge is the only surface.
       const isolation = await page.evaluate(() => ({
