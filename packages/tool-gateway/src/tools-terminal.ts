@@ -112,6 +112,8 @@ export function registerTerminalTools(gateway: ToolGateway, services: TerminalTo
     version: 1,
     description:
       'List visible terminal sessions, their busy/quiet state, agent kind, and orchestration relationship.',
+    promptGuidance:
+      'Call this before terminal.create: reuse an existing idle worker instead of spawning a duplicate.',
     inputSchema: z.object({}).strict(),
     risk: () => ({ level: 'R0', reasons: ['lists terminal metadata only'] }),
     preview: async () => ({ summary: 'List terminal sessions' }),
@@ -187,6 +189,8 @@ export function registerTerminalTools(gateway: ToolGateway, services: TerminalTo
     version: 1,
     description:
       'Create one visible worker terminal in this workspace. Optionally launch Claude/Codex or inject initial shell/TUI text after the terminal settles.',
+    promptGuidance:
+      'When the user asks to open another terminal, window, or Claude/Codex session to run, try, or review something (e.g. "开另一个 claude terminal 去审核", "open a codex window to try plan B"), call this tool to create that worker — do not do the work yourself in this session — then direct it with terminal.send and terminal.wait.',
     inputSchema: z
       .object({
         launch: z.enum(['shell', 'claude', 'codex']).default('shell'),

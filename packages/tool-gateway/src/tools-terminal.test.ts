@@ -42,6 +42,20 @@ describe('terminal.* gateway tools (ADR-0044)', () => {
     expect(names).not.toContain('terminal.send');
   });
 
+  it('carries intent-mapping promptGuidance for create/list in the Edit catalog', () => {
+    const gateway = new ToolGateway({ root: '/tmp', mode: 'edit' });
+    registerTerminalTools(gateway, { root: '/tmp', control: control() });
+    const catalog = gateway.catalog('edit');
+    const create = catalog.find((entry) => entry.name === 'terminal.create');
+    // The model must be able to map "open another claude/codex terminal to do
+    // X" onto terminal.create instead of doing the work in its own session.
+    expect(create?.promptGuidance).toMatch(/open another terminal/i);
+    expect(create?.promptGuidance).toContain('terminal.send');
+    expect(catalog.find((entry) => entry.name === 'terminal.list')?.promptGuidance).toMatch(
+      /reuse an existing idle worker/i,
+    );
+  });
+
   it('runs depth/self-control preflight before asking for permission', async () => {
     let decisions = 0;
     const gateway = new ToolGateway({

@@ -376,10 +376,14 @@ export class PiAgentRuntime implements AgentRuntime {
     const customTools: ToolDefinition[] = input.tools.map((entry) => ({
       name: toolAliases.get(entry.name)!,
       label: entry.name,
-      description:
+      // promptGuidance rides inside the description: the description is the
+      // only per-tool text guaranteed to reach the model on every provider.
+      description: [
         toolAliases.get(entry.name) === entry.name
           ? entry.description
           : `Canonical Charter tool: ${entry.name}. ${entry.description}`,
+        ...(entry.promptGuidance ? [entry.promptGuidance] : []),
+      ].join('\n'),
       // Raw JSON Schema is structurally a TSchema; pi serializes it for the LLM
       // and validates with typebox's standard-keyword interpreter.
       parameters: (entry.inputJsonSchema ?? { type: 'object', properties: {} }) as never,

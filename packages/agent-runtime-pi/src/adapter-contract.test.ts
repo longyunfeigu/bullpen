@@ -149,4 +149,46 @@ describe('Pi adapter contract (AG-013 / ADR-0001)', () => {
     expect(existsSync(join(dataDir, 'sessions', 'contract-task'))).toBe(true);
     await runtime.dispose();
   });
+
+  it('surfaces catalog promptGuidance to the model inside the tool description', async () => {
+    const runtime = new PiAgentRuntime({
+      toolExecutor: executor,
+      credentials: [{ providerId: 'anthropic', kind: 'api-key', value: 'sk-test-000' }],
+    });
+    await runtime.initialize({ runtimeDataDir: dataDir, appVersion: '1.0.0' });
+    const models = await runtime.listModels();
+    const model = models.find((m) => m.providerId === 'anthropic')!;
+
+    const ref = await runtime.createSession({
+      taskId: 'guidance-task',
+      workspaceRoot: dataDir,
+      mode: 'edit',
+      model: { providerId: model.providerId, modelId: model.modelId },
+      tools: [
+        {
+          name: 'terminal.create',
+          description: 'create a worker terminal',
+          schemaVersion: 1,
+          inputJsonSchema: { type: 'object' },
+          promptGuidance: 'When the user asks to open another terminal, call this tool.',
+        },
+        {
+          name: 'read_file',
+          description: 'read',
+          schemaVersion: 1,
+          inputJsonSchema: { type: 'object' },
+        },
+      ],
+      systemPreamble: 'contract test',
+    });
+    const session = runtime.sessionForTest(ref.sessionId)!;
+    const create = session.getToolDefinition('terminal_create')!;
+    expect(create.description).toContain('create a worker terminal');
+    expect(create.description).toContain(
+      'When the user asks to open another terminal, call this tool.',
+    );
+    // Tools without guidance keep their description byte-identical.
+    expect(session.getToolDefinition('read_file')!.description).toBe('read');
+    await runtime.dispose();
+  });
 });
