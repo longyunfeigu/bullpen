@@ -25,21 +25,25 @@ function control(overrides: Partial<TerminalControlPort> = {}): TerminalControlP
 
 describe('terminal.* gateway tools (ADR-0044)', () => {
   it('classifies TUI content, shell commands, control keys and forbidden commands dynamically', () => {
-    expect(classifyTerminalSend('tui', 'please review this').level).toBe('R1');
+    // Amended 2026-07-22: TUI content injection is prompt-free (R0).
+    expect(classifyTerminalSend('tui', 'please review this').level).toBe('R0');
     expect(classifyTerminalSend('shell', 'npm test').level).toBe('R2');
     expect(classifyTerminalSend('shell', 'npm install').level).toBe('R3');
     expect(classifyTerminalSend('tui', '\u0003').level).toBe('R2');
     expect(classifyTerminalSend('shell', 'sudo rm -rf /').level).toBe('R4');
   });
 
-  it('exposes only R0 list/wait in Ask catalog', () => {
+  it('exposes observation tools (list/wait/read) but never send/create in Ask catalog', () => {
     const gateway = new ToolGateway({ root: '/tmp', mode: 'ask' });
     registerTerminalTools(gateway, { root: '/tmp', control: control() });
     const names = gateway.catalog('ask').map((entry) => entry.name);
     expect(names).toContain('terminal.list');
     expect(names).toContain('terminal.wait');
-    expect(names).not.toContain('terminal.read');
+    // Amended 2026-07-22: read is R0 observation and joins the Ask surface.
+    expect(names).toContain('terminal.read');
+    // send probes to R2 on an unknown target; create is R2 — both stay out.
     expect(names).not.toContain('terminal.send');
+    expect(names).not.toContain('terminal.create');
   });
 
   it('carries intent-mapping promptGuidance for create/list in the Edit catalog', () => {

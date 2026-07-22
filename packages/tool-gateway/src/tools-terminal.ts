@@ -67,8 +67,10 @@ function shellWords(text: string): string[] {
     .filter(Boolean);
 }
 
-/** ADR-0044 send classification: TUI text is content (R1); bare-shell text
- * is real command execution and therefore shares the command classifier. */
+/** ADR-0044 send classification (amended 2026-07-22): TUI text is content —
+ * prompt-free R0, because the target agent applies its own approval flow and
+ * takeover/pause/budgets still govern delivery; bare-shell text is real
+ * command execution and therefore shares the command classifier. */
 export function classifyTerminalSend(
   kind: 'shell' | 'tui' | 'missing',
   text: string,
@@ -78,7 +80,7 @@ export function classifyTerminalSend(
     return { level: 'R2', reasons: ['control characters alter the target process state'] };
   }
   if (kind === 'tui') {
-    return { level: 'R1', reasons: ['injects content into a visible agent/TUI session'] };
+    return { level: 'R0', reasons: ['injects content into a visible agent/TUI session'] };
   }
   if (kind === 'missing') {
     return { level: 'R2', reasons: ['target state is unknown; fail closed at execution risk'] };
@@ -139,7 +141,10 @@ export function registerTerminalTools(gateway: ToolGateway, services: TerminalTo
         .max(200 * 1024)
         .default(32 * 1024),
     }).strict(),
-    risk: () => ({ level: 'R1', reasons: ['terminal output may contain sensitive text'] }),
+    // Amended 2026-07-22 (ADR-0044): observation is prompt-free. The buffer is
+    // in-memory only, the ledger records metadata, and reading a visible
+    // sibling screen mirrors what the user already sees.
+    risk: () => ({ level: 'R0', reasons: ['reads a visible in-memory output tail'] }),
     preview: async (input) => ({
       summary: `Read terminal ${input.id}`,
       targets: [input.id],

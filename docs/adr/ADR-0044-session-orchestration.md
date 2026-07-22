@@ -192,3 +192,25 @@ Acceptance IDs (expanded as the M13 section of IMPLEMENTATION_BACKLOG):
 Security suite additions: socket permission test; token restart invalidation; external-path risk
 classification parity with the internal path. Performance note: buffer memory stays capped under
 N concurrent terminals (200 KB × N, N bounded by worker budget).
+
+## Amendment (2026-07-22): observation and TUI content injection are prompt-free
+
+Product-owner decision after first real use: the R1 approval cards on `terminal.read` and on
+`terminal.send` toward a TUI target added a human round-trip to every observe/instruct step of an
+orchestration loop without adding a matching safety property. Decision 2 is amended:
+
+- `terminal.read` → **R0**. Rationale: the buffer is in-memory only, the ledger records metadata
+  (never content), and the sibling screen is already visible to the user. Side effect (accepted):
+  read now appears in the Ask-mode catalog, so read-only managed sessions can observe workers.
+- `terminal.send` with a TUI foreground → **R0**. Rationale: the injected text is conversation
+  content for another agent, which applies its own permission flow to any resulting action;
+  delivery is still governed by takeover precedence, the two pause granularities, send budgets,
+  and the depth/self-control preflights, and the full text still lands in the ledger.
+- Unchanged: bare-shell sends keep the `classifyCommand` floor of R2 (R3/R4 escalation intact),
+  control characters stay R2, `create` stays R2, `kill` stays R4, and worker/send budgets and the
+  master switch are untouched.
+
+Note on R0 semantics: R0 bypasses standing deny rules by design (as for `list`/`wait`); the
+per-worker/fleet pause and takeover remain the user's blocking levers for content injection.
+ORCH-002 (R3 approval + deny path) is unaffected; the e2e read-approval anchors were updated to
+assert the new prompt-free behavior.

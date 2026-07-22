@@ -143,6 +143,16 @@ test.describe('M13 session orchestration', () => {
       expect(args.slice(-2)).toEqual(['--', 'Report your identity and wait for the commander.']);
 
       await expect(page.getByTestId('task-room-fleet-tab')).toContainText('编队 1');
+      await page.setViewportSize({ width: 1024, height: 700 });
+      const identityName = await page.locator('.session-identity-name').boundingBox();
+      const identityMeta = await page.locator('.session-identity-meta').boundingBox();
+      const roomSwitcher = await page.locator('.task-room-switcher').boundingBox();
+      expect(identityName).not.toBeNull();
+      expect(identityMeta).not.toBeNull();
+      expect(roomSwitcher).not.toBeNull();
+      expect(identityName!.x + identityName!.width).toBeLessThanOrEqual(roomSwitcher!.x);
+      expect(roomSwitcher!.y + roomSwitcher!.height).toBeLessThanOrEqual(identityMeta!.y);
+      await page.screenshot({ path: '/tmp/charter-session-header-layout.png' });
       await page.getByTestId('task-room-fleet-tab').click();
       const fleetOutput = page.getByTestId('orchestration-native-terminal').locator('.xterm-rows');
       await expect(fleetOutput).toContainText('CODEX_WORKER_READY', { timeout: 10_000 });
@@ -337,11 +347,6 @@ test.describe('M13 session orchestration', () => {
       await workerBand.getByRole('button').first().click();
       await expect(page.getByTestId('task-room')).toHaveAttribute('data-task-id', taskId!);
 
-      const readPermission = pendingPermission(page, 'terminal.read');
-      await expect(readPermission.first()).toBeVisible({ timeout: 20_000 });
-      await expect(readPermission.first().getByTestId('perm-risk')).toHaveText('R1');
-      await readPermission.first().getByTestId('perm-allow-once').click();
-
       await page.getByTestId('task-room-conversation-tab').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IDLE', {
         timeout: 30_000,
@@ -437,16 +442,18 @@ test.describe('M13 session orchestration', () => {
       await page.getByTestId('session-bar-room').click();
       await expect(page.getByTestId('task-room')).toBeVisible();
 
+      // Amended 2026-07-22 (ADR-0044): read is prompt-free R0 observation —
+      // only create and the bare-shell send still gate on approval.
       for (const [toolName, risk] of [
         ['terminal.create', 'R2'],
         ['terminal.send', 'R2'],
-        ['terminal.read', 'R1'],
       ] as const) {
         const permission = pendingPermission(page, toolName).first();
         await expect(permission).toBeVisible({ timeout: 20_000 });
         await expect(permission.getByTestId('perm-risk')).toHaveText(risk);
         await permission.getByTestId('perm-allow-once').click();
       }
+      await expect(pendingPermission(page, 'terminal.read')).toHaveCount(0);
 
       await expect.poll(() => existsSync(driver.probe), { timeout: 20_000 }).toBe(true);
       const result = JSON.parse(readFileSync(driver.probe, 'utf8')) as {
