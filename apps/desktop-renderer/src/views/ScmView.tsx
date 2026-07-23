@@ -9,6 +9,9 @@ import { useEditorStore } from '../store/editorStore.js';
 
 type GitStatusDto = ChannelResponse<'git.status'>;
 
+let refreshInFlight: Promise<void> | null = null;
+let refreshQueued = false;
+
 interface GitStore {
   status: GitStatusDto | null;
   refreshing: boolean;
@@ -54,10 +57,25 @@ export const useGitStore = create<GitStore>((set, get) => ({
   },
 
   async refresh() {
-    if (get().refreshing) return;
+    if (refreshInFlight) {
+      refreshQueued = true;
+      await refreshInFlight;
+      return;
+    }
     set({ refreshing: true });
-    const res = await rpcResult('git.status', {});
-    set({ refreshing: false, status: res.ok ? res.data : null });
+    refreshInFlight = (async () => {
+      do {
+        refreshQueued = false;
+        const res = await rpcResult('git.status', {});
+        set({ status: res.ok ? res.data : null });
+      } while (refreshQueued);
+    })();
+    try {
+      await refreshInFlight;
+    } finally {
+      refreshInFlight = null;
+      set({ refreshing: false });
+    }
   },
 
   setMessage(message) {
