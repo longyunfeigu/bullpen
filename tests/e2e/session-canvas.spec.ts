@@ -146,7 +146,6 @@ test.describe('Unified Session Canvas', () => {
       await page.screenshot({ path: `${OUT}/diff-zoom-900.png` });
 
       // The single Action Dock owns the decision; accepting does not switch shells.
-      page.once('dialog', (dialog) => void dialog.accept());
       await page.getByTestId('review-bar-accept').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IDLE', {
         timeout: 15000,
@@ -200,10 +199,11 @@ test.describe('Unified Session Canvas', () => {
       // Drag the boundary 160px right: the conversation widens live with the
       // readout chip visible, and the ratio is persisted for this Session.
       const box = (await handle.boundingBox())!;
-      await page.mouse.move(box.x + box.width / 2, box.y + 300);
+      const dragY = box.y + box.height / 2;
+      await page.mouse.move(box.x + box.width / 2, dragY);
       await page.mouse.down();
-      await page.mouse.move(box.x + box.width / 2 + 160, box.y + 300, { steps: 8 });
       await expect(page.getByTestId('session-split-chip')).toBeVisible();
+      await page.mouse.move(box.x + box.width / 2 + 160, dragY, { steps: 8 });
       await page.mouse.up();
       const dragged = await mainWidth();
       expect(dragged - before).toBeGreaterThan(100);

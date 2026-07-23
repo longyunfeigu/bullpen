@@ -378,7 +378,7 @@ function sourceLabel(source: ActivityItem['source']): string {
   if (source === 'claude') return 'Claude CLI';
   if (source === 'codex') return 'Codex CLI';
   if (source === 'external') return 'External CLI';
-  return 'Pi Agent';
+  return 'Charter Agent';
 }
 
 function actorFor(item: ActivityItem): ReplayFactDto['actor'] {
@@ -730,32 +730,32 @@ export function projectReplay(input: {
   let outcomeLabel: string;
   if (running) {
     outcome = 'running';
-    outcomeLabel = '进行中';
+    outcomeLabel = 'In progress';
   } else if (task.external) {
     outcome = hasErrors ? 'attention' : 'completed';
-    outcomeLabel = hasErrors ? '已结束 · 有失败事件' : '会话已结束';
+    outcomeLabel = hasErrors ? 'Ended · Failed events recorded' : 'Session ended';
   } else if (task.state === 'FAILED') {
     outcome = 'attention';
-    outcomeLabel = '运行失败';
+    outcomeLabel = 'Run failed';
   } else if (task.state === 'INTERRUPTED' || task.state === 'CANCELLED') {
     outcome = 'stopped';
-    outcomeLabel = task.state === 'CANCELLED' ? '已取消' : '被中断';
+    outcomeLabel = task.state === 'CANCELLED' ? 'Cancelled' : 'Interrupted';
   } else if (task.state === 'ROLLED_BACK') {
     outcome = 'stopped';
-    outcomeLabel = '已回滚';
+    outcomeLabel = 'Rolled back';
   } else if (task.state === 'REVIEW_READY') {
     outcome = 'completed';
-    outcomeLabel = 'Agent 完成 · 待审阅';
+    outcomeLabel = 'Agent finished · Awaiting review';
   } else if (task.state === 'IDLE') {
     // ADR-0032: the settled conversation — turns settled, session continuable.
     outcome = 'completed';
-    outcomeLabel = '轮次已结算 · 会话可继续';
+    outcomeLabel = 'Turn settled · Session can continue';
   } else if (task.state === 'ACCEPTED' || task.state === 'ARCHIVED') {
     outcome = 'completed';
-    outcomeLabel = '已完成并接受';
+    outcomeLabel = 'Completed and accepted';
   } else {
     outcome = 'completed';
-    outcomeLabel = '已结束';
+    outcomeLabel = 'Ended';
   }
 
   // -- result card (deterministic templates + citations, §5.1) --
@@ -793,7 +793,7 @@ export function projectReplay(input: {
   for (const fact of outwardFacts) {
     if (attention.length >= 2) break;
     if (fact.reversibility === 'irreversible' || fact.risk === 'high') {
-      attention.push({ label: `对外动作：${fact.action}`, factId: fact.id });
+      attention.push({ label: `External action: ${fact.action}`, factId: fact.id });
     }
   }
   for (const fact of facts) {
@@ -804,7 +804,10 @@ export function projectReplay(input: {
   }
   const reportFact = facts.filter((f) => f.kind === 'report').at(-1);
   if (reportFact?.status === 'warn' && attention.length < 4) {
-    attention.push({ label: '结果未经验证（未运行验证命令）', factId: reportFact.id });
+    attention.push({
+      label: 'Result is unverified (no verification command was run)',
+      factId: reportFact.id,
+    });
   }
   const observedMs = coverage
     .filter((c) => c.level === 'observed' || c.level === 'missing')
@@ -813,7 +816,7 @@ export function projectReplay(input: {
     const firstObserved = facts.find((f) => f.capture === 'observed');
     if (firstObserved) {
       attention.push({
-        label: '大部分时段仅有观察级证据，语义无法确认',
+        label: 'Most intervals have observed evidence only; meaning cannot be confirmed',
         factId: firstObserved.id,
       });
     }
@@ -827,22 +830,24 @@ export function projectReplay(input: {
   ).length;
   const outwardPhrase =
     outwardFacts.length > 0
-      ? `${outwardFacts.length} 项对外动作${irreversibleCount > 0 ? `（${irreversibleCount} 项不可逆）` : ''}`
+      ? `${outwardFacts.length} external action${outwardFacts.length === 1 ? '' : 's'}${
+          irreversibleCount > 0 ? ` (${irreversibleCount} irreversible)` : ''
+        }`
       : '';
   let result: string;
   if (outcome === 'running') {
-    result = `任务进行中 — 已记录 ${facts.length} 个事件。`;
+    result = `Task in progress — ${facts.length} event${facts.length === 1 ? '' : 's'} recorded.`;
   } else if (outcome === 'attention') {
-    result = `任务需要注意 — 记录到 ${attention.length} 个失败或被拒事件。`;
+    result = `Task needs attention — ${attention.length} failed or denied event${attention.length === 1 ? '' : 's'} recorded.`;
   } else if (outcome === 'stopped') {
-    result = `任务已停止（${outcomeLabel}）— 共记录 ${facts.length} 个事件。`;
+    result = `Task stopped (${outcomeLabel}) — ${facts.length} event${facts.length === 1 ? '' : 's'} recorded.`;
   } else if (fileCount > 0) {
     // Dual-track template (V3.1): files and outward actions are both results.
-    result = `${outcomeLabel} — ${fileCount} 个文件被修改（+${totalAdd} −${totalDel}）${outwardPhrase ? `，${outwardPhrase}` : ''}。`;
+    result = `${outcomeLabel} — ${fileCount} file${fileCount === 1 ? '' : 's'} changed (+${totalAdd} −${totalDel})${outwardPhrase ? `, ${outwardPhrase}` : ''}.`;
   } else if (outwardFacts.length > 0) {
-    result = `${outcomeLabel} — ${outwardPhrase}，未记录文件变更。`;
+    result = `${outcomeLabel} — ${outwardPhrase}; no file changes recorded.`;
   } else {
-    result = `${outcomeLabel} — 未记录文件变更或对外动作。`;
+    result = `${outcomeLabel} — no file changes or external actions recorded.`;
   }
 
   // Conclusion line: a verbatim, fact-anchored excerpt of the agent's own
@@ -876,7 +881,7 @@ export function projectReplay(input: {
   const goal = task.goalMd.trim();
   const session: ReplaySessionDto = {
     taskId: task.id,
-    goal: goal || '未记录原始目标',
+    goal: goal || 'Original goal not recorded',
     goalRecorded: goal.length > 0,
     outcome,
     outcomeLabel,

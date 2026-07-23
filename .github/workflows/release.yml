@@ -113,10 +113,7 @@ jobs:
       - run: node scripts/release-metadata.mjs --assets release-assets --output release-assets
         env:
           CHARTER_SIGNING_MODE: unsigned
-      - name: Publish GitHub release
-        # Published as a full "Latest" release so the repo sidebar features it
-        # (owner decision 2026-07-22; prereleases never qualify as Latest).
-        # The title and notes still carry the unsigned-preview caveats.
-        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --verify-tag --latest --title "Charter ${GITHUB_REF_NAME} — Unsigned Preview" --notes-file docs/RELEASE_NOTES.md
+      - name: Publish GitHub prerelease
+        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --verify-tag --prerelease --latest=false --title "Charter ${GITHUB_REF_NAME} — Unsigned Preview" --notes-file docs/RELEASE_NOTES.md
         env:
           GH_TOKEN: ${{ github.token }}

@@ -11,6 +11,7 @@ import { ImageView } from '../views/ImageView.js';
 import { editorFontFamily } from '../appearance.js';
 import { addCodeContext } from '../codeContext.js';
 import { CodeContextFloat, codeContextFloatRange } from '../views/CodeContextFloat.js';
+import { Ic } from '../views/home-icons.js';
 
 // Rich markdown pulls lexical/mdast (ADR-0007) — loaded only when first used.
 const MarkdownEditor = React.lazy(() =>
@@ -290,24 +291,35 @@ function MonacoPane({
       ) : null}
       {/* PIVOT-019: Notion-style editing for .md, one toggle away. */}
       {active && meta?.editable && active.toLowerCase().endsWith('.md') ? (
-        <div className="md-mode-toggle" data-testid="md-mode-toggle">
+        <div
+          className="md-mode-toggle"
+          data-testid="md-mode-toggle"
+          role="group"
+          aria-label="Markdown editing mode"
+        >
           <button
+            type="button"
             className={richActive ? 'on' : ''}
             data-testid="md-mode-rich"
+            aria-pressed={richActive}
             onClick={() => {
               if (!richActive) toggleMdRich(active);
             }}
           >
-            ✨ Rich
+            <Ic name="pencil" size={12} />
+            <span>Rich</span>
           </button>
           <button
+            type="button"
             className={richActive ? '' : 'on'}
             data-testid="md-mode-source"
+            aria-pressed={!richActive}
             onClick={() => {
               if (richActive) toggleMdRich(active);
             }}
           >
-            {'</>'} Source
+            <Ic name="file" size={12} />
+            <span>Source</span>
           </button>
         </div>
       ) : null}
@@ -575,12 +587,16 @@ function TabsRow({
               fontSize: 12,
             }}
           >
-            {tab.pinned ? <span aria-label="pinned">📌</span> : null}
+            {tab.pinned ? (
+              <span aria-label="pinned">
+                <Ic name="pin" size={12} />
+              </span>
+            ) : null}
             <span>{name}</span>
             <TabGitMark path={tab.path} />
             {meta?.externalState !== 'clean' && meta ? (
-              <span className="text-warning" title="External change">
-                ⚠
+              <span className="text-warning" title="External change" aria-label="External change">
+                <Ic name="alert" size={12} />
               </span>
             ) : null}
             <button

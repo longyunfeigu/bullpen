@@ -158,6 +158,9 @@ export function TaskRoomView(): React.JSX.Element {
     }
     return [...byLabel.values()].slice(-8);
   }, [store.timeline]);
+  const reviewHasFailedChecks =
+    task?.state === 'REVIEW_READY' &&
+    verifications.some((verification) => verification.state !== 'passed');
 
   if (!task) {
     return (
@@ -268,7 +271,11 @@ export function TaskRoomView(): React.JSX.Element {
               </span>
               <StateBadge
                 state={task.state}
-                {...(answered ? { label: 'Answered', tone: 'ok' as const } : {})}
+                {...(answered
+                  ? { label: 'Answered', tone: 'ok' as const }
+                  : reviewHasFailedChecks
+                    ? { label: 'Review required · checks failed', tone: 'err' as const }
+                    : {})}
               />
             </div>
           </div>
@@ -309,7 +316,7 @@ export function TaskRoomView(): React.JSX.Element {
                     aria-current={sessionRoomView === 'conversation' ? 'page' : undefined}
                     onClick={() => app.setSessionRoomView('conversation')}
                   >
-                    主会话
+                    Conversation
                   </button>
                   <button
                     className={sessionRoomView === 'fleet' ? 'active' : ''}
@@ -317,7 +324,7 @@ export function TaskRoomView(): React.JSX.Element {
                     aria-current={sessionRoomView === 'fleet' ? 'page' : undefined}
                     onClick={() => app.setSessionRoomView('fleet')}
                   >
-                    <span>⌁ 编队 {commanderWorkers.length}</span>
+                    <span>⌁ Fleet {commanderWorkers.length}</span>
                     {orchestrationNeeds > 0 ? <b>{orchestrationNeeds}</b> : null}
                   </button>
                 </nav>
@@ -726,7 +733,7 @@ function RoomComposer({
     const terminalContext = terminalRefs
       .map(
         (terminalRef) =>
-          `终端输出引用：${terminalRef.contextLabel} · ${terminalRef.cwd}\n\n\`\`\`text\n${terminalRef.text}\n\`\`\``,
+          `Terminal output reference: ${terminalRef.contextLabel} · ${terminalRef.cwd}\n\n\`\`\`text\n${terminalRef.text}\n\`\`\``,
       )
       .join('\n\n');
     const text =
@@ -910,7 +917,7 @@ function RoomComposer({
               {terminalRef.title} · {terminalRef.contextLabel}
             </span>
             <button
-              aria-label={`移除 ${terminalRef.title}`}
+              aria-label={`Remove ${terminalRef.title}`}
               onClick={() => useDraftStore.getState().removeTerminalRef(task.id, terminalRef.id)}
             >
               <Ic name="x" size={11} />

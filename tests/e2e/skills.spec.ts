@@ -101,11 +101,13 @@ test('skills: manager (toggle/audit) + "/" picker + /skill: task through the moc
     await expect(row).toContainText('Fill and extract fields');
     await expect(page.locator('tbody tr', { hasText: 'deploy-staging' })).toContainText('explicit');
 
-    // Disable only the selected Pi copy: the grouped row dims…
+    // Disable only the selected Charter copy: the grouped row dims…
     await page.getByTestId('skills-manage-pdf-fill').click();
     const pdfDrawer = page.getByRole('dialog', { name: 'Manage pdf-fill' });
-    await expect(pdfDrawer).toContainText('Pi Agent');
-    await expect(pdfDrawer.getByRole('checkbox', { name: 'Select Pi Agent copy' })).toBeChecked();
+    await expect(pdfDrawer).toContainText('Charter Agent');
+    await expect(
+      pdfDrawer.getByRole('checkbox', { name: 'Select Charter Agent copy' }),
+    ).toBeChecked();
     await page.getByTestId('skills-drawer-disable').click();
     await expect(row).toHaveClass(/off/);
 
@@ -154,7 +156,7 @@ test('skills: discovers and live-syncs a trusted external Agent Skills source', 
     await page.getByTestId('settings-go-to-skills').click();
     const alphaRow = page.locator('tbody tr', { hasText: 'live-alpha' });
     await expect(alphaRow).toBeVisible();
-    await expect(alphaRow).toContainText('Pi');
+    await expect(alphaRow).toContainText('Charter');
     await expect(alphaRow).not.toHaveClass(/off/);
 
     // Atomic-ish editor update + newly added folder are reconciled by the
@@ -217,7 +219,7 @@ test('skills: groups same-name Agent copies and scopes disable/delete safely', a
     await page.getByTestId('rail-view-skills').click();
     const row = page.locator('tbody tr', { hasText: 'design-review' });
     await expect(row).toBeVisible();
-    await expect(row).toContainText('Pi');
+    await expect(row).toContainText('Charter');
     await expect(row).toContainText('Claude');
     await expect(row).toContainText('Codex');
 
@@ -225,7 +227,7 @@ test('skills: groups same-name Agent copies and scopes disable/delete safely', a
     const drawer = page.getByRole('dialog', { name: 'Manage design-review' });
     await expect(drawer).toContainText('All agents · 3');
     await expect(drawer.getByRole('checkbox')).toHaveCount(3);
-    const piCopy = drawer.getByRole('checkbox', { name: 'Select Pi Agent copy' });
+    const piCopy = drawer.getByRole('checkbox', { name: 'Select Charter Agent copy' });
     await expect(piCopy).toBeChecked();
     await expect(drawer.getByRole('checkbox', { name: 'Select Claude Code copy' })).toBeChecked();
     await expect(drawer.getByRole('checkbox', { name: 'Select Codex copy' })).toBeChecked();
@@ -233,7 +235,9 @@ test('skills: groups same-name Agent copies and scopes disable/delete safely', a
     await expect(piCopy).not.toBeChecked();
     await expect(drawer).toContainText('2 selected');
     await drawer.getByRole('button', { name: 'Claude · 1' }).click();
-    await expect(drawer.getByRole('checkbox', { name: 'Select Pi Agent copy' })).not.toBeChecked();
+    await expect(
+      drawer.getByRole('checkbox', { name: 'Select Charter Agent copy' }),
+    ).not.toBeChecked();
     await expect(drawer.getByRole('checkbox', { name: 'Select Claude Code copy' })).toBeChecked();
     await expect(drawer.getByRole('checkbox', { name: 'Select Codex copy' })).not.toBeChecked();
     await page.getByTestId('skills-drawer-disable').click();
@@ -251,7 +255,7 @@ test('skills: groups same-name Agent copies and scopes disable/delete safely', a
     await page.getByTestId('skills-delete-confirm-button').click();
     await expect(drawer).toHaveCount(0);
     await expect(row).not.toContainText('Claude');
-    await expect(row).toContainText('Pi');
+    await expect(row).toContainText('Charter');
     await expect(row).toContainText('Codex');
 
     const systemRow = page.locator('tbody tr', { hasText: 'system-pdf' });

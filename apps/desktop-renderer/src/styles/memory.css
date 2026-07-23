@@ -259,6 +259,9 @@
   color: var(--fg-faint);
 }
 .mv-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-family: var(--font-mono);
   font-size: 10.5px;
   border-radius: 999px;

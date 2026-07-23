@@ -147,7 +147,12 @@ export function ExternalTerminalColumn({
       </div>
       <div className="tr-extbody">
         {item ? (
-          <div ref={hostRef} className="tr-exthost" data-testid="external-terminal-host" />
+          <div
+            ref={hostRef}
+            className="tr-exthost"
+            data-testid="external-terminal-host"
+            data-terminal-id={item.id}
+          />
         ) : (
           <div className="tr-extgone" data-testid="external-terminal-gone">
             <div className="tr-extgone-title">

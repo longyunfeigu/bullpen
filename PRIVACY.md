@@ -1,6 +1,6 @@
 # Charter privacy notice
 
-This notice describes Charter `1.0.0-beta.1`. Charter is local-first, but configured model providers
+This notice describes Charter `1.0.0-beta.2`. Charter is local-first, but configured model providers
 and separately installed external Agent CLIs may use network services.
 
 ## Data stored on your device

@@ -111,6 +111,15 @@ describe('TerminalControlService (ORCH-001/004/005/006/007/009)', () => {
     });
   });
 
+  it('labels listed cwd values as host-managed context rather than live shell state', () => {
+    terminals.create({ cwd: '/repo', projectName: 'repo' });
+
+    expect(service.list({ taskId: 'task_1' })).toMatchObject({
+      cwdSemantics: 'managed-context',
+      terminals: [{ cwd: '/repo', contextCwd: '/repo' }],
+    });
+  });
+
   it('strips ANSI and caps each in-memory rolling buffer at 200KB', async () => {
     const terminal = terminals.create({ cwd: '/tmp' });
     terminals.emitData(terminal.id, '\u001b[31mred\u001b[0m\n');

@@ -618,8 +618,8 @@ describe('replay projection — V3.1 outward actions and dual-track summary', ()
     expect(session.summary.outward).toHaveLength(1);
     expect(session.summary.outward[0]!.label).toContain('procurement');
     // Dual-track result: zero files but recorded outward actions.
-    expect(session.summary.result).toContain('对外动作');
-    expect(session.summary.result).not.toContain('未记录文件变更或对外动作');
+    expect(session.summary.result).toContain('external action');
+    expect(session.summary.result).not.toContain('no file changes or external actions recorded');
   });
 
   it('never infers outward identity without a recorded app', () => {
@@ -630,7 +630,7 @@ describe('replay projection — V3.1 outward actions and dual-track summary', ()
     });
     expect(facts[0]!.outward).toBeUndefined();
     expect(session.summary.outward).toHaveLength(0);
-    expect(session.summary.result).toContain('未记录文件变更或对外动作');
+    expect(session.summary.result).toContain('no file changes or external actions recorded');
   });
 
   it('pins high-risk outward actions first in attention', () => {
@@ -647,7 +647,7 @@ describe('replay projection — V3.1 outward actions and dual-track summary', ()
         }),
       ],
     });
-    expect(session.summary.attention[0]!.label).toContain('对外动作');
+    expect(session.summary.attention[0]!.label).toContain('External action');
     expect(session.summary.attention.some((a) => a.label.includes('failed'))).toBe(true);
   });
 });

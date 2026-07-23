@@ -51,35 +51,37 @@ test.describe('Replay V3 — one story, three depths', () => {
       await page.getByTestId('session-more').click();
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
-      await expect(page.getByTestId('replay-contract')).toContainText('原始目标');
-      await expect(page.getByTestId('replay-outcome')).toContainText('待审阅');
+      await expect(page.getByTestId('replay-contract')).toContainText('Original goal');
+      await expect(page.getByTestId('replay-outcome')).toContainText('Awaiting review');
       await expect(page.getByTestId('replay-summary')).toBeVisible();
       await expect(page.getByTestId('replay-play')).toContainText('Replay');
       // edit-basic never ran a verification — the contract must say so.
-      await expect(page.getByTestId('replay-contract')).toContainText('未验证');
+      await expect(page.getByTestId('replay-contract')).toContainText('Unverified');
 
       // 1b) V3.1 result card: the quoted conclusion (agent's recorded report,
       //     Inferred level), the read-only return line, and the input ledger.
       await expect(page.getByTestId('replay-conclusion')).toBeVisible();
-      await expect(page.getByTestId('replay-conclusion')).toContainText('引自最终报告');
-      await expect(page.getByTestId('replay-to-room')).toContainText('回放保持只读');
+      await expect(page.getByTestId('replay-conclusion')).toContainText(
+        'Quoted from the final report',
+      );
+      await expect(page.getByTestId('replay-to-room')).toContainText('Replay is read-only');
       await expect(page.getByTestId('replay-inputs')).toBeVisible();
       // The conversation is first-class: the user's request renders as a bubble.
       await expect(page.locator('.rp-story-event.message.from-user').first()).toBeVisible();
 
       // 1c) V3.2 lean recap (ADR-0035): a small session earns no fold bars —
       //     heartbeats are quiet-counted in the footer, approvals pin to the
-      //     fact they resolved as chips, and the default '结构化记录' badge is
+      //     fact they resolved as chips, and the default "Recorded" badge is
       //     gone from story rows (only exception levels badge).
       await expect(page.getByTestId('replay-fold')).toHaveCount(0);
       await expect(page.getByTestId('replay-approval-chip').first()).toBeVisible();
-      expect(await page.getByTestId('replay-story-list').textContent()).not.toContain('结构化记录');
+      expect(await page.getByTestId('replay-story-list').textContent()).not.toContain('Recorded');
       // The approval keeps no standalone story row once it renders as a chip.
       await expect(page.locator('.rp-story-event[data-kind="plan-decision"]')).toHaveCount(0);
       // A chip is an audit entry: clicking it opens the approval's own detail.
       await page.getByTestId('replay-approval-chip').first().click();
       await expect(page.getByTestId('replay-detail-layer')).toBeVisible();
-      await page.getByTestId('replay-detail-layer').getByLabel('关闭步骤详情').last().click();
+      await page.getByTestId('replay-detail-layer').getByLabel('Close step details').last().click();
 
       // 2) The design taxonomy is gone: no A–E navigation, no % confidence.
       expect(await page.locator('[data-testid^="replay-mode-"]').count()).toBe(0);
@@ -92,15 +94,15 @@ test.describe('Replay V3 — one story, three depths', () => {
       await expect(page.getByTestId('replay-step')).toContainText('Edited src/index.ts');
       await expect(page.getByTestId('replay-diff')).toContainText('+  return add(3, 4);');
       await expect(page.getByTestId('replay-evidence-list')).toContainText('change:');
-      await expect(page.getByTestId('replay-fact-level')).toContainText('结构化记录');
+      await expect(page.getByTestId('replay-fact-level')).toContainText('Recorded');
 
       // 3b) Evidence-bounded ask: the answer carries validated citations and
       //     an explicit boundary; it never claims hidden reasoning.
-      await page.locator('#rp-ask-input').fill('为什么改这个文件？');
+      await page.locator('#rp-ask-input').fill('Why was this file changed?');
       await page.locator('.rp-ask button[type="submit"]').click();
       await expect(page.getByTestId('replay-answer')).toBeVisible();
-      await expect(page.getByTestId('replay-answer')).toContainText('引用');
-      await expect(page.getByTestId('replay-answer')).toContainText('无法确认');
+      await expect(page.getByTestId('replay-answer')).toContainText('Citations');
+      await expect(page.getByTestId('replay-answer')).toContainText('cannot confirm');
 
       // 4) Depth changes keep the selected fact and playhead (one controller).
       const timeBefore = await page.getByTestId('replay-count').textContent();
@@ -221,7 +223,7 @@ test.describe('Replay V3 — one story, three depths', () => {
 
       // One failed + one passed run: the session is partially verified, and
       // the failure is an attention line with a citation.
-      await expect(page.getByTestId('replay-contract')).toContainText('部分验证');
+      await expect(page.getByTestId('replay-contract')).toContainText('Partially verified');
       await expect(page.getByTestId('replay-summary')).toContainText('Verification failed');
 
       // The failed verification is never skipped: it is a chapter/mandatory
@@ -233,11 +235,11 @@ test.describe('Replay V3 — one story, three depths', () => {
       await switchReplayDepth(page, 'explore');
       await page.getByTestId('replay-search').fill('Verification passed');
       await page.getByTestId('replay-event-list').locator('button').first().click();
-      await expect(page.getByTestId('replay-fact-level')).toContainText('已验证');
+      await expect(page.getByTestId('replay-fact-level')).toContainText('Verified');
 
       // The question filter isolates unverified moments without a mode switch.
       await page.getByTestId('replay-search').fill('');
-      await page.getByTestId('replay-filters').getByText('哪些尚未验证？').click();
+      await page.getByTestId('replay-filters').getByText('What remains unverified?').click();
       await expect(page.getByTestId('replay-event-list')).toBeVisible();
 
       await page.getByTestId('replay-close').click();
@@ -357,7 +359,7 @@ test.describe('Replay V3 — one story, three depths', () => {
       // fold row counts what it hides and expands to samples.
       const fold = page.getByTestId('replay-fold').first();
       await expect(fold).toBeVisible();
-      await expect(fold).toContainText('折叠了');
+      await expect(fold).toContainText('records folded');
       await fold.locator('summary').click();
       await expect(fold.locator('.rp-fold-sample button').first()).toBeVisible();
 
@@ -415,8 +417,8 @@ test.describe('Replay V3 — one story, three depths', () => {
       const pivot = page.getByTestId('replay-pivot').first();
       await pivot.scrollIntoViewIfNeeded();
       await expect(pivot).toBeVisible();
-      await expect(pivot).toContainText('转折');
-      await expect(pivot).toContainText('推导叙事');
+      await expect(pivot).toContainText('Pivot');
+      await expect(pivot).toContainText('Inferred');
       // The revision's recorded prose (plan summary) is quoted, not invented.
       await expect(pivot).toContainText('Revised');
       await expect(
@@ -425,7 +427,7 @@ test.describe('Replay V3 — one story, three depths', () => {
 
       // V3.2: the user's approval of the revised plan is a chip on the pivot
       // card (id-backed plan-version join), not a standalone story row.
-      await expect(pivot.getByTestId('replay-approval-chip')).toContainText('你批准了');
+      await expect(pivot.getByTestId('replay-approval-chip')).toContainText('Approved by you');
 
       // Its grounds are clickable, id-backed references.
       const refs = pivot.locator('.rp-pivot-refs .rp-cite-chip');
@@ -474,7 +476,7 @@ test.describe('Replay V3 — one story, three depths', () => {
 
       // Explore → approvals question filter → the decided approval.
       await switchReplayDepth(page, 'explore');
-      await page.getByTestId('replay-filters').getByText('哪些需要审批？').click();
+      await page.getByTestId('replay-filters').getByText('What required approval?').click();
       await page
         .getByTestId('replay-event-list')
         .locator('button', { hasText: 'Approved' })
@@ -483,20 +485,24 @@ test.describe('Replay V3 — one story, three depths', () => {
 
       // The approval renderer shows the recorded disposition, and the drawer
       // shows the explicit requested-by relation (recorded requestId/callId).
-      await expect(page.getByTestId('replay-step')).toContainText('已批准');
-      await expect(page.getByTestId('replay-evidence-drawer')).toContainText('明确关系');
+      await expect(page.getByTestId('replay-step')).toContainText('Approved');
+      await expect(page.getByTestId('replay-evidence-drawer')).toContainText(
+        'Explicit relationships',
+      );
       await expect(page.getByTestId('replay-evidence-drawer')).toContainText('requested-by');
 
       // Plain tool facts carry no relations — adjacency creates no edges.
       await page
         .getByTestId('replay-filters')
-        .getByRole('button', { name: '全部', exact: true })
+        .getByRole('button', { name: 'All', exact: true })
         .click();
       await page.getByTestId('replay-search').fill('Read src/index.ts');
       const row = page.getByTestId('replay-event-list').locator('button').first();
       if (await row.isVisible().catch(() => false)) {
         await row.click();
-        await expect(page.getByTestId('replay-evidence-drawer')).not.toContainText('明确关系');
+        await expect(page.getByTestId('replay-evidence-drawer')).not.toContainText(
+          'Explicit relationships',
+        );
       }
 
       await page.getByTestId('replay-close').click();

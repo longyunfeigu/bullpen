@@ -103,6 +103,7 @@ describe('run_command tool (CMD-001..006, E2E-012/013 core)', () => {
     expect(data.stdout).toContain('from-child');
     expect(pendingCards).toHaveLength(1);
     expect(pendingCards[0]!.preview.command?.executable).toBe(node);
+    expect(pendingCards[0]!.preview.command?.cwd).toBe(root);
   });
 
   it('never starts the process when the user denies (PERM-006, E2E-012)', async () => {

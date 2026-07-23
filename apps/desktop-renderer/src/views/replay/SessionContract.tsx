@@ -4,13 +4,13 @@ import { Ic } from '../home-icons.js';
 import { formatDurationShort } from './replay-model.js';
 
 const VERIFICATION_LABEL = {
-  verified: '已验证',
-  partial: '部分验证',
-  unverified: '未验证',
+  verified: 'Verified',
+  partial: 'Partially verified',
+  unverified: 'Unverified',
 } as const;
 
 function displayGoal(goal: string): string {
-  return goal.replace(/^\[scenario:[^\]]+\]\s*/i, '').trim() || '未记录原始目标';
+  return goal.replace(/^\[scenario:[^\]]+\]\s*/i, '').trim() || 'Original goal not recorded';
 }
 
 /**
@@ -25,13 +25,13 @@ export function SessionContract({ session }: { session: ReplaySessionDto }): Rea
   return (
     <section className="rp-contract" data-testid="replay-contract" aria-label="Session contract">
       <div className="rp-contract-goal">
-        <span>原始目标</span>
+        <span>Original goal</span>
         <strong className={session.goalRecorded ? '' : 'rp-goal-missing'}>
           {displayGoal(session.goal)}
         </strong>
       </div>
       <div className="rp-contract-fact">
-        <span>结果</span>
+        <span>Outcome</span>
         <strong className={`rp-outcome-${session.outcome}`} data-testid="replay-outcome">
           <Ic
             name={
@@ -49,30 +49,32 @@ export function SessionContract({ session }: { session: ReplaySessionDto }): Rea
         </strong>
       </div>
       <div className="rp-contract-fact">
-        <span>验证</span>
+        <span>Verification</span>
         <strong className={`rp-verification-${session.verification}`}>
           {VERIFICATION_LABEL[session.verification]}
         </strong>
       </div>
       <div className="rp-contract-fact">
-        <span>用时</span>
+        <span>Duration</span>
         <strong className="rp-contract-time">
-          {formatDurationShort(session.actualDurationMs)} <small>实际</small>
+          {formatDurationShort(session.actualDurationMs)} <small>actual</small>
           <em>·</em>
-          {formatDurationShort(session.storyDurationMs)} <small>故事</small>
+          {formatDurationShort(session.storyDurationMs)} <small>story</small>
         </strong>
       </div>
       <div className="rp-contract-fact rp-contract-inputs">
-        <span>喂给 Agent 的输入</span>
+        <span>Inputs sent to the agent</span>
         <details data-testid="replay-inputs">
           <summary>
             <strong>
-              {inputFiles.length > 0 ? `${inputFiles.length} 个文件引用` : '未记录注入清单'}
+              {inputFiles.length > 0
+                ? `${inputFiles.length} file reference${inputFiles.length === 1 ? '' : 's'}`
+                : 'No injection manifest recorded'}
             </strong>
-            <em>展开 ▾</em>
+            <em>Expand ▾</em>
           </summary>
           <div className="rp-inputs-pop">
-            <h4>文件引用（随请求附带）</h4>
+            <h4>File references attached to the request</h4>
             {inputFiles.length > 0 ? (
               <ul>
                 {inputFiles.map((file) => (
@@ -82,15 +84,17 @@ export function SessionContract({ session }: { session: ReplaySessionDto }): Rea
                 ))}
               </ul>
             ) : (
-              <p>本次请求未附带文件引用。</p>
+              <p>No file references were attached to this request.</p>
             )}
-            <h4>记忆与规则</h4>
-            <p className="rp-inputs-note">注入清单未入账本 — 回放不做声称。</p>
+            <h4>Memory and rules</h4>
+            <p className="rp-inputs-note">
+              The injection manifest is not in the ledger — Replay makes no claim about it.
+            </p>
           </div>
         </details>
       </div>
       <div className="rp-contract-fact rp-contract-coverage">
-        <span>证据覆盖</span>
+        <span>Evidence coverage</span>
         <div className="rp-mini-coverage" aria-label="Evidence coverage by interval">
           {session.coverage.map((segment, index) => (
             <i

@@ -29,8 +29,7 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
     });
     try {
       // The scenario runs tests via run_command (not run_verification), so
-      // accepting later triggers the unverified-accept confirmation (VER-007).
-      page.on('dialog', (dialog) => void dialog.accept());
+      // accepting later uses the explicit unverified-accept step (VER-007).
       await createTask(page, '[scenario:edit-multifile] cross-file change', 'edit', 'Multi');
 
       // Plan approval gate (AG-007): the run pauses until the user approves.
@@ -74,6 +73,7 @@ test.describe('M8 agent writes, plan approval and review (E2E-010/011/014/015)',
       await expect(page.getByTestId('review-file-src/util.ts')).toBeVisible();
       await expect(page.getByTestId('review-file-src/created-by-agent.ts')).toBeVisible();
       await page.getByTestId('review-accept-all').click();
+      await page.getByTestId('review-accept-all-confirm').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IDLE', {
         timeout: 20000,
       });

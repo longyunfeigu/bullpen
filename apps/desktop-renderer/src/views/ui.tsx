@@ -138,6 +138,7 @@ export function ModelEffortControl(props: {
   const { models, modelKey, onModelKey, thinking, onThinking, onConfigureModels, testid } = props;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   // Group models by provider, preserving the catalogue order (PIVOT-033).
   const groups = useMemo(() => {
@@ -178,12 +179,26 @@ export function ModelEffortControl(props: {
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      window.requestAnimationFrame(() => triggerRef.current?.focus());
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
   const hasModels = models.length > 0;
   const label = selected ? selected.displayName : hasModels ? 'Select a model' : 'No model';
 
   return (
     <div className="me" ref={ref}>
       <button
+        ref={triggerRef}
         type="button"
         className="me-btn"
         data-testid={`${testid}-model`}
@@ -236,6 +251,7 @@ export function ModelEffortControl(props: {
                   type="button"
                   className="btn primary"
                   data-testid={`${testid}-model-settings`}
+                  data-overlay-focus-return={`${testid}-model`}
                   onClick={() => {
                     setOpen(false);
                     onConfigureModels();

@@ -4,10 +4,10 @@ import { useAppStore } from '../store/appStore.js';
 import '../styles/preview.css';
 
 /**
- * Post-accept PR draft (ADR-0022): the evidence ledger, exported. The card
- * only ever copies text out — push and `gh pr create` happen in the user's
- * shell, under the user's credentials (GIT-007). Dismissing is safe: the
- * draft stays on the task timeline.
+ * Explicit PR draft review (ADR-0022): the evidence ledger, exported. The
+ * card opens from the durable timeline entry and only copies text out — push
+ * and `gh pr create` happen in the user's shell, under the user's credentials
+ * (GIT-007). Dismissing is safe because the timeline entry remains.
  */
 export function PrDraftCard(): React.JSX.Element | null {
   const store = useTaskStore();

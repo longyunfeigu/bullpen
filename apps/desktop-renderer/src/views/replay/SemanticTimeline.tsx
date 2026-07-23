@@ -39,7 +39,7 @@ export function SemanticTimeline({
           data-testid="replay-prev"
           disabled={currentIndex === 0}
           onClick={() => controller.stepBy(-1)}
-          aria-label="上一个事件"
+          aria-label="Previous event"
         >
           <Ic name="chevron" size={15} className="rp-previous-icon" />
         </button>
@@ -52,7 +52,7 @@ export function SemanticTimeline({
           data-testid="replay-next"
           disabled={currentIndex >= facts.length - 1}
           onClick={() => controller.stepBy(1)}
-          aria-label="下一个事件"
+          aria-label="Next event"
         >
           <Ic name="chevron" size={15} className="rp-next-icon" />
         </button>
@@ -62,7 +62,7 @@ export function SemanticTimeline({
         <select
           value={controller.speed}
           onChange={(event) => controller.setSpeed(Number(event.target.value))}
-          aria-label="播放速度"
+          aria-label="Playback speed"
         >
           {[1, 2, 4, 8, 16].map((value) => (
             <option key={value} value={value}>
@@ -76,7 +76,7 @@ export function SemanticTimeline({
           onClick={() => controller.setTimeMode(timeMode === 'story' ? 'actual' : 'story')}
           aria-pressed={timeMode === 'story'}
         >
-          跳过等待
+          Skip waits
           <i aria-hidden>
             <b />
           </i>
@@ -88,7 +88,7 @@ export function SemanticTimeline({
             onClick={() => controller.setLiveFollow(!controller.liveFollow)}
           >
             <i aria-hidden />
-            {controller.liveFollow ? '跟随中' : '跟随最新'}
+            {controller.liveFollow ? 'Following' : 'Follow latest'}
           </button>
         ) : null}
         <span className="rp-count" data-testid="replay-count">
@@ -132,13 +132,17 @@ export function SemanticTimeline({
           step={Math.max(1, Math.floor(durationMs / 5000))}
           value={Math.min(playheadMs, durationMs)}
           onChange={(event) => controller.seek(Number(event.target.value))}
-          aria-label="回放时间轴"
+          aria-label="Replay timeline"
         />
       </div>
 
       <div className="rp-axis-footer">
         <time>00:00</time>
-        <div className="rp-coverage-band" data-testid="replay-coverage" aria-label="逐段证据覆盖">
+        <div
+          className="rp-coverage-band"
+          data-testid="replay-coverage"
+          aria-label="Evidence coverage by interval"
+        >
           {session.coverage.map((segment, index) => {
             const start = timeMode === 'story' ? segment.storyStartMs : segment.actualStartMs;
             const end = timeMode === 'story' ? segment.storyEndMs : segment.actualEndMs;
@@ -155,7 +159,7 @@ export function SemanticTimeline({
         </div>
         <span>
           <Ic name="clock" size={12} />
-          {timeMode === 'story' ? '已压缩等待与重复读取' : '正在显示真实时间'}
+          {timeMode === 'story' ? 'Waits and repeated reads compressed' : 'Showing actual time'}
         </span>
         <time>{formatReplayTime(durationMs)}</time>
       </div>

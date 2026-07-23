@@ -353,7 +353,7 @@ export function SkillsView(): React.JSX.Element {
             <Ic name="info" size={13} /> Evidence
           </span>
           <b>
-            <i className="agent-pi" /> Pi exact
+            <i className="agent-pi" /> Charter exact
           </b>
           <b>
             <i className="agent-claude" /> Claude transcripts
@@ -412,7 +412,7 @@ export function SkillsView(): React.JSX.Element {
           >
             <option value="uses">Most used</option>
             <option value="recent">Recently used</option>
-            <option value="context">Highest Pi context</option>
+            <option value="context">Highest Charter context</option>
             <option value="name">Name</option>
           </select>
         </div>
@@ -432,11 +432,11 @@ export function SkillsView(): React.JSX.Element {
                 <th>Skill</th>
                 <th>Installed in</th>
                 <th>
-                  Usage by Agent<span>Pi · Claude · Codex</span>
+                  Usage by Agent<span>Charter · Claude · Codex</span>
                 </th>
                 <th className="numeric">Last used</th>
                 <th className="numeric">
-                  Pi context<span>per turn</span>
+                  Charter context<span>per turn</span>
                 </th>
                 <th>Decision</th>
               </tr>

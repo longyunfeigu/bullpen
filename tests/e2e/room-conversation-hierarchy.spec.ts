@@ -89,9 +89,14 @@ test('task room prioritizes the conversation and folds execution metadata', asyn
     await expect(page.locator('[data-testid^="tl-tool-"]').first()).toBeVisible();
 
     await expect(page.getByTestId('review-bar-open')).toContainText('查看改动');
-    // Session-Canvas Action Dock (PIVOT-037): decision buttons carry the
-    // dock's English labels — Approve changes / Request changes / Rollback.
-    await expect(page.getByTestId('review-bar-accept')).toContainText('Approve changes');
+    // Session-Canvas Action Dock (PIVOT-037): the unverified risk stays beside
+    // its decision instead of leaving an unconditional approval on screen.
+    await expect(page.getByTestId('review-failed-checks-warning')).toContainText(
+      'No verification has run',
+    );
+    await expect(page.getByTestId('review-bar-accept')).toContainText(
+      'Accept without verification',
+    );
     await page.getByTestId('review-bar-open').click();
     await expect(page.getByTestId('review-view')).toBeVisible();
     await page.getByTestId('review-close').click();

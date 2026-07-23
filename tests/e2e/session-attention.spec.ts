@@ -3,6 +3,30 @@ import { launchApp } from './helpers/launch';
 import { createTsSmallFixture } from './helpers/fixtures';
 
 test.describe('Session completion attention', () => {
+  test('the active Session owns its completion state without covering header actions', async () => {
+    const fixture = createTsSmallFixture();
+    const { app, page } = await launchApp({
+      env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
+    });
+    try {
+      await page.getByTestId('surface-home').click();
+      await page.getByTestId('home-mode-auto').click();
+      await expect(page.getByTestId('home-model')).toContainText(/mock/i);
+      await page
+        .getByTestId('home-intent')
+        .fill('[scenario:edit-basic] active completion stays in the room');
+      await page.getByTestId('home-submit').click();
+
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
+        timeout: 30_000,
+      });
+      await expect(page.getByTestId('session-more')).toBeVisible();
+      await expect(page.getByTestId('session-completion-notice')).toHaveCount(0);
+    } finally {
+      await app.close();
+    }
+  });
+
   test('completion updates the row live, ripples, and a top-right notice reveals the Session', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({
@@ -25,7 +49,7 @@ test.describe('Session completion attention', () => {
       await expect(page.getByTestId('home-model')).toContainText(/mock/i);
       await page
         .getByTestId('home-intent')
-        .fill('[scenario:edit-basic] live completion notification');
+        .fill('[scenario:edit-live] live completion notification');
       await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('task-room')).toBeVisible();
       await page.getByTestId('task-room-back').click();

@@ -101,7 +101,7 @@ export function FileRenderer({
   return (
     <div className="rp-version-stage">
       <section>
-        <span>之前{frame.beforeHash ? ` · ${frame.beforeHash.slice(0, 10)}` : ''}</span>
+        <span>Before{frame.beforeHash ? ` · ${frame.beforeHash.slice(0, 10)}` : ''}</span>
         <pre className="mono">{frame.beforeText ?? '∅  File did not exist'}</pre>
       </section>
       <div className="rp-stage-arrow" aria-hidden>
@@ -109,7 +109,7 @@ export function FileRenderer({
       </div>
       <section className="after">
         <span>
-          之后 · {frame.path}
+          After · {frame.path}
           {frame.afterHash ? ` · ${frame.afterHash.slice(0, 10)}` : ''}
         </span>
         <pre className="mono">{frame.afterText ?? '∅  File deleted'}</pre>

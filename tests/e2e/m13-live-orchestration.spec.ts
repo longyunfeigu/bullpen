@@ -93,7 +93,7 @@ test('live model: colloquial intent alone drives terminal.create → send/wait/r
 
     // 4) Worker appears in the fleet; keep approving send-class gates until
     // the probe output lands in the worker pty.
-    await expect(page.getByTestId('task-room-fleet-tab')).toContainText('编队 1', {
+    await expect(page.getByTestId('task-room-fleet-tab')).toContainText('Fleet 1', {
       timeout: 60_000,
     });
     await page.getByTestId('task-room-fleet-tab').click();

@@ -445,6 +445,10 @@ function registerCoreHandlers(bootstrap: Bootstrap): void {
   }
 }
 
+// Development launches inherit the workspace package name (`pi-ide`). Set the
+// product identity before Electron derives native macOS menu labels from it.
+app.setName('Charter');
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();

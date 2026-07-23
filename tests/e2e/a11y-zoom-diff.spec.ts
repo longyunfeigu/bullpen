@@ -52,6 +52,26 @@ test.describe('M11-05 accessibility', () => {
           }),
         )
         .toBe(100);
+
+      // At browser/OS accessibility zoom beyond the product presets, the
+      // primary composer action must remain inside the usable viewport.
+      await page.getByRole('button', { name: 'Close' }).click();
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]!.webContents.setZoomFactor(2);
+      });
+      await expect
+        .poll(async () =>
+          app.evaluate(({ BrowserWindow }) =>
+            Math.round(BrowserWindow.getAllWindows()[0]!.webContents.getZoomFactor() * 100),
+          ),
+        )
+        .toBe(200);
+      const submitBox = await page.getByTestId('home-submit').boundingBox();
+      const viewportWidth = await page.evaluate(() => window.innerWidth);
+      expect(submitBox).not.toBeNull();
+      expect(submitBox!.x).toBeGreaterThanOrEqual(0);
+      expect(submitBox!.x + submitBox!.width).toBeLessThanOrEqual(viewportWidth);
+      await page.screenshot({ path: '/tmp/charter-home-zoom-200.png' });
     } finally {
       await app.close();
     }
@@ -71,6 +91,69 @@ test.describe('M11-05 accessibility', () => {
       await page.getByTestId('home-submit').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
+      });
+
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]!.webContents.setZoomFactor(2);
+      });
+      await expect
+        .poll(() =>
+          app.evaluate(({ BrowserWindow }) =>
+            Math.round(BrowserWindow.getAllWindows()[0]!.webContents.getZoomFactor() * 100),
+          ),
+        )
+        .toBe(200);
+      const decisionIds = [
+        'session-request-changes',
+        'task-rollback',
+        'review-bar-accept',
+      ] as const;
+      const expectInViewport = async (testId: string): Promise<void> => {
+        const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+        const box = await page.getByTestId(testId).boundingBox();
+        expect(box, `${testId} has a rendered box`).not.toBeNull();
+        expect(box!.x).toBeGreaterThanOrEqual(0);
+        expect(box!.y).toBeGreaterThanOrEqual(0);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+        expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+      };
+      for (const [width, height] of [
+        [1440, 900],
+        [980, 760],
+      ] as const) {
+        await app.evaluate(
+          ({ BrowserWindow }, bounds) => {
+            BrowserWindow.getAllWindows()[0]!.setBounds({ x: 0, y: 0, ...bounds });
+          },
+          { width, height },
+        );
+        await expect
+          .poll(() => page.evaluate(() => innerWidth))
+          .toBeLessThanOrEqual(Math.ceil(width / 2) + 32);
+        for (const testId of decisionIds) await expectInViewport(testId);
+        const decisionNote = page.locator('.review-decision .session-action-note');
+        await expect(decisionNote).toContainText('does not create a Git commit');
+        expect(
+          await decisionNote.evaluate(
+            (element) =>
+              element.scrollWidth > element.clientWidth + 1 ||
+              element.scrollHeight > element.clientHeight + 1,
+          ),
+        ).toBe(false);
+        await page.getByTestId('review-bar-open').click();
+        await expect(page.getByTestId('review-view')).toBeVisible();
+        await expectInViewport('review-accept-all');
+        await expectInViewport('review-close');
+        await page.getByTestId('review-accept-all').click();
+        await expect(page.getByTestId('review-accept-all-confirm')).toBeVisible();
+        await expectInViewport('review-accept-all-confirm');
+        await expectInViewport('review-accept-all-cancel');
+        await page.getByTestId('review-accept-all-cancel').click();
+        await page.screenshot({ path: `/tmp/charter-review-zoom-200-${width}x${height}.png` });
+        await page.getByTestId('review-close').click();
+      }
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]!.webContents.setZoomFactor(1);
       });
 
       await page.getByTestId('session-tool-diff').click();

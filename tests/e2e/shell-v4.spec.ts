@@ -187,12 +187,12 @@ test.describe('Shell v4 — worktree isolation and merge-back (ADR-0009)', () =>
       await page.keyboard.press('Escape');
       await expect(page.getByTestId('file-peek')).toHaveCount(0);
 
-      // Review, accept-all, accept the task (native confirm for unverified).
+      // Review, then explicitly confirm the unverified accept.
       await page.getByTestId('session-tool-review').click();
       await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
-      page.once('dialog', (d) => void d.accept());
       await page.getByTestId('review-accept-all').click();
+      await page.getByTestId('review-accept-all-confirm').click();
 
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IDLE', {
         timeout: 30000,

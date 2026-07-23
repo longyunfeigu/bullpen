@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch.js';
 import { createTsSmallFixture } from './helpers/fixtures.js';
+import { terminalPtySnapshot, waitForTerminalOutput } from './helpers/terminal.js';
 
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -25,6 +26,7 @@ test.describe('Ghostty-inspired quick console', () => {
       await page.keyboard.press('Alt+Space');
       const quick = page.getByTestId('quick-console');
       await expect(quick).toBeVisible();
+      await expect(page.getByTestId('quick-console-context')).toContainText('Context cwd');
       await expect(page.locator('[data-testid="quick-console-terminal"] .xterm')).toBeVisible({
         timeout: 15000,
       });
@@ -121,23 +123,21 @@ test.describe('Ghostty-inspired quick console', () => {
       await expect(page.locator('[data-testid="quick-console-terminal"] .xterm')).toBeVisible({
         timeout: 15000,
       });
-      await page.keyboard.type("printf '__quick-console-ready__\\n'");
+      const terminalId = (await terminalPtySnapshot(page)).items[0]!.id;
+      await page.keyboard.type('node -e "setTimeout(() => process.exit(0), 1800)"');
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('quick-console-terminal')).toContainText(
-        '__quick-console-ready__',
-      );
-
       await page.getByTestId('quick-console-context').click();
       await expect(page.getByTestId('quick-console-context-menu')).toBeVisible();
-      await page.getByTestId('quick-console-context-scratch').click();
+      const scratchContext = page.getByTestId('quick-console-context-scratch');
+      await expect(scratchContext).toBeDisabled();
+      await expect(page.locator('.quick-console-menu-caption')).toContainText('Command running');
+      await expect(scratchContext).toBeEnabled({ timeout: 10_000 });
+      await scratchContext.click();
       await expect(page.getByTestId('quick-console-context')).toContainText('Scratch');
 
       await page.keyboard.type("printf 'quick-console-output-marker\\n'");
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('quick-console-terminal')).toContainText(
-        'quick-console-output-marker',
-        { timeout: 15000 },
-      );
+      await waitForTerminalOutput(page, 'quick-console-output-marker', { terminalId });
       if (process.env.PI_IDE_QA_SCREENSHOT) {
         await page.screenshot({ path: '/tmp/quick-console-implementation.png' });
         await page.setViewportSize({ width: 760, height: 740 });
@@ -150,15 +150,13 @@ test.describe('Ghostty-inspired quick console', () => {
       await expect(roomInput).toBeFocused();
       await page.keyboard.press('Alt+Space');
       await expect(quick).toBeVisible();
-      await expect(page.getByTestId('quick-console-terminal')).toContainText(
-        'quick-console-output-marker',
-      );
+      await waitForTerminalOutput(page, 'quick-console-output-marker', { terminalId });
 
       await page.getByTestId('quick-console-terminal').click({ button: 'right' });
       await expect(page.getByTestId('quick-console-output-menu')).toBeVisible();
       await page.getByTestId('quick-console-send-room').click();
       await expect(quick).not.toBeVisible();
-      await expect(page.getByTestId('room-terminal-refs')).toContainText('速召台输出');
+      await expect(page.getByTestId('room-terminal-refs')).toContainText('Quick Console output');
       await expect(page.getByTestId('agent-send')).toBeEnabled();
       if (process.env.PI_IDE_QA_SCREENSHOT) {
         await page.screenshot({ path: '/tmp/quick-console-room-ref.png' });
@@ -181,13 +179,21 @@ test.describe('Ghostty-inspired quick console', () => {
         .locator('[data-testid^="terminal-tab-"]')
         .filter({ hasText: '⌥ quick' });
       await expect(quickTab).toBeVisible();
-      await expect(page.getByTestId('terminal-host')).toContainText('quick-console-output-marker');
+      await expect(page.getByTestId('terminal-host')).toHaveAttribute(
+        'data-terminal-id',
+        terminalId,
+      );
+      await waitForTerminalOutput(page, 'quick-console-output-marker', { terminalId });
       await quickTab.getByRole('button', { name: 'Close ⌥ quick' }).click();
       await expect(quickTab).toHaveCount(0);
-      await expect(page.locator('.toasts')).toContainText('保活 5 秒');
+      await expect(page.locator('.toasts')).toContainText('undo within 5 seconds');
       await page.keyboard.press(`${mod}+z`);
       await expect(quickTab).toBeVisible();
-      await expect(page.getByTestId('terminal-host')).toContainText('quick-console-output-marker');
+      await expect(page.getByTestId('terminal-host')).toHaveAttribute(
+        'data-terminal-id',
+        terminalId,
+      );
+      await waitForTerminalOutput(page, 'quick-console-output-marker', { terminalId });
     } finally {
       await app.close();
     }

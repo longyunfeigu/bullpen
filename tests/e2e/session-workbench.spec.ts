@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launchApp } from './helpers/launch';
 import { createGitFixture } from './helpers/fixtures';
+import { waitForTerminalOutput } from './helpers/terminal';
 
 /** Idle fake agent CLIs so quick-spawned PTYs stay alive without real agents. */
 function createIdleAgentBins(): string {
@@ -243,36 +244,37 @@ test.describe('Session Rail Workbench', () => {
       // Terminal tool must create a separate command shell instead of moving
       // that same xterm to the right and leaving an empty black host behind.
       await railRow.click();
-      await expect(page.getByTestId('external-terminal-host')).toContainText('claude ready');
       const externalTerminalId = await page
         .getByTestId('external-terminal-column')
         .getAttribute('data-terminal-id');
       expect(externalTerminalId).not.toBeNull();
+      await waitForTerminalOutput(page, 'claude ready', { terminalId: externalTerminalId! });
 
       await page.getByTestId('session-tool-terminal').click();
       await expect(page.getByTestId('session-terminal-create')).toBeVisible();
-      await expect(page.getByTestId('external-terminal-host')).toContainText('claude ready');
+      await waitForTerminalOutput(page, 'claude ready', { terminalId: externalTerminalId! });
 
       await page.getByTestId('session-terminal-create').click();
       const shell = page.getByTestId('session-terminal-tool');
       await expect(shell).toBeVisible();
       await expect(shell).toHaveAttribute('data-terminal-id', /.+/);
-      expect(await shell.getAttribute('data-terminal-id')).not.toBe(externalTerminalId);
+      const shellTerminalId = await shell.getAttribute('data-terminal-id');
+      expect(shellTerminalId).not.toBe(externalTerminalId);
       await expect(page.getByTestId('external-terminal-host').locator('.xterm')).toHaveCount(1);
       await expect(shell.locator('.session-terminal-host .xterm')).toHaveCount(1);
-      await expect(page.getByTestId('external-terminal-host')).toContainText('claude ready');
+      await waitForTerminalOutput(page, 'claude ready', { terminalId: externalTerminalId! });
 
       await shell.locator('.session-terminal-host .xterm').click();
       await page.keyboard.type("printf '\\163\\150\\145\\154\\154\\055\\157\\153\\n'");
       await page.keyboard.press('Enter');
-      await expect(shell).toContainText('shell-ok');
-      await expect(page.getByTestId('external-terminal-host')).toContainText('claude ready');
+      await waitForTerminalOutput(page, 'shell-ok', { terminalId: shellTerminalId! });
+      await waitForTerminalOutput(page, 'claude ready', { terminalId: externalTerminalId! });
 
       if (process.env.CHARTER_CAPTURE_EXTERNAL_TERMINAL_ISOLATION === '1') {
         await page.screenshot({ path: '/tmp/charter-external-terminal-isolation-1440.png' });
         await page.setViewportSize({ width: 900, height: 900 });
-        await expect(page.getByTestId('external-terminal-host')).toContainText('claude ready');
-        await expect(shell).toContainText('shell-ok');
+        await waitForTerminalOutput(page, 'claude ready', { terminalId: externalTerminalId! });
+        await waitForTerminalOutput(page, 'shell-ok', { terminalId: shellTerminalId! });
         await page.waitForTimeout(250);
         await page.screenshot({ path: '/tmp/charter-external-terminal-isolation-900.png' });
       }

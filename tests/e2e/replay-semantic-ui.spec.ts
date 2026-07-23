@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launchApp } from './helpers/launch';
 import { createGitFixture, createTsSmallFixture } from './helpers/fixtures';
+import { waitForTerminalOutput } from './helpers/terminal';
 
 const SHOTS = '/tmp/charter-replay-semantic';
 const SKINS = ['studio', 'terminal', 'archive', 'index'] as const;
@@ -11,7 +12,7 @@ const SKINS = ['studio', 'terminal', 'archive', 'index'] as const;
 test.beforeAll(() => mkdirSync(SHOTS, { recursive: true }));
 
 test.describe('Semantic Replay UI — real Electron surface', () => {
-  test('Pi session follows all four shell backgrounds and the complete playback path works', async () => {
+  test('managed session follows all four shell backgrounds and the complete playback path works', async () => {
     const fixture = createTsSmallFixture();
     const { app, page } = await launchApp({
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
@@ -35,7 +36,7 @@ test.describe('Semantic Replay UI — real Electron surface', () => {
       await page.getByTestId('session-more').click();
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
-      await expect(page.getByTestId('replay-source')).toContainText('Pi Home');
+      await expect(page.getByTestId('replay-source')).toContainText('Charter');
       await expect(page.getByTestId('replay-story-list')).toBeVisible();
       await expect(page.getByTestId('replay-step')).toBeVisible();
       await expect(page.getByTestId('replay-timeline')).toBeVisible();
@@ -47,14 +48,14 @@ test.describe('Semantic Replay UI — real Electron surface', () => {
       await page.locator('.rp-summary-changed button').first().click();
       await expect(page.getByTestId('replay-detail-layer')).toBeVisible();
       await expect(page.getByTestId('replay-evidence-list')).toContainText('change:');
-      await page.getByTestId('replay-detail-layer').getByLabel('关闭步骤详情').last().click();
+      await page.getByTestId('replay-detail-layer').getByLabel('Close step details').last().click();
       await expect(page.getByTestId('replay-detail-layer')).toHaveCount(0);
       await expect(page.getByTestId('replay-step')).toHaveAttribute(
         'data-renderer',
         /file|document/,
       );
-      await expect(page.getByTestId('replay-step')).toContainText('之前');
-      await expect(page.getByTestId('replay-step')).toContainText('之后');
+      await expect(page.getByTestId('replay-step')).toContainText('Before');
+      await expect(page.getByTestId('replay-step')).toContainText('After');
 
       // Expanding context is honest recorded context, and keeps one selected
       // semantic node rather than inventing hidden model reasoning.
@@ -106,7 +107,7 @@ test.describe('Semantic Replay UI — real Electron surface', () => {
       // A narrower supported desktop viewport retains both semantic columns,
       // transport controls and page identity without horizontal overflow.
       await setWindowSize(app, 1024, 768);
-      await expect(page.getByText('对话与操作', { exact: true })).toBeVisible();
+      await expect(page.getByText('Conversation and actions', { exact: true })).toBeVisible();
       // V3.1: the right column is the result card (conclusion + return line),
       // not the removed "what the agent was doing" header.
       await expect(page.getByTestId('replay-summary')).toBeVisible();
@@ -140,9 +141,7 @@ test.describe('Semantic Replay UI — real Electron surface', () => {
         await expect(page.locator('.xterm')).toBeVisible({ timeout: 15000 });
         await page.locator('.xterm').click();
         await writeActiveTerminal(page, 'echo replay-ready\r');
-        await expect(page.getByTestId('terminal-panel')).toContainText('replay-ready', {
-          timeout: 15000,
-        });
+        await waitForTerminalOutput(page, 'replay-ready');
         // Use the absolute fixture executable so user shell functions/aliases
         // for the installed vendor CLIs cannot bypass this deterministic run.
         await writeActiveTerminal(page, `${join(bin, provider)}\r`);
@@ -165,15 +164,19 @@ test.describe('Semantic Replay UI — real Electron surface', () => {
         await expect(page.getByTestId('replay-source')).toContainText(
           provider === 'claude' ? 'Claude Terminal' : 'Codex Terminal',
         );
-        await expect(page.getByTestId('replay-source')).toContainText('观察记录');
+        await expect(page.getByTestId('replay-source')).toContainText('Observed');
 
         await page.locator('.rp-summary-changed button').first().click();
         await expect(page.getByTestId('replay-diff')).toContainText(`${provider}ReplayTouch`);
-        await expect(page.getByTestId('replay-fact-level')).toContainText('观察记录');
+        await expect(page.getByTestId('replay-fact-level')).toContainText('Observed');
         await expect(page.getByTestId('replay-boundary')).toBeVisible();
         await page.screenshot({ path: join(SHOTS, `${provider}-recap-evidence.png`) });
 
-        await page.getByTestId('replay-detail-layer').getByLabel('关闭步骤详情').last().click();
+        await page
+          .getByTestId('replay-detail-layer')
+          .getByLabel('Close step details')
+          .last()
+          .click();
         await expect(page.getByTestId('replay-detail-layer')).toHaveCount(0);
         await page.waitForTimeout(180);
         await page.screenshot({ path: join(SHOTS, `${provider}-recap.png`) });
@@ -181,7 +184,7 @@ test.describe('Semantic Replay UI — real Electron surface', () => {
         await page.getByTestId('replay-search').fill(`${provider}-visible-output`);
         await page.getByTestId('replay-event-list').locator('button').first().click();
         await expect(page.getByTestId('replay-step')).toContainText(`${provider}-visible-output`);
-        await expect(page.getByTestId('replay-fact-level')).toContainText('观察记录');
+        await expect(page.getByTestId('replay-fact-level')).toContainText('Observed');
         await expect(page.getByTestId('replay-boundary')).toBeVisible();
         await page.waitForTimeout(180);
         await page.screenshot({ path: join(SHOTS, `${provider}-explore.png`) });

@@ -9,6 +9,7 @@
   flex-direction: column;
 }
 .rv-head {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -243,11 +244,54 @@
 
 /* Footer */
 .rv-foot {
+  flex: none;
   border-top: 1px solid var(--border);
   padding: 8px 16px;
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .rv-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 8px;
+    padding: 6px 8px;
+  }
+
+  .rv-sp {
+    display: none;
+  }
+
+  .rv-head > .btn,
+  .rv-head > span:not(.rv-title, .rv-totals, .rv-readonly) {
+    min-width: 0;
+    justify-self: stretch;
+  }
+
+  .rv-head > span:not(.rv-title, .rv-totals, .rv-readonly) {
+    flex-wrap: wrap;
+  }
+
+  .rv-head .btn {
+    min-height: 32px;
+    white-space: normal;
+  }
+
+  .rv-readonly {
+    grid-column: 1 / -1;
+  }
+
+  .rv-files {
+    width: min(240px, 45vw);
+  }
+
+  .rv-foot {
+    flex-wrap: wrap;
+    gap: 5px 8px;
+    padding: 6px 8px;
+  }
 }
 .rv-footnote {
   color: var(--fg-muted);

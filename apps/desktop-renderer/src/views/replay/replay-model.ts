@@ -49,56 +49,56 @@ export const KIND_ICON: Record<string, string> = {
 };
 
 export const LEVEL_LABEL: Record<ReplayEvidenceLevel, string> = {
-  verified: '已验证',
-  recorded: '结构化记录',
-  observed: '观察记录',
-  inferred: '推导叙事',
-  missing: '证据缺失',
+  verified: 'Verified',
+  recorded: 'Recorded',
+  observed: 'Observed',
+  inferred: 'Inferred',
+  missing: 'Missing evidence',
 };
 
 export const CHAPTER_LABEL: Record<ReplayChapterCategory, string> = {
-  request: '请求',
-  approach: '方法',
-  discovery: '发现',
-  decision: '决策',
-  pivot: '转折',
-  change: '变更',
-  problem: '问题',
-  verification: '验证',
-  result: '结果',
+  request: 'Request',
+  approach: 'Approach',
+  discovery: 'Discovery',
+  decision: 'Decision',
+  pivot: 'Pivot',
+  change: 'Change',
+  problem: 'Problem',
+  verification: 'Verification',
+  result: 'Result',
 };
 
 /** Short reversibility badge for outward-action rows — honest, never upgraded. */
 export const REVERSIBILITY_BADGE: Record<ReplayFactDto['reversibility'], string> = {
-  reversible: '可回滚',
-  compensatable: '可补偿',
-  irreversible: '不可逆',
-  unknown: '可逆性未知',
+  reversible: 'Reversible',
+  compensatable: 'Compensatable',
+  irreversible: 'Irreversible',
+  unknown: 'Reversibility unknown',
 };
 
 export function labelSource(source: string): string {
-  if (source === 'pi') return 'Pi Home';
+  if (source === 'pi') return 'Charter';
   if (source === 'claude') return 'Claude Terminal';
   if (source === 'codex') return 'Codex Terminal';
   return 'External Terminal';
 }
 
 export function labelCapture(grade: string): string {
-  if (grade === 'full') return '完整记录';
-  if (grade === 'structured') return '结构化记录';
-  return '观察记录';
+  if (grade === 'full') return 'Full record';
+  if (grade === 'structured') return 'Structured record';
+  return 'Observed record';
 }
 
 export function labelReversibility(value: ReplayFactDto['reversibility']): string {
   switch (value) {
     case 'reversible':
-      return '可回滚（字节级快照）';
+      return 'Reversible (byte-exact snapshot)';
     case 'compensatable':
-      return '可补偿';
+      return 'Compensatable';
     case 'irreversible':
-      return '不可逆';
+      return 'Irreversible';
     default:
-      return '未知';
+      return 'Unknown';
   }
 }
 
@@ -268,12 +268,12 @@ export type ReplayQuestionFilter =
   'all' | 'changed' | 'decisions' | 'attention' | 'approvals' | 'unverified';
 
 export const QUESTION_FILTERS: Array<{ id: ReplayQuestionFilter; label: string }> = [
-  { id: 'all', label: '全部' },
-  { id: 'changed', label: '发生了什么变化？' },
-  { id: 'decisions', label: '做了哪些决策？' },
-  { id: 'attention', label: '哪里需要注意？' },
-  { id: 'approvals', label: '哪些需要审批？' },
-  { id: 'unverified', label: '哪些尚未验证？' },
+  { id: 'all', label: 'All' },
+  { id: 'changed', label: 'What changed?' },
+  { id: 'decisions', label: 'What was decided?' },
+  { id: 'attention', label: 'What needs attention?' },
+  { id: 'approvals', label: 'What required approval?' },
+  { id: 'unverified', label: 'What remains unverified?' },
 ];
 
 export function matchesQuestionFilter(fact: ReplayFactDto, filter: ReplayQuestionFilter): boolean {

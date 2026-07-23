@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import type {
   AskUserPromptDto,
   PermissionCardDto,
+  PrDraftDto,
   TaskDto,
   TaskPlanDto,
   TimelineEventDto,
@@ -238,12 +239,9 @@ function TaskContext({
 }
 
 /** ADR-0022: the PR draft as a durable timeline entry (copy-out only). */
-function PrDraftEntry(props: {
-  branch: string;
-  body: string;
-  commands: string;
-}): React.JSX.Element {
+function PrDraftEntry(props: { taskId: string; draft: PrDraftDto }): React.JSX.Element {
   const app = useAppStore();
+  const { draft } = props;
   const copy = async (label: string, text: string): Promise<void> => {
     try {
       await navigator.clipboard.writeText(text);
@@ -255,12 +253,19 @@ function PrDraftEntry(props: {
   return (
     <div className="rt-prdraft" data-testid="tl-pr-draft">
       <div className="rt-prdraft-title">PR draft — from the evidence ledger</div>
-      <div className="rt-prdraft-branch mono">{props.branch} → your default branch</div>
+      <div className="rt-prdraft-branch mono">{draft.branch} → your default branch</div>
       <div className="rt-prdraft-row">
-        <button className="btn" onClick={() => void copy('PR body', props.body)}>
+        <button
+          className="btn"
+          data-testid="tl-pr-draft-open"
+          onClick={() => useTaskStore.getState().openPrDraft(props.taskId, draft)}
+        >
+          Review draft
+        </button>
+        <button className="btn" onClick={() => void copy('PR body', draft.body)}>
           Copy body
         </button>
-        <button className="btn" onClick={() => void copy('Commands', props.commands)}>
+        <button className="btn" onClick={() => void copy('Commands', draft.commands)}>
           Copy commands
         </button>
       </div>
@@ -777,7 +782,7 @@ function eventNode(
               }
             >
               <Ic name="shield" size={11} />
-              在回放中核验
+              Verify in Replay
             </button>
           ) : null}
         </div>
@@ -832,12 +837,22 @@ function eventNode(
       );
     }
     case 'task.prDraft': {
-      // ADR-0022: evidence-ledger PR draft — persists here so dismissing the
-      // post-accept card loses nothing. Copy-out only; never executed.
+      // ADR-0022: evidence-ledger PR draft — the durable, non-blocking next
+      // step after accept. Opening the larger card is always explicit.
       const branch = typeof payload.branch === 'string' ? payload.branch : '';
+      const title = typeof payload.title === 'string' ? payload.title : '';
       const body = typeof payload.body === 'string' ? payload.body : '';
       const commands = typeof payload.commands === 'string' ? payload.commands : '';
-      return <PrDraftEntry key={event.id} branch={branch} body={body} commands={commands} />;
+      const bodyPath = typeof payload.bodyPath === 'string' ? payload.bodyPath : '';
+      const receiptSha256 =
+        typeof payload.receiptSha256 === 'string' ? payload.receiptSha256 : null;
+      return (
+        <PrDraftEntry
+          key={event.id}
+          taskId={task.id}
+          draft={{ branch, title, body, commands, bodyPath, receiptSha256 }}
+        />
+      );
     }
     case 'merge.blocked': {
       const conflicts = (payload.conflicts ?? []) as Array<{ path: string; reason: string }>;

@@ -33,7 +33,7 @@ export function VerifyDepth({
   const exportReceipt = () => {
     void rpcResult('task.replayReceipt', { taskId: task.id }).then((result) => {
       if (result.ok && result.data.htmlPath) {
-        setExported(`已导出 HTML + JSON：${result.data.htmlPath}`);
+        setExported(`Exported HTML + JSON: ${result.data.htmlPath}`);
       } else if (result.ok) {
         setExported(null); // user cancelled the save dialog
       }
@@ -44,7 +44,7 @@ export function VerifyDepth({
     <main className="rp-verify">
       <aside className="rp-claim-list" aria-label="Claims with evidence">
         <header className="rp-panel-title">
-          <span>主张与证据</span>
+          <span>Claims and evidence</span>
           <span>{claims.length}</span>
         </header>
         <div>
@@ -70,14 +70,14 @@ export function VerifyDepth({
       </aside>
       <section className="rp-verify-workspace">
         <div className="rp-verify-title">
-          <span>核验当前主张</span>
+          <span>Verify current claim</span>
           <h1>{fact.action}</h1>
         </div>
         <ArtifactStage fact={fact} taskId={task.id} compact />
         <div className="rp-verify-chain" data-testid="replay-evidence-chain">
           <header>
-            <span>证据链</span>
-            <small>只显示明确记录的关系</small>
+            <span>Evidence chain</span>
+            <small>Explicitly recorded relationships only</small>
           </header>
           <div className="rp-chain-flow">
             <div>
@@ -93,7 +93,9 @@ export function VerifyDepth({
                 <Ic name="archive" size={15} />
               </span>
               <small>Evidence</small>
-              <strong>{fact.evidenceRefs.length} 条直接记录</strong>
+              <strong>
+                {fact.evidenceRefs.length} direct record{fact.evidenceRefs.length === 1 ? '' : 's'}
+              </strong>
             </div>
             <i aria-hidden />
             <div className={fact.level === 'verified' ? 'verified' : 'boundary'}>
@@ -101,7 +103,7 @@ export function VerifyDepth({
                 <Ic name={fact.level === 'verified' ? 'checkCircle' : 'alert'} size={15} />
               </span>
               <small>Disposition</small>
-              <strong>{fact.level === 'verified' ? '已验证' : '边界已声明'}</strong>
+              <strong>{fact.level === 'verified' ? 'Verified' : 'Boundary declared'}</strong>
             </div>
           </div>
         </div>
@@ -133,7 +135,7 @@ export function VerifyDepth({
             </div>
             <div>
               <dt>Integrity</dt>
-              <dd>账本顺序记录（未签名）</dd>
+              <dd>Ledger-order record (unsigned)</dd>
             </div>
           </dl>
           <button
@@ -142,7 +144,7 @@ export function VerifyDepth({
             onClick={exportReceipt}
           >
             <Ic name="archive" size={13} />
-            导出凭证（HTML + JSON）
+            Export receipt (HTML + JSON)
           </button>
           {exported ? (
             <small className="rp-receipt-exported" data-testid="replay-receipt-exported">
@@ -150,7 +152,8 @@ export function VerifyDepth({
             </small>
           ) : null}
           <small className="rp-receipt-note">
-            <Ic name="info" size={11} /> 叙事与证据分离；本导出未签名，不声称防篡改。
+            <Ic name="info" size={11} /> Narrative and evidence remain separate. This unsigned
+            export does not claim tamper resistance.
           </small>
         </section>
         <EvidenceDrawer

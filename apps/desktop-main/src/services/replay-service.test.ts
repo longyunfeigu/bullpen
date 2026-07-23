@@ -216,7 +216,7 @@ describe('ReplayService evidence-bounded ask (§7)', () => {
     expect(answer.citations).toContain('fact:call-1');
     expect(answer.text).toContain('Waiting for approval');
     // The ledger cannot answer "why" — the boundary says so explicitly.
-    expect(answer.boundary).toContain('无法确认');
+    expect(answer.boundary).toContain('cannot confirm');
   });
 
   it('fails closed for facts outside this task', () => {
@@ -226,7 +226,7 @@ describe('ReplayService evidence-bounded ask (§7)', () => {
     const service = buildService(w);
     const answer = service.ask('t1', 'evt-other-99', 'what happened?');
     expect(answer.citations).toEqual([]);
-    expect(answer.text).toContain('记录无法确认');
+    expect(answer.text).toContain('record cannot confirm');
   });
 
   it('marks observed facts as observation-only in the answer', () => {
@@ -237,8 +237,8 @@ describe('ReplayService evidence-bounded ask (§7)', () => {
     ];
     const service = buildService(w);
     const answer = service.ask('t1', 'evt-t1-1', 'why?');
-    expect(answer.text).toContain('只能确认');
-    expect(answer.boundary).toContain('无法确认应用内部语义');
+    expect(answer.text).toContain('record only confirms');
+    expect(answer.boundary).toContain('cannot confirm internal app meaning');
   });
 });
 
@@ -252,7 +252,7 @@ describe('ReplayService receipt (§8)', () => {
     expect(first.manifestSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(first.json).toContain(first.manifestSha256);
     expect(first.html).toContain(first.manifestSha256);
-    expect(first.html).toContain('未经密码学签名');
+    expect(first.html).toContain('not cryptographically signed');
     expect(first.html).not.toMatch(/tamper-proof(?!ing)|不可篡改/);
     // Same ledger, same manifest content → same hash (except exportedAt).
     const a = JSON.parse(first.json) as { manifest: { exportedAt: string } };

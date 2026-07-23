@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launchApp } from './helpers/launch';
 import { createGitFixture } from './helpers/fixtures';
+import { terminalPtySnapshot, waitForTerminalOutput } from './helpers/terminal';
 
 async function switchReplayDepth(page: Page, depth: 'recap' | 'explore' | 'verify') {
   await page.getByTestId('replay-menu-toggle').click();
@@ -195,9 +196,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await page.locator('.xterm').click();
       await page.keyboard.type('echo codex-shell-ready');
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('terminal-panel')).toContainText('codex-shell-ready', {
-        timeout: 15000,
-      });
+      await waitForTerminalOutput(page, 'codex-shell-ready');
       await page.keyboard.type(join(bin, 'codex'));
       await page.keyboard.press('Enter');
       await expect(page.locator('[data-testid^="terminal-agent-"]')).toContainText('Codex', {
@@ -238,9 +237,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await page.getByTestId('terminal-host').locator('.xterm').click();
       await page.keyboard.type('echo claude-shell-ready');
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('terminal-panel')).toContainText('claude-shell-ready', {
-        timeout: 15000,
-      });
+      await waitForTerminalOutput(page, 'claude-shell-ready');
       await page.keyboard.type(join(bin, 'claude'));
       await page.keyboard.press('Enter');
       await expect(page.locator('[data-testid^="terminal-agent-"]')).toHaveCount(2, {
@@ -275,9 +272,14 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       // Claude moves right; Codex remains selected and live in the Bottom Panel.
       await page.getByTestId('session-bar-promote').click();
       await expect(page.getByTestId('external-panel')).toContainText('claude');
-      await expect(page.getByTestId('external-panel-terminal')).toContainText(
-        'claude-parallel-started',
+      await expect(page.getByTestId('external-panel-terminal')).toHaveAttribute(
+        'data-terminal-id',
+        claude.id,
       );
+      await expect(
+        page.getByTestId('external-panel-terminal').locator('.xterm-screen'),
+      ).toBeVisible();
+      await waitForTerminalOutput(page, 'claude-parallel-started', { terminalId: claude.id });
       await expect(page.getByTestId('terminal-session-bar')).toContainText('Codex');
       await expect(page.getByTestId('bottom-panel')).toBeVisible();
       await expect(page.getByTestId('agent-panel')).toHaveCount(0);
@@ -286,9 +288,11 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       // no small secondary target, no kill/create and both scrollbacks remain.
       await page.getByTestId(`terminal-tab-${codex.id}`).click();
       await expect(page.getByTestId('external-panel')).toContainText('codex');
-      await expect(page.getByTestId('external-panel-terminal')).toContainText(
-        'codex-parallel-started',
+      await expect(page.getByTestId('external-panel-terminal')).toHaveAttribute(
+        'data-terminal-id',
+        codex.id,
       );
+      await waitForTerminalOutput(page, 'codex-parallel-started', { terminalId: codex.id });
       await expect(page.getByTestId('terminal-session-bar')).toContainText('Claude Code');
       await expect(page.getByTestId(`terminal-tab-${codex.id}`)).toContainText('IN SIDE');
       await expect(page.getByTestId(`terminal-tab-${codex.id}`)).toHaveClass(/selected/);
@@ -545,9 +549,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await page.locator('.xterm').click();
       await page.keyboard.type('echo ready-marker');
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('terminal-panel')).toContainText('ready-marker', {
-        timeout: 15000,
-      });
+      await waitForTerminalOutput(page, 'ready-marker');
       await page.keyboard.type(join(bin, 'claude'));
       await page.keyboard.press('Enter');
 
@@ -579,13 +581,8 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       expect(taskIdBefore).not.toBeNull();
 
       await resume.click();
-      await expect(page.getByTestId('external-terminal-host')).toContainText(
-        'resumed-original-session',
-        { timeout: 20000 },
-      );
-      await expect(page.getByTestId('external-terminal-host')).toContainText(
-        'resume-arg=--continue',
-      );
+      await waitForTerminalOutput(page, 'resumed-original-session', { timeout: 20_000 });
+      await waitForTerminalOutput(page, 'resume-arg=--continue');
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IN_PROGRESS');
 
       const externalTasksAfter = await page.evaluate(async () => {
@@ -649,9 +646,13 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IDLE', {
         timeout: 20000,
       });
-      // Accepting a git-project task offers a PR draft — dismiss the modal.
-      await page.getByTestId('pr-draft-dismiss').click();
+      // Settling stays visible; the external terminal replaces the normal
+      // timeline, so its durable PR draft is an explicit dock action.
       await expect(page.getByTestId('pr-draft-card')).toHaveCount(0);
+      await page.getByTestId('settled-pr-draft-open').click();
+      await expect(page.getByTestId('pr-draft-card')).toBeVisible();
+      await page.getByTestId('pr-draft-dismiss').click();
+      await expect(page.getByTestId('settled-pr-draft-open')).toBeVisible();
 
       const listExternal = async (): Promise<Array<{ id: string; state: string }>> =>
         page.evaluate(async () => {
@@ -692,10 +693,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await row.hover();
       await page.getByTestId(`home-resume-${settledId}`).click();
       await expect(page.getByTestId('task-room')).toBeVisible({ timeout: 30000 });
-      await expect(page.getByTestId('external-terminal-host')).toContainText(
-        'resumed-original-session',
-        { timeout: 30000 },
-      );
+      await waitForTerminalOutput(page, 'resumed-original-session', { timeout: 30_000 });
 
       const after = await listExternal();
       expect(after).toHaveLength(1);
@@ -723,9 +721,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await first.page.locator('.xterm').click();
       await first.page.keyboard.type('echo restart-ready');
       await first.page.keyboard.press('Enter');
-      await expect(first.page.getByTestId('terminal-panel')).toContainText('restart-ready', {
-        timeout: 15000,
-      });
+      await waitForTerminalOutput(first.page, 'restart-ready');
       await first.page.keyboard.type(join(bin, 'claude'));
       await first.page.keyboard.press('Enter');
       await expect(first.page.locator('[data-testid^="terminal-agent-"]')).toContainText(
@@ -771,13 +767,10 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(second.page.getByTestId('task-resume')).toContainText('Resume Claude session');
 
       await second.page.getByTestId('task-resume').click();
-      await expect(second.page.getByTestId('external-terminal-host')).toContainText(
-        'resumed-original-session',
-        { timeout: 20000 },
-      );
-      await expect(second.page.getByTestId('external-terminal-host')).toContainText(
-        'resume-arg=--continue',
-      );
+      await waitForTerminalOutput(second.page, 'resumed-original-session', {
+        timeout: 20_000,
+      });
+      await waitForTerminalOutput(second.page, 'resume-arg=--continue');
 
       const resumed = await second.page.evaluate(async (expectedTaskId) => {
         const bridge = (
@@ -832,9 +825,8 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       // zsh init can drop very-early keystrokes — prove the prompt is live first.
       await page.keyboard.type('echo ready-marker');
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('terminal-panel')).toContainText('ready-marker', {
-        timeout: 15000,
-      });
+      await waitForTerminalOutput(page, 'ready-marker');
+      const terminalId = (await terminalPtySnapshot(page)).items[0]!.id;
       await page.keyboard.type('fakeagent');
       await page.keyboard.press('Enter');
 
@@ -869,10 +861,14 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       const panel = page.getByTestId('external-panel');
       await expect(panel).toBeVisible();
       await expect(panel).toContainText('fakeagent');
-      await expect(page.getByTestId('external-panel-terminal')).toContainText(
-        'fake agent session started',
-        { timeout: 10000 },
+      await expect(page.getByTestId('external-panel-terminal')).toHaveAttribute(
+        'data-terminal-id',
+        terminalId,
       );
+      await expect(
+        page.getByTestId('external-panel-terminal').locator('.xterm-screen'),
+      ).toBeVisible();
+      await waitForTerminalOutput(page, 'fake agent session started', { terminalId });
       await expect(page.getByTestId('bottom-panel')).toHaveCount(0);
       await expect(page.getByTestId('agent-panel')).toHaveCount(0);
       // The generic-panel shortcut cannot create a second right rail while
@@ -913,9 +909,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       // (the exact failure of the original 决策 4 implementation).
       await page.getByTestId('external-panel-terminal').click();
       await page.keyboard.type('promoted-echo-ok');
-      await expect(page.getByTestId('external-panel-terminal')).toContainText('promoted-echo-ok', {
-        timeout: 10000,
-      });
+      await waitForTerminalOutput(page, 'promoted-echo-ok', { terminalId });
 
       // The panel carries the live "session changes" strip with a diffstat.
       const stripRow = page.getByTestId('external-strip-file-src/util.ts');
@@ -938,7 +932,11 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(page.getByTestId('home-sidebar')).toBeVisible();
       await expect(page.getByTestId('agent-panel')).toHaveCount(0);
       await expect(page.getByTestId('sidebar')).toHaveCount(0);
-      await expect(page.getByTestId('terminal-host')).toContainText('promoted-echo-ok');
+      await expect(page.getByTestId('terminal-host')).toHaveAttribute(
+        'data-terminal-id',
+        terminalId,
+      );
+      await waitForTerminalOutput(page, 'promoted-echo-ok', { terminalId });
       await expect(page.getByTestId('session-bar-ended')).toContainText('1 file');
 
       // Review from the bar opens the session room: terminal column (content
@@ -947,10 +945,14 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await expect(page.getByTestId('task-room')).toBeVisible();
       await expect(page.getByTestId('session-agent-chip')).toContainText('fakeagent');
       await expect(page.getByTestId('external-terminal-column')).toBeVisible();
-      await expect(page.getByTestId('external-terminal-host')).toContainText(
-        'fake agent session started',
-        { timeout: 10000 },
+      await expect(page.getByTestId('external-terminal-host')).toHaveAttribute(
+        'data-terminal-id',
+        terminalId,
       );
+      await expect(
+        page.getByTestId('external-terminal-host').locator('.xterm-screen'),
+      ).toBeVisible();
+      await waitForTerminalOutput(page, 'fake agent session started', { terminalId });
       await expect(page.getByTestId('external-ended')).toBeVisible();
       await expect(page.getByTestId('task-room-file-src/util.ts')).toBeVisible({ timeout: 15000 });
       await expect(page.getByTestId('session-tool-review')).toHaveAttribute(
@@ -972,7 +974,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
       await expect(page.getByTestId('replay-source')).toContainText('External Terminal');
-      await expect(page.getByTestId('replay-source')).toContainText('观察记录');
+      await expect(page.getByTestId('replay-source')).toContainText('Observed');
       // Result-first: the changed line seeks to the observed file write.
       await page.locator('.rp-summary-changed button').first().click();
       await expect(page.getByTestId('replay-step')).toContainText('src/util.ts');
@@ -987,7 +989,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await page.getByTestId('replay-search').fill('promoted-echo-ok');
       await page.getByTestId('replay-event-list').locator('button').first().click();
       await expect(page.getByTestId('replay-step')).toContainText('promoted-echo-ok');
-      await expect(page.getByTestId('replay-fact-level')).toContainText('观察记录');
+      await expect(page.getByTestId('replay-fact-level')).toContainText('Observed');
       await expect(page.getByTestId('replay-boundary')).toBeVisible();
       if (process.env.CHARTER_CAPTURE_EXTERNAL_REPLAY === '1') {
         await page.waitForTimeout(150);
@@ -1084,9 +1086,7 @@ test.describe('ADR-0017 external CLI agent sessions', () => {
       await page.locator('.xterm').click();
       await page.keyboard.type('echo ready-marker');
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('terminal-panel')).toContainText('ready-marker', {
-        timeout: 15000,
-      });
+      await waitForTerminalOutput(page, 'ready-marker');
       await page.keyboard.type(`fakeclaude ${join(bin, 'agent.js')}`);
       await page.keyboard.press('Enter');
 

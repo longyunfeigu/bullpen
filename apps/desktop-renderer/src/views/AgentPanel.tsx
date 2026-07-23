@@ -738,7 +738,7 @@ const TimelineCard = React.memo(function TimelineCard({
               }
             >
               <Ic name="shield" size={11} />
-              在回放中核验
+              Verify in Replay
             </button>
           ) : null}
         </div>
@@ -1062,7 +1062,9 @@ const TimelineCard = React.memo(function TimelineCard({
                 testid="report-rollback"
                 quiet
                 title="Restore every touched file to its pre-task state"
-                onConfirm={() => void useTaskStore.getState().rollbackTask()}
+                onConfirm={() =>
+                  void useTaskStore.getState().rollbackTask({ confirmDestructive: true })
+                }
               />
             </div>
           ) : null}
@@ -1454,7 +1456,7 @@ export function AgentPanel(): React.JSX.Element {
                     testid="task-rollback"
                     quiet
                     title="Restore every touched file to its pre-task state"
-                    onConfirm={() => void store.rollbackTask()}
+                    onConfirm={() => void store.rollbackTask({ confirmDestructive: true })}
                   />
                 </>
               ) : null}

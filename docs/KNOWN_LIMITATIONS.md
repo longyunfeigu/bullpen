@@ -1,4 +1,4 @@
-# Known limitations — Charter 1.0.0-beta.1
+# Known limitations — Charter 1.0.0-beta.3
 
 This is an unsigned public preview, not the signed Stable release defined by the original V1.0
 release gates.

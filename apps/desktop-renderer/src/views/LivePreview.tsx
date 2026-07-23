@@ -631,7 +631,13 @@ export function LivePreview({
             title={errorCount > 0 ? 'Console errors from the preview page' : 'Console is clean'}
             onClick={() => setConsoleOpen((o) => !o)}
           >
-            {errorCount > 0 ? `⚠ ${errorCount}` : '✓ 0'}
+            {errorCount > 0 ? (
+              <>
+                <Ic name="alert" size={11} /> {errorCount}
+              </>
+            ) : (
+              '✓ 0'
+            )}
           </button>
         ) : null}
         <span className="pv-sp" />

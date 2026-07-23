@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { launchApp } from './helpers/launch.js';
 import { createTsSmallFixture } from './helpers/fixtures.js';
+import { waitForTerminalOutput } from './helpers/terminal.js';
 
 function createContextEchoAgents(): string {
   const bin = mkdtempSync(join(tmpdir(), 'charter-code-context-agents-'));
@@ -117,7 +118,13 @@ test.describe('mature CodeContextRef', () => {
         await page.keyboard.press('Control+`');
         await expect(page.locator('.xterm')).toBeVisible({ timeout: 15000 });
         await page.locator('.xterm').click();
-        await page.keyboard.type(cli);
+        // zsh can still be initializing when xterm first paints. Prove the PTY
+        // prompt is accepting complete commands before launching the fake CLI.
+        const readyMarker = `context-shell-ready-${cli}`;
+        await page.keyboard.type(`echo ${readyMarker}`);
+        await page.keyboard.press('Enter');
+        await waitForTerminalOutput(page, readyMarker);
+        await page.keyboard.type(join(bin, cli));
         await page.keyboard.press('Enter');
         await expect(page.locator('[data-testid^="terminal-agent-"]')).toBeVisible({
           timeout: 15000,
@@ -177,9 +184,7 @@ test.describe('mature CodeContextRef', () => {
         // tested — externalInjectText; the canonical-mode fake CLI only sees
         // newline-terminated chunks, so the paste-close byte isn't assertable
         // here.)
-        await expect(page.getByTestId('terminal-panel')).toContainText(marker, {
-          timeout: 15000,
-        });
+        await waitForTerminalOutput(page, marker);
       } finally {
         await app.close();
       }

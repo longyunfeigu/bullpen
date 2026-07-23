@@ -1,11 +1,23 @@
 /* ADR-0022: acceptance-gate Preview + Checks tabs, marquee feedback, PR draft. */
 
 .rv-tabs {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 6px 16px 0;
   border-bottom: 1px solid var(--border);
+}
+
+@media (max-width: 760px) {
+  .rv-tabs {
+    overflow-x: auto;
+    padding-inline: 8px;
+  }
+
+  .rv-tabnote {
+    display: none;
+  }
 }
 .rv-tab {
   border: 1px solid transparent;
@@ -512,6 +524,9 @@
   margin-left: 3px;
 }
 .pv-errchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 1px solid var(--danger);
   background: var(--bg-card);
   color: var(--danger);

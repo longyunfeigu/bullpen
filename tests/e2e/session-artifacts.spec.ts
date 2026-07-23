@@ -27,6 +27,8 @@ test.describe('Session artifact platform', () => {
       });
 
       await page.getByTestId('session-tool-preview').click();
+      await expect(page.getByTestId('preview-mode-live')).toHaveAttribute('aria-selected', 'true');
+      await page.getByTestId('preview-mode-artifacts').click();
       await expect(page.getByTestId('session-artifact-view')).toBeVisible({ timeout: 15_000 });
       const headerMeta = await page.locator('.session-identity-meta').boundingBox();
       const artifactButton = await page.getByTestId('task-room-preview-badge').boundingBox();
@@ -76,6 +78,47 @@ test.describe('Session artifact platform', () => {
 
       await page.getByTestId('artifact-feedback-add').click();
       await expect(page.getByTestId('room-artifact-refs')).toContainText('metrics.csv');
+
+      // Two distinct anchors produce the same status message. It must coalesce,
+      // and the surviving toast must stay clear of Review's primary decision.
+      await tableCells.nth(0).click();
+      await expect(page.locator('.artifact-anchor-summary')).toContainText(
+        /Rows 1-1, columns 1-1/i,
+      );
+      await page.getByTestId('artifact-feedback-add').click();
+      const contextToast = page.locator('.toast', {
+        hasText: 'Artifact context attached to the next reply.',
+      });
+      await expect(contextToast).toHaveCount(1);
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.setBounds({ x: 0, y: 0, width: 980, height: 760 });
+      });
+      await page.getByTestId('session-tool-expand').click();
+      await expect(page.locator('.session-canvas-body')).toHaveClass(/preview-focused/);
+      const toastBox = await contextToast.boundingBox();
+      const acceptBox = await page.getByTestId('review-bar-accept').boundingBox();
+      const decisionNote = page.locator('.review-decision .session-action-note');
+      await expect(decisionNote).toContainText('does not create a Git commit');
+      const noteIsClipped = await decisionNote.evaluate(
+        (element) =>
+          element.scrollWidth > element.clientWidth + 1 ||
+          element.scrollHeight > element.clientHeight + 1,
+      );
+      expect(noteIsClipped).toBe(false);
+      expect(toastBox).not.toBeNull();
+      expect(acceptBox).not.toBeNull();
+      const intersects = !(
+        toastBox!.x + toastBox!.width <= acceptBox!.x ||
+        acceptBox!.x + acceptBox!.width <= toastBox!.x ||
+        toastBox!.y + toastBox!.height <= acceptBox!.y ||
+        acceptBox!.y + acceptBox!.height <= toastBox!.y
+      );
+      expect(intersects).toBe(false);
+      await page.screenshot({ path: '/tmp/charter-artifact-toast-clear-980x760.png' });
+      await page.getByTestId('session-tool-expand').click();
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.setBounds({ x: 0, y: 0, width: 1440, height: 1000 });
+      });
 
       const focusButton = page.getByTestId('session-tool-expand');
       await expect(focusButton).toContainText('Focus');
@@ -176,10 +219,11 @@ test.describe('Session artifact platform', () => {
         .getByTestId('artifact-html-view')
         .getByRole('button', { name: 'Interactive' })
         .click();
-      await page
+      const pickElement = page
         .getByTestId('artifact-html-view')
-        .getByRole('button', { name: 'Pick element' })
-        .click();
+        .getByRole('button', { name: 'Pick element' });
+      await expect(pickElement).toBeEnabled({ timeout: 10_000 });
+      await pickElement.click();
       await htmlFrame.getByRole('heading', { name: 'Revenue pulse' }).click();
       await expect(page.locator('.artifact-anchor-summary')).toContainText('DOM');
 

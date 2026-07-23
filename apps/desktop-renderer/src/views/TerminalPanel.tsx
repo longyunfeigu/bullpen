@@ -838,10 +838,10 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       const item = get().items.find((t) => t.id === id);
       if (!item) return;
       if (agent !== null) {
-        item.blocks.addTurnBlock(`✳ ${agentDisplayName(agent)} 会话开始`, false);
+        item.blocks.addTurnBlock(`✳ ${agentDisplayName(agent)} session started`, false);
         return;
       }
-      item.blocks.addTurnBlock('✳ 会话结束', false);
+      item.blocks.addTurnBlock('✳ Session ended', false);
       if (!taskId) return;
       const files = useExternalStore.getState().sessions[taskId]?.files.length ?? 0;
       item.term.write(
@@ -985,7 +985,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
           void get().finalizeHidden(id);
         }, QUICK_CLOSE_GRACE_MS),
       );
-      useAppStore.getState().pushToast('info', '「⌥ quick」已关闭并保活 5 秒 · 按 ⌘Z 原样恢复');
+      useAppStore.getState().pushToast('info', '“⌥ quick” closed · undo within 5 seconds with ⌘Z');
       return;
     }
     const res = await rpcResult('terminal.kill', { id, force: false });
@@ -1046,7 +1046,9 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       undoCloseId: null,
     });
     useQuickConsoleStore.getState().setTerminalId(id);
-    useAppStore.getState().pushToast('success', '「⌥ quick」已恢复 · 会话与滚动缓冲保持不变');
+    useAppStore
+      .getState()
+      .pushToast('success', '“⌥ quick” restored · session and scrollback preserved');
   },
 
   async confirmKill(id, confirmed) {
@@ -1090,13 +1092,13 @@ export function SessionBar({ terminalId }: { terminalId: string }): React.JSX.El
   const promoted = useExternalStore((s) => s.promoted);
   const task = useTaskStore((s) => (taskId ? s.tasks.find((entry) => entry.id === taskId) : null));
   if (!item) return null;
-  const context = `${item.projectName} · ${compactTerminalPath(item.cwd)}`;
+  const context = `${item.projectName} · context cwd ${compactTerminalPath(item.cwd)}`;
   if (!taskId) {
     return (
       <div className="term-session-bar shell" data-testid="terminal-context-bar">
         <Ic name="terminal" size={13} />
         <span className="tsb-shell-name">{item.title}</span>
-        <span className="tsb-context" title={item.cwd}>
+        <span className="tsb-context" title={`Host-set context cwd: ${item.cwd}`}>
           {context}
         </span>
         <span className="tsb-sp" />
@@ -1119,7 +1121,7 @@ export function SessionBar({ terminalId }: { terminalId: string }): React.JSX.El
       >
         EXT · unmanaged
       </span>
-      <span className="tsb-context" title={item.cwd}>
+      <span className="tsb-context" title={`Host-set context cwd: ${item.cwd}`}>
         {context}
       </span>
       {live ? (
@@ -1215,9 +1217,9 @@ function TerminalBlockRail({ item }: { item: TermInstance }): React.JSX.Element 
                 : 'ok';
         const top = Math.min(97, (Math.max(0, block.marker.line) / totalLines) * 96);
         const state = block.running
-          ? '运行中'
+          ? 'running'
           : block.exitCode === null
-            ? '已结束'
+            ? 'ended'
             : block.exitCode === 0
               ? '✓'
               : `exit ${block.exitCode}`;
@@ -1226,8 +1228,8 @@ function TerminalBlockRail({ item }: { item: TermInstance }): React.JSX.Element 
             key={block.id}
             className={`term-rail-mark ${cls} ${item.blocks.selectedId === block.id ? 'on' : ''}`}
             style={{ top: `${top}%` }}
-            title={`${block.command || (block.kind === 'turn' ? '回合' : 'command')} · ${state}`}
-            aria-label={`跳到块:${block.command || state}`}
+            title={`${block.command || (block.kind === 'turn' ? 'turn' : 'command')} · ${state}`}
+            aria-label={`Jump to block: ${block.command || state}`}
             data-testid={`terminal-rail-${cls}`}
             onClick={() => selectBlock(item, block, { flash: true })}
           />
@@ -1248,7 +1250,7 @@ function TerminalBlockToolbar({ item }: { item: TermInstance }): React.JSX.Eleme
   const duration = block.endedAt !== null ? formatElapsed(block.endedAt - block.startedAt) : null;
   const copyOutput = (): void => {
     void navigator.clipboard.writeText(terminalBlockText(item, block));
-    useAppStore.getState().pushToast('success', '块输出已复制。');
+    useAppStore.getState().pushToast('success', 'Block output copied.');
   };
   const sendToRoom = (): void => {
     if (!taskRoomTaskId) return;
@@ -1256,13 +1258,15 @@ function TerminalBlockToolbar({ item }: { item: TermInstance }): React.JSX.Eleme
     const lineCount = Math.max(1, text.split('\n').length);
     useDraftStore.getState().addTerminalRef(taskRoomTaskId, {
       id: `terminal-ref-${Date.now()}`,
-      title: `终端块 · ${block.command.slice(0, 40) || '输出'}`,
+      title: `Terminal block · ${block.command.slice(0, 40) || 'output'}`,
       text,
       cwd: item.cwd,
       contextLabel: `${item.projectName} · ${item.contextLabel}`,
       lineCount,
     });
-    useAppStore.getState().pushToast('success', `已把这个块(${lineCount} 行)放进当前 Room 回复。`);
+    useAppStore
+      .getState()
+      .pushToast('success', `Added this ${lineCount}-line block to the current Room reply.`);
     useAppStore.getState().focusComposer();
   };
   const saveAttachment = (): void => {
@@ -1287,14 +1291,14 @@ function TerminalBlockToolbar({ item }: { item: TermInstance }): React.JSX.Eleme
   };
   return (
     <div className="term-block-toolbar" data-testid="terminal-block-toolbar">
-      <span className="tbt-kind">{block.kind === 'turn' ? '回合' : '%'}</span>
+      <span className="tbt-kind">{block.kind === 'turn' ? 'turn' : '%'}</span>
       <span className="tbt-cmd" title={block.command}>
-        {block.command || '(命令未记录)'}
+        {block.command || '(command not recorded)'}
       </span>
       {block.running ? (
-        <span className="tbt-state run">运行中</span>
+        <span className="tbt-state run">running</span>
       ) : block.exitCode === null ? (
-        <span className="tbt-state">已结束</span>
+        <span className="tbt-state">ended</span>
       ) : (
         <span className={`tbt-state ${block.exitCode === 0 ? 'ok' : 'err'}`}>
           {block.exitCode === 0 ? '✓' : `exit ${block.exitCode}`}
@@ -1304,15 +1308,15 @@ function TerminalBlockToolbar({ item }: { item: TermInstance }): React.JSX.Eleme
       {rerunOf ? (
         <button
           className="tbt-btn link"
-          title="这是一次重跑 — 查看被取代的那次运行"
+          title="This is a rerun — view the superseded run"
           onClick={() => selectBlock(item, rerunOf, { flash: true })}
         >
-          重跑 ↰
+          rerun ↰
         </button>
       ) : null}
       <span className="tbt-sp" />
       <button className="tbt-btn" data-testid="block-copy" onClick={copyOutput}>
-        复制输出
+        Copy output
       </button>
       <button
         className="tbt-btn"
@@ -1320,15 +1324,15 @@ function TerminalBlockToolbar({ item }: { item: TermInstance }): React.JSX.Eleme
         disabled={!taskRoomTaskId}
         title={
           taskRoomTaskId
-            ? '把这个块作为引用放进当前 Room 的回复框(署名 YOU)'
-            : '先进入一个 Task Room'
+            ? 'Add this block as a reference to the current Room reply (attributed to YOU)'
+            : 'Open a Task Room first'
         }
         onClick={sendToRoom}
       >
-        ⤴ 发给 Room
+        ⤴ Send to Room
       </button>
       <button className="tbt-btn" data-testid="block-save" onClick={saveAttachment}>
-        存为附件
+        Save as attachment
       </button>
       {block.kind === 'command' ? (
         <button
@@ -1337,19 +1341,19 @@ function TerminalBlockToolbar({ item }: { item: TermInstance }): React.JSX.Eleme
           disabled={busy || item.exited || !block.command}
           title={
             busy
-              ? '等当前命令结束后再重跑'
+              ? 'Wait for the current command to finish before rerunning'
               : item.exited
-                ? '终端已退出'
-                : '在同一个终端里重跑这条命令(用户域动作,无审批)'
+                ? 'The terminal has exited'
+                : 'Run this command again in the same terminal (user action; no approval)'
           }
           onClick={rerun}
         >
-          ↻ 重跑
+          ↻ Rerun
         </button>
       ) : null}
       <button
         className="tbt-btn quiet"
-        aria-label="取消选中"
+        aria-label="Clear block selection"
         data-testid="block-dismiss"
         onClick={() => {
           clearBlockSelection(item);
@@ -1377,7 +1381,7 @@ function TerminalRowIndicator({ item }: { item: TermInstance }): React.JSX.Eleme
       <span
         className="terminal-row-bell"
         data-testid={`terminal-bell-${item.id}`}
-        title="命令已结束 — 点击行查看"
+        title="Command finished — click the row to inspect"
       >
         ◐
       </span>
@@ -1401,7 +1405,7 @@ function TerminalRowIndicator({ item }: { item: TermInstance }): React.JSX.Eleme
     <span
       className="terminal-row-ring indeterminate"
       data-testid={`terminal-ring-${item.id}`}
-      title={`${running.command} · 运行中 ${formatElapsed(now - running.startedAt)}`}
+      title={`${running.command} · running ${formatElapsed(now - running.startedAt)}`}
     />
   );
 }
@@ -1544,7 +1548,7 @@ function NewTerminalDialog({
         <header className="terminal-create-head">
           <div>
             <h2 id="terminal-create-title">New Terminal</h2>
-            <p>创建一个普通 Terminal session；类型只决定可选的启动命令。</p>
+            <p>Create a standard terminal session; the type only chooses its initial command.</p>
           </div>
           <button className="terminal-icon-button" aria-label="Close" onClick={onClose}>
             <Ic name="x" size={16} />
@@ -1553,14 +1557,14 @@ function NewTerminalDialog({
         <div className="terminal-create-body">
           <section className="terminal-form-section">
             <div className="terminal-form-label">
-              01 · 类型 <span>仍然是真实 shell + PTY</span>
+              01 · Type <span>always a real shell + PTY</span>
             </div>
             <div className="terminal-type-grid">
               {(
                 [
-                  ['shell', 'Shell', '打开默认 shell'],
-                  ['claude', 'Claude Code', '创建后运行 claude'],
-                  ['codex', 'Codex', '创建后运行 codex'],
+                  ['shell', 'Shell', 'Open the default shell'],
+                  ['claude', 'Claude Code', 'Run claude after creation'],
+                  ['codex', 'Codex', 'Run codex after creation'],
                 ] as const
               ).map(([value, title, detail]) => (
                 <button
@@ -1577,7 +1581,7 @@ function NewTerminalDialog({
           </section>
           <section className="terminal-form-section">
             <div className="terminal-form-label">
-              02 · Working context <span>不改变 Editor focus</span>
+              02 · Working context <span>does not change Editor focus</span>
             </div>
             <div className="terminal-context-list">
               {contexts.map((context) => (
@@ -1614,7 +1618,8 @@ function NewTerminalDialog({
         </div>
         <footer className="terminal-create-foot">
           <span>
-            Host 通过 project/task/scratch identity 解析 cwd；Renderer 不提交任意绝对路径。
+            The host resolves cwd from project, task, or scratch identity; the Renderer never
+            submits an arbitrary absolute path.
           </span>
           <button className="btn" onClick={onClose}>
             Cancel
@@ -1680,7 +1685,12 @@ export function TerminalPanel(): React.JSX.Element {
         {activeDock ? <SessionBar terminalId={activeDock.id} /> : null}
         {activeDock ? <TerminalBlockToolbar item={activeDock} /> : null}
         <div className="terminal-host-wrap">
-          <div ref={hostRef} className="terminal-host" data-testid="terminal-host" />
+          <div
+            ref={hostRef}
+            className="terminal-host"
+            data-testid="terminal-host"
+            data-terminal-id={activeDock?.id}
+          />
           {activeDock ? <TerminalBlockRail item={activeDock} /> : null}
         </div>
         {dockItems.length === 0 ? (
@@ -1817,7 +1827,7 @@ export function TerminalPanel(): React.JSX.Element {
                           <>
                             {terminal.title}
                             {terminal.quick ? (
-                              <span className="terminal-quick-badge">速召台</span>
+                              <span className="terminal-quick-badge">Quick Console</span>
                             ) : null}
                           </>
                         )}
@@ -1826,8 +1836,11 @@ export function TerminalPanel(): React.JSX.Element {
                     <span className="terminal-row-context">
                       {terminal.projectName} · {taskLabel}
                     </span>
-                    <span className="terminal-row-cwd" title={terminal.cwd}>
-                      {compactTerminalPath(terminal.cwd)}
+                    <span
+                      className="terminal-row-cwd"
+                      title={`Host-set context cwd: ${terminal.cwd}`}
+                    >
+                      Context cwd · {compactTerminalPath(terminal.cwd)}
                     </span>
                   </span>
                   <span className="terminal-row-side">
@@ -1949,7 +1962,7 @@ export function TerminalRunStatusItem(): React.JSX.Element | null {
     <button
       className="sb-item terminal-run-status"
       data-testid="status-terminal-run"
-      title={`${target.block.command} — 点击直达这个块`}
+      title={`${target.block.command} — click to reveal this block`}
       onClick={reveal}
     >
       {progress?.kind === 'determinate' ? (

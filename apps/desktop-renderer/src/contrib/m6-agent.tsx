@@ -19,7 +19,7 @@ export function registerM6(): void {
   agentPanelRegistry.main = AgentPanel;
   // Review/Replay overlay both surfaces (ADR-0008): they must open from the
   // Task Room (Home surface) as well as from the Editor's agent panel.
-  // The PR draft card (ADR-0022) pops over whichever surface accepted.
+  // The PR draft card (ADR-0022) opens only from its durable timeline entry.
   overlayRegistry.push(ReviewView, ReplayView, PrDraftCard);
   initRegistry.push(() => {
     useTaskStore.getState().init();

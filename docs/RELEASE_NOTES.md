@@ -1,16 +1,24 @@
-# Charter 1.0 Beta 2 — Unsigned Preview
+# Charter 1.0 Beta 3 — Unsigned Preview
 
 Charter's complete Session-first desktop workflow is available as a public, zero-cost preview for
 macOS Apple Silicon, Windows x64 and Linux x64.
 
-## New since Beta 1
+This SemVer Beta is an **unsigned prerelease** published with GitHub's Prerelease flag; it is not
+Stable or Latest.
 
-- Visible session orchestration: external Claude Code/Codex sessions join a coordinated fleet with
-  a command center view, driven through a per-session MCP control bridge — no dotfile edits.
-- Agent worker restart resilience: changing provider credentials or losing the worker mid-start no
-  longer leaves the model catalog empty until app restart.
-- Beta 1 was gated out by its release pipeline and never published; Beta 2 is the first downloadable
-  preview.
+## New since Beta 2
+
+- Session review remains actionable at 200% zoom and narrow desktop viewports, including accept,
+  request-changes, rollback, confirmation and Full Review controls.
+- Quick Console context switching now locks while a real shell command is running and unlocks only
+  after the host observes its completion boundary. Labels consistently describe the host-managed
+  context cwd instead of implying that shell `cd` retargets the product.
+- Replay, artifacts, Markdown authoring, Preview and Session evidence surfaces have clearer hierarchy,
+  keyboard focus behavior and truthful state transitions across all four visual skins.
+- Review and rollback preserve the documented Git boundary: accepting keeps workspace bytes without
+  creating a commit, while rollback restores recorded changes byte-for-byte.
+- Terminal and external-session coverage now exercises alternate-screen programs, Ctrl-D, native
+  multiline paste, busy-state context protection and stable reply-animation evidence.
 
 ## Highlights
 
@@ -49,8 +57,8 @@ new artifact, and replace the app. Before applying a database schema migration, 
 creates a timestamped backup and restores it if the migration fails.
 
 Read the
-[known limitations](https://github.com/longyunfeigu/Charter/blob/v1.0.0-beta.2/docs/KNOWN_LIMITATIONS.md),
-[recovery guide](https://github.com/longyunfeigu/Charter/blob/v1.0.0-beta.2/docs/RECOVERY.md),
-[privacy notice](https://github.com/longyunfeigu/Charter/blob/v1.0.0-beta.2/PRIVACY.md), and
-[security policy](https://github.com/longyunfeigu/Charter/blob/v1.0.0-beta.2/SECURITY.md) before using
+[known limitations](https://github.com/longyunfeigu/Charter/blob/v1.0.0-beta.3/docs/KNOWN_LIMITATIONS.md),
+[recovery guide](https://github.com/longyunfeigu/Charter/blob/v1.0.0-beta.3/docs/RECOVERY.md),
+[privacy notice](https://github.com/longyunfeigu/Charter/blob/v1.0.0-beta.3/PRIVACY.md), and
+[security policy](https://github.com/longyunfeigu/Charter/blob/v1.0.0-beta.3/SECURITY.md) before using
 the preview on important repositories.

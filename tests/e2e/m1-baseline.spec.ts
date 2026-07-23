@@ -12,6 +12,25 @@ test.describe('M1 engineering baseline', () => {
       await expect(page.getByTestId('workbench')).toBeVisible();
       await expect(page.getByTestId('status-version')).toHaveText(`v${version}`);
 
+      const nativeIdentity = await app.evaluate(({ app: electronApp, Menu }) => {
+        const menu = Menu.getApplicationMenu();
+        const appMenu = menu?.items[0];
+        return {
+          appName: electronApp.getName(),
+          appMenu: appMenu?.label ?? null,
+          hide: appMenu?.submenu?.items.find((item) => item.role === 'hide')?.label ?? null,
+          quit: appMenu?.submenu?.items.find((item) => item.role === 'quit')?.label ?? null,
+        };
+      });
+      expect(nativeIdentity.appName).toBe('Charter');
+      if (process.platform === 'darwin') {
+        expect(nativeIdentity).toMatchObject({
+          appMenu: 'Charter',
+          hide: 'Hide Charter',
+          quit: 'Quit Charter',
+        });
+      }
+
       // Renderer isolation (spec §12.3): no Node globals, bridge is the only surface.
       const isolation = await page.evaluate(() => ({
         hasRequire: typeof (window as never as Record<string, unknown>).require !== 'undefined',

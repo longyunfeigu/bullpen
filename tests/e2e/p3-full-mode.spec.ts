@@ -91,6 +91,13 @@ test.describe('P3 full mode (ADR-0012)', () => {
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
       });
+      await expect(page.getByTestId('task-state')).toContainText('checks failed');
+      await expect(page.getByTestId('review-failed-checks-warning')).toContainText(
+        'accepting keeps an unverified result',
+      );
+      await expect(page.getByTestId('review-bar-accept')).toContainText(
+        'Accept despite failed checks',
+      );
       // The pause is explained in the timeline, and review stays available.
       await expect(page.getByTestId('timeline')).toContainText('Auto-apply paused', {
         timeout: 20000,
@@ -103,6 +110,26 @@ test.describe('P3 full mode (ADR-0012)', () => {
       // Still REVIEW_READY (no delayed auto-accept sneaking in).
       await page.waitForTimeout(600);
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY');
+
+      // Full Review must preserve the same two-step failed-check boundary as
+      // the in-Room dock. The first click cannot settle or hide the failure.
+      await page.getByTestId('review-bar-open').click();
+      await expect(page.getByTestId('review-view')).toBeVisible();
+      await expect(page.getByTestId('review-accept-all')).toContainText(
+        'Accept despite failed checks',
+      );
+      await page.getByTestId('review-accept-all').click();
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY');
+      await expect(page.getByTestId('review-accept-all-confirm')).toContainText(
+        'accept failed checks',
+      );
+      expect(readFileSync(join(fixture, 'check-target.txt'), 'utf8').trim()).toBe('WRONG');
+
+      await page.getByTestId('review-accept-all-confirm').click();
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IDLE', {
+        timeout: 20_000,
+      });
+      expect(readFileSync(join(fixture, 'check-target.txt'), 'utf8').trim()).toBe('WRONG');
     } finally {
       await app.close();
     }

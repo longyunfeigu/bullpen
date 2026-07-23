@@ -102,10 +102,11 @@ export function registerCommandTools(gateway: ToolGateway, services: CommandTool
         requiresShell: input.requiresShell,
       });
       const line = [input.executable, ...input.args].join(' ');
+      const cwd = await resolveInsideRoot(services.root, input.cwd || '.');
       return {
         summary: `$ ${line.slice(0, 160)}${line.length > 160 ? '…' : ''}`,
         detail: `purpose: ${input.purpose}; timeout: ${Math.round(input.timeoutMs / 1000)}s${input.requiresShell ? '; runs via shell' : ''}`,
-        command: { executable: input.executable, args: input.args, cwd: input.cwd || '.' },
+        command: { executable: input.executable, args: input.args, cwd },
         ruleKey: c.ruleKey,
       };
     },

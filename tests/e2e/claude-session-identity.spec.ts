@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launchApp } from './helpers/launch';
 import { createGitFixture } from './helpers/fixtures';
+import { waitForTerminalOutput } from './helpers/terminal';
 
 interface TerminalInfo {
   id: string;
@@ -132,10 +133,11 @@ test.describe('External Session identity and presence', () => {
         await page.getByTestId('terminal-host').locator('.xterm').click();
         await page.keyboard.type(join(bin, provider));
         await page.keyboard.press('Enter');
-        await expect(page.getByTestId('terminal-host')).toContainText(
-          `observed-${provider}-ready`,
-          { timeout: 15_000 },
-        );
+        const terminalId = await page.getByTestId('terminal-host').getAttribute('data-terminal-id');
+        expect(terminalId).toBeTruthy();
+        await waitForTerminalOutput(page, `observed-${provider}-ready`, {
+          terminalId: terminalId!,
+        });
         await expect.poll(async () => (await externalTasks(page, provider)).length).toBe(1);
 
         const task = (await externalTasks(page, provider))[0]!;
@@ -157,10 +159,13 @@ test.describe('External Session identity and presence', () => {
         await page.getByTestId('external-terminal-host').locator('.xterm').click();
         await page.keyboard.type('finish this observed turn');
         await page.keyboard.press('Enter');
-        await expect(page.getByTestId('external-terminal-host')).toContainText(
-          'observed-reply-complete',
-          { timeout: 10_000 },
-        );
+        // Leave before the observed quiet-window edge: background Sessions
+        // announce completion, while an open Session owns its local status.
+        await page.getByTestId('task-room-back').click();
+        await waitForTerminalOutput(page, 'observed-reply-complete', {
+          terminalId: task.external!.terminalId,
+          timeout: 10_000,
+        });
 
         const notice = page.locator(
           `[data-testid="session-completion-notice"][data-kind="reply"][data-task-id="${task.id}"]`,
@@ -239,7 +244,7 @@ test.describe('External Session identity and presence', () => {
       await page.getByTestId('terminal-host').locator('.xterm').click();
       await page.keyboard.type('echo alpha-shell-ready');
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('terminal-host')).toContainText('alpha-shell-ready');
+      await waitForTerminalOutput(page, 'alpha-shell-ready', { terminalId: firstTerminal.id });
       await page.keyboard.type(`${join(bin, 'claude')} alpha`);
       await page.keyboard.press('Enter');
       await expect(page.locator('[data-testid^="terminal-agent-"]')).toHaveCount(1, {
@@ -260,7 +265,7 @@ test.describe('External Session identity and presence', () => {
       await page.getByTestId('terminal-host').locator('.xterm').click();
       await page.keyboard.type('echo beta-shell-ready');
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('terminal-host')).toContainText('beta-shell-ready');
+      await waitForTerminalOutput(page, 'beta-shell-ready', { terminalId: secondTerminal.id });
       await page.keyboard.type(`${join(bin, 'claude')} beta`);
       await page.keyboard.press('Enter');
       await expect(page.locator('[data-testid^="terminal-agent-"]')).toHaveCount(2, {
@@ -277,25 +282,19 @@ test.describe('External Session identity and presence', () => {
       const betaRow = page.getByTestId(`home-task-${betaTask.id}`);
       await expect(alphaRow).toBeVisible();
       await expect(betaRow).toBeVisible();
-      await betaRow.click();
-      await expect(betaRow).toHaveClass(/selected/);
 
       // Claude's structured result is a genuine turn boundary. It must animate
-      // the matching Session as a whole-card, diagonal damped shake.
+      // the matching background Session as a whole-card, diagonal damped shake
+      // and surface one global reply notice.
       await expect(betaRow).toHaveAttribute('data-reply', 'true', { timeout: 12_000 });
       await expect(betaRow).toHaveClass(/reply-shake/);
       await expect(betaRow).toHaveCSS('animation-name', 'srSessionReplyShake');
       await expect(betaRow.locator('.sr-provider')).toHaveClass(/session-wave/);
-      const betaReplyNotice = page.locator(
-        `[data-testid="session-completion-notice"][data-kind="reply"][data-task-id="${betaTask.id}"]`,
-      );
-      await expect(betaReplyNotice).toBeVisible();
-      await expect(betaReplyNotice).toContainText('Claude reply complete');
-      await expect(betaReplyNotice).toContainText('The latest reply finished');
 
       // Freeze the genuine running animation on its first diagonal peak so
       // the visual artifact proves the card rotates and moves vertically — a
-      // horizontal-only nudge would produce neither component.
+      // horizontal-only nudge would produce neither component. Capture it
+      // before the notification and navigation checks can outlive the effect.
       const replyMotion = await betaRow.evaluate((element) => {
         const animation = element
           .getAnimations()
@@ -329,6 +328,16 @@ test.describe('External Session identity and presence', () => {
           ?.play();
       });
 
+      const betaReplyNotice = page.locator(
+        `[data-testid="session-completion-notice"][data-kind="reply"][data-task-id="${betaTask.id}"]`,
+      );
+      await expect(betaReplyNotice).toBeVisible();
+      await expect(betaReplyNotice).toContainText('Claude reply complete');
+      await expect(betaReplyNotice).toContainText('The latest reply finished');
+      await betaRow.click();
+      await expect(betaRow).toHaveClass(/selected/);
+      await expect(betaReplyNotice).toHaveCount(0);
+
       await expect
         .poll(
           async () => (await externalTasks(page)).every((task) => task.state === 'REVIEW_READY'),
@@ -342,8 +351,7 @@ test.describe('External Session identity and presence', () => {
       const betaCompletionNotice = page.locator(
         `[data-testid="session-completion-notice"][data-kind="completion"][data-task-id="${betaTask.id}"]`,
       );
-      await expect(betaCompletionNotice).toBeVisible();
-      await expect(betaCompletionNotice).toContainText('Ready for review');
+      await expect(betaCompletionNotice).toHaveCount(0);
       await expect(betaReplyNotice).toHaveCount(0);
       const alphaTitle = await alphaRow.locator('.sr-session-title b').innerText();
       const betaTitle = await betaRow.locator('.sr-session-title b').innerText();
@@ -394,25 +402,25 @@ test.describe('External Session identity and presence', () => {
       await expect(page.getByTestId('task-room-file-src/beta.ts')).toBeVisible();
       await expect(page.getByTestId('task-room-file-src/alpha.ts')).toHaveCount(0);
       await expect(page.locator('.session-diff-total')).toContainText('+3');
-      await expect(page.getByTestId('external-terminal-host')).toContainText(
-        'claude-beta-session-started',
-      );
+      await waitForTerminalOutput(page, 'claude-beta-session-started', {
+        terminalId: secondTerminal.id,
+      });
 
       await alphaRow.click();
       await expect(page.getByTestId('task-room')).toHaveAttribute('data-task-id', alphaTask.id);
       await expect(page.getByTestId('task-room-file-src/alpha.ts')).toBeVisible();
       await expect(page.locator('.session-diff-total')).toContainText('+1');
-      await expect(page.getByTestId('external-terminal-host')).toContainText(
-        'claude-alpha-session-started',
-      );
+      await waitForTerminalOutput(page, 'claude-alpha-session-started', {
+        terminalId: firstTerminal.id,
+      });
 
       await betaRow.click();
       await expect(page.getByTestId('task-room')).toHaveAttribute('data-task-id', betaTask.id);
       await expect(page.getByTestId('task-room-file-src/beta.ts')).toBeVisible();
       await expect(page.locator('.session-diff-total')).toContainText('+3');
-      await expect(page.getByTestId('external-terminal-host')).toContainText(
-        'claude-beta-session-started',
-      );
+      await waitForTerminalOutput(page, 'claude-beta-session-started', {
+        terminalId: secondTerminal.id,
+      });
       await page.screenshot({ path: '/tmp/charter-claude-session-switch-beta.png' });
 
       expect(errors, errors.join('\n')).toEqual([]);

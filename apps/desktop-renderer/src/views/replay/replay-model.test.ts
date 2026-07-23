@@ -21,7 +21,7 @@ function fact(overrides: Partial<ReplayFactDto> = {}): ReplayFactDto {
     storyEndMs: 900,
     idleBeforeMs: 0,
     lane: 'actions',
-    actor: { kind: 'agent', label: 'Pi Agent' },
+    actor: { kind: 'agent', label: 'Charter Agent' },
     action: 'Ran npm test',
     kind: 'command',
     status: 'ok',

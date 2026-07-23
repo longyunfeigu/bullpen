@@ -144,15 +144,16 @@ interface TaskStore {
     hunkKey?: string;
     expectedCurrentHash?: string;
   }): Promise<void>;
-  acceptTask(): Promise<boolean>;
+  acceptTask(options?: { confirmEvidenceRisk?: boolean }): Promise<boolean>;
 
   // M9: verification + rollback
-  rollbackTask(): Promise<boolean>;
+  rollbackTask(options?: { confirmDestructive?: boolean }): Promise<boolean>;
   runVerification(label?: string): Promise<void>;
 
   // ADR-0022: preview gate — marquee feedback + post-accept PR draft.
-  /** Set after a successful accept when the ledger produced a draft. */
+  /** Set only after the user explicitly opens a durable timeline draft. */
   prDraft: { taskId: string; draft: PrDraftDto } | null;
+  openPrDraft(taskId: string, draft: PrDraftDto): void;
   dismissPrDraft(): void;
   /** Marquee feedback: same steer loop as request-fix, plus the screenshot. */
   sendPreviewFeedback(
@@ -474,6 +475,10 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   replayRequest: null,
   prDraft: null,
 
+  openPrDraft(taskId, draft) {
+    set({ prDraft: { taskId, draft } });
+  },
+
   dismissPrDraft() {
     set({ prDraft: null });
   },
@@ -569,24 +574,19 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     set({ changeSet: res.data.changeSet });
   },
 
-  async acceptTask() {
+  async acceptTask(options) {
     const taskId = get().activeTaskId;
     if (!taskId) return false;
-    let confirmUnverified = false;
+    let confirmUnverified = options?.confirmEvidenceRisk === true;
     let confirmConflicts = false;
-    let lastAccept: { prDraft?: PrDraftDto | null } | null = null;
     for (;;) {
       const res = await rpcResult('task.accept', { taskId, confirmUnverified, confirmConflicts });
       if (!res.ok) {
         if (res.error.code === 'ACCEPT_NEEDS_CONFIRM' && !confirmUnverified) {
-          // VER-007/E2E-018: unverified changes need a second, explicit confirmation.
-          if (
-            !window.confirm(
-              'No verification was run for this task. Accept the unverified changes anyway?',
-            )
-          ) {
-            return false;
-          }
+          // The main-process trust boundary describes whether evidence is
+          // missing, failed, still running, or stale. Every UI entry point
+          // receives the same second-decision contract.
+          if (!window.confirm(res.error.userMessage)) return false;
           confirmUnverified = true;
           continue;
         }
@@ -607,21 +607,31 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         confirmConflicts = true;
         continue;
       }
-      lastAccept = res.data;
       break;
     }
-    set({ reviewOpen: false });
-    // ADR-0022: surface the evidence-ledger PR draft (git projects only).
-    const draft = lastAccept?.prDraft ?? null;
-    set({ prDraft: draft ? { taskId, draft } : null });
+    // The durable task.prDraft timeline entry is the non-blocking next step.
+    // Do not cover the newly settled Session with an automatic modal.
+    set({ reviewOpen: false, prDraft: null });
     await get().refreshTasks();
+    // The accept RPC can persist its final task.prDraft event after the
+    // state-change broadcast. Re-read the active ledger so that a missed or
+    // reordered renderer event cannot hide the durable next step until the
+    // user leaves and reopens the Session.
+    const detail = await rpcResult('task.get', { taskId, eventsAfter: 0 });
+    if (detail.ok && get().activeTaskId === taskId) {
+      set({
+        tasks: get().tasks.map((task) => (task.id === taskId ? detail.data.task : task)),
+        timeline: detail.data.timeline,
+      });
+    }
     return true;
   },
 
-  async rollbackTask() {
+  async rollbackTask(options) {
     const taskId = get().activeTaskId;
     if (!taskId) return false;
     if (
+      options?.confirmDestructive !== true &&
       !window.confirm(
         'Roll back all changes made by this task? Files are restored byte-exact to their pre-task state.',
       )

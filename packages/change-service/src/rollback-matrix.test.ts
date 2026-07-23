@@ -38,6 +38,13 @@ const CONTENTS: Array<{ label: string; bytes: Buffer }> = [
   { label: 'no-trailing-nl', bytes: Buffer.from('no newline at end') },
   { label: 'empty', bytes: Buffer.alloc(0) },
   { label: 'emoji', bytes: Buffer.from('🚀 rocket\n✨ sparkle\n') },
+  {
+    label: 'utf16le-bom',
+    bytes: Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('wide text\n', 'utf16le')]),
+  },
+  { label: 'binary-nul', bytes: Buffer.from([0x00, 0xff, 0x10, 0x0a, 0x7f, 0x00]) },
+  { label: 'mixed-newlines', bytes: Buffer.from('alpha\r\nbeta\ngamma\rdelta\n') },
+  { label: 'long-line', bytes: Buffer.from(`${'x'.repeat(64 * 1024)}\n`) },
 ];
 
 const OPS: MatrixCase['op'][] = ['modify', 'create', 'delete', 'rename'];
@@ -49,7 +56,7 @@ function buildCases(): MatrixCase[] {
       cases.push({ name: `${content.label}-${op}-nongit`, content: content.bytes, op, git: false });
     }
   }
-  // Git-repo variants + exec-bit variants (total > 50)
+  // Git-repo variants + exec-bit variants bring the release matrix to 50.
   for (const op of OPS) {
     cases.push({
       name: `lf-${op}-git`,
@@ -72,8 +79,8 @@ function buildCases(): MatrixCase[] {
 
 describe('rollback matrix — byte-identical restore across content kinds and ops (§16.3)', () => {
   const cases = buildCases();
-  it(`covers at least 30 cases (actual: ${cases.length})`, () => {
-    expect(cases.length).toBeGreaterThanOrEqual(30);
+  it(`covers at least 50 cases (actual: ${cases.length})`, () => {
+    expect(cases.length).toBeGreaterThanOrEqual(50);
   });
 
   for (const matrixCase of cases) {

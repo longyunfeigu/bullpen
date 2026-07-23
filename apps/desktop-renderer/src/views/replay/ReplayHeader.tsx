@@ -4,9 +4,9 @@ import { Ic } from '../home-icons.js';
 import { LEVEL_LABEL, formatDurationShort, labelSource } from './replay-model.js';
 
 const DEPTHS: Array<{ id: ReplayDepth; name: string; hint: string }> = [
-  { id: 'recap', name: '回顾', hint: '先看结果' },
-  { id: 'explore', name: '探索', hint: '沿时间追问' },
-  { id: 'verify', name: '核验', hint: '查看证据' },
+  { id: 'recap', name: 'Recap', hint: 'Start with the result' },
+  { id: 'explore', name: 'Explore', hint: 'Follow the timeline' },
+  { id: 'verify', name: 'Verify', hint: 'Inspect the evidence' },
 ];
 
 /** Header + coverage summary. Never a single synthetic confidence number. */
@@ -36,28 +36,28 @@ export function ReplayHeader({
     <header className="rp-head">
       <button className="rp-back" data-testid="replay-back" onClick={onClose}>
         <Ic name="chevron" size={17} className="rp-back-icon" />
-        返回会话
+        Back to session
       </button>
       <div className="rp-title">
-        <strong>会话回放</strong>
+        <strong>Session Replay</strong>
         <span>
           <b>{task.title}</b>
           {session ? (
             <>
               <i className={`rp-outcome-dot outcome-${session.outcome}`} aria-hidden />
               {session.outcomeLabel}
-              <em>·</em>
-              实际用时 {formatDurationShort(session.actualDurationMs)}
+              <em> · </em>
+              Elapsed {formatDurationShort(session.actualDurationMs)}
             </>
           ) : null}
         </span>
       </div>
       <span className="rp-source-sr" data-testid="replay-source">
-        {labelSource(source)} · {coverageSummary || '等待记录'}
+        {labelSource(source)} · {coverageSummary || 'Waiting for records'}
       </span>
       <div className="rp-head-actions">
         <button className="rp-jump-result" data-testid="replay-jump-result" onClick={onJumpResult}>
-          跳到结果
+          Jump to result
         </button>
         <div className="rp-view-menu">
           <button
@@ -65,7 +65,7 @@ export function ReplayHeader({
             data-testid="replay-menu-toggle"
             onClick={() => setMenuOpen((open) => !open)}
             aria-expanded={menuOpen}
-            aria-label="回放视图与来源"
+            aria-label="Replay view and source"
           >
             <Ic name="sliders" size={17} />
           </button>
@@ -74,7 +74,7 @@ export function ReplayHeader({
               <div className="rp-source">
                 <span>
                   <strong>{labelSource(source)}</strong>
-                  <small>{coverageSummary || '等待记录'}</small>
+                  <small>{coverageSummary || 'Waiting for records'}</small>
                 </span>
               </div>
               <nav className="rp-depth-nav" aria-label="Replay depth">
@@ -101,7 +101,7 @@ export function ReplayHeader({
           className="rp-close"
           data-testid="replay-close"
           onClick={onClose}
-          aria-label="关闭回放"
+          aria-label="Close replay"
         >
           <Ic name="x" size={19} />
         </button>

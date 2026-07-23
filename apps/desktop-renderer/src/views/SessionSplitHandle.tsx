@@ -94,12 +94,12 @@ export function SessionSplitHandle({
       className={`session-split-handle ${dragging ? 'dragging' : ''} ${atLimit ? 'at-limit' : ''}`}
       role="separator"
       aria-orientation="vertical"
-      aria-label="调整对话与工具面板宽度"
+      aria-label="Resize conversation and tool panels"
       aria-valuenow={Math.round(effective)}
       aria-valuemin={20}
       aria-valuemax={80}
       tabIndex={0}
-      title="拖动调整 · 双击复位"
+      title="Drag to resize · double-click to reset"
       data-testid="session-split-handle"
       onPointerDown={(e) => {
         e.preventDefault();
@@ -144,7 +144,7 @@ export function SessionSplitHandle({
       {chip ? (
         <div className="session-split-chip" data-testid="session-split-chip">
           <span>
-            对话 {Math.round(chip.main)}% · 工具 {Math.round(100 - chip.main)}%
+            Conversation {Math.round(chip.main)}% · Tools {Math.round(100 - chip.main)}%
           </span>
           <b>{chip.px}px</b>
         </div>

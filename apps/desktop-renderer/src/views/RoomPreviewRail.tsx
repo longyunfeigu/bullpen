@@ -25,11 +25,11 @@ export function RoomPreviewRail({ task }: { task: TaskDto }): React.JSX.Element 
   const focused = useAppStore(
     (state) => state.sessionTool === 'preview' && state.sessionToolExpanded,
   );
+  const entryMode = useAppStore((state) => state.previewRailMode);
   const [width, setWidth] = useState(savedWidth);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const [mode, setMode] = useState<'artifact' | 'live'>('live');
+  const [mode, setMode] = useState<'artifact' | 'live'>(entryMode);
   const [artifactCount, setArtifactCount] = useState(0);
-  const modeTouched = useRef(false);
 
   const clamp = useCallback(
     (value: number): number =>
@@ -42,12 +42,15 @@ export function RoomPreviewRail({ task }: { task: TaskDto }): React.JSX.Element 
   }, [width]);
 
   useEffect(() => {
+    setMode(entryMode);
+  }, [entryMode, task.id]);
+
+  useEffect(() => {
     let cancelled = false;
     const refresh = async (): Promise<void> => {
       const response = await rpcResult('artifact.list', { taskId: task.id });
       if (cancelled || !response.ok) return;
       setArtifactCount(response.data.artifacts.length);
-      if (!modeTouched.current && response.data.artifacts.length > 0) setMode('artifact');
     };
     void refresh();
     const timer = window.setInterval(() => void refresh(), 2500);
@@ -96,10 +99,7 @@ export function RoomPreviewRail({ task }: { task: TaskDto }): React.JSX.Element 
             aria-selected={mode === 'artifact'}
             className={mode === 'artifact' ? 'active' : ''}
             data-testid="preview-mode-artifacts"
-            onClick={() => {
-              modeTouched.current = true;
-              setMode('artifact');
-            }}
+            onClick={() => setMode('artifact')}
           >
             Artifacts {artifactCount > 0 ? artifactCount : ''}
           </button>
@@ -109,10 +109,7 @@ export function RoomPreviewRail({ task }: { task: TaskDto }): React.JSX.Element 
             aria-selected={mode === 'live'}
             className={mode === 'live' ? 'active' : ''}
             data-testid="preview-mode-live"
-            onClick={() => {
-              modeTouched.current = true;
-              setMode('live');
-            }}
+            onClick={() => setMode('live')}
           >
             Live web
           </button>
@@ -140,7 +137,9 @@ export function RoomPreviewRail({ task }: { task: TaskDto }): React.JSX.Element 
 export function PreviewBadge({ task }: { task: TaskDto }): React.JSX.Element | null {
   const app = useAppStore();
   const open = useAppStore((s) => s.previewRailTaskId === task.id);
+  const openMode = useAppStore((s) => s.previewRailMode);
   const [firstPort, setFirstPort] = useState<number | null>(null);
+  const [hasLive, setHasLive] = useState(false);
   const [available, setAvailable] = useState(false);
   const [artifactCount, setArtifactCount] = useState(0);
 
@@ -154,8 +153,10 @@ export function PreviewBadge({ task }: { task: TaskDto }): React.JSX.Element | n
       if (cancelled) return;
       if (res.ok) setFirstPort(res.data.ports[0]?.port ?? null);
       const count = artifactRes.ok ? artifactRes.data.artifacts.length : 0;
+      const live = res.ok && (res.data.ports.length > 0 || res.data.webish);
       setArtifactCount(count);
-      setAvailable((res.ok && (res.data.ports.length > 0 || res.data.webish)) || count > 0);
+      setHasLive(live);
+      setAvailable(live || count > 0);
     };
     void probe();
     const timer = window.setInterval(() => void probe(), 5000);
@@ -172,23 +173,25 @@ export function PreviewBadge({ task }: { task: TaskDto }): React.JSX.Element | n
       data-testid="task-room-preview-badge"
       title={
         open
-          ? 'Close the live preview column'
-          : firstPort !== null
+          ? 'Close the Session preview column'
+          : hasLive
             ? `A dev server is listening in this task's tree — open the live preview`
-            : 'This looks like a web project — open the preview to start its dev server'
+            : 'Open the Session artifacts'
       }
-      onClick={() => (open ? app.closePreviewRail() : app.openPreviewRail(task.id))}
+      onClick={() =>
+        open ? app.closePreviewRail() : app.openPreviewRail(task.id, hasLive ? 'live' : 'artifact')
+      }
     >
       <span className="tr-pvbadge-dot" aria-hidden />
       {open
-        ? artifactCount > 0
+        ? openMode === 'artifact'
           ? `Artifacts ${artifactCount}`
           : 'Preview live'
-        : artifactCount > 0
-          ? `Artifacts ${artifactCount}`
-          : firstPort !== null
+        : hasLive
+          ? firstPort !== null
             ? `Preview :${firstPort}`
-            : 'Preview'}
+            : 'Preview'
+          : `Artifacts ${artifactCount}`}
     </button>
   );
 }

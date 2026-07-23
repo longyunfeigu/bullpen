@@ -1,8 +1,8 @@
 # M12 Release Checklist
 
-## Unsigned public Beta (`1.0.0-beta.1`)
+## Unsigned public Beta (`1.0.0-beta.3`)
 
-- [x] SemVer prerelease version and matching `v1.0.0-beta.1` tag policy.
+- [x] SemVer prerelease version and matching `v1.0.0-beta.3` tag policy.
 - [x] Unsigned releases are restricted to prerelease channels; unsigned Stable fails closed.
 - [x] macOS, Windows and Linux native package/install workflows are defined.
 - [x] E2E-023 migration and backup restore coverage.
@@ -12,8 +12,11 @@
 - [x] SPDX SBOM, license inventory, third-party notices, artifact manifest and SHA-256 checksums are generated.
 - [x] Security, privacy, recovery, signing, known-limitations and release-note documents are present.
 - [x] GitHub tag workflow creates a Prerelease only after all native package jobs pass.
-- [ ] Record the candidate workflow URL and three-platform result before creating the tag.
-- [ ] Verify the published Prerelease page and every uploaded asset after the tag workflow finishes.
+- [x] The tag workflow blocks publication until its release gates and macOS, Windows and Linux package matrix pass.
+- [x] The publish job creates a GitHub Prerelease with `--latest=false` and attaches native packages, manifest, checksums and SBOM.
+
+Beta 2 was the first downloadable preview. Its 13 assets and corrected Prerelease metadata remain
+available at [v1.0.0-beta.2](https://github.com/longyunfeigu/Charter/releases/tag/v1.0.0-beta.2).
 
 ## Stable handoff (intentionally not claimed)
 

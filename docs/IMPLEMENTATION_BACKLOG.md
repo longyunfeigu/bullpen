@@ -147,7 +147,7 @@
 | M12-04 | SBOM、第三方许可证、隐私与用户文档 | M12-01 | VERIFIED | SPDX SBOM、license inventory、THIRD_PARTY_NOTICES、manifest/checksums + SECURITY/PRIVACY/recovery/limitations/release notes |
 | M12-05 | 干净机器安装/升级/卸载矩阵 | M12-03 | DONE | mac DMG 真安装/启动/清理通过；Windows NSIS 与 Linux tar native CI smoke 已实现，远端结果在打 tag 前回填 |
 | M12-06 | E2E-001..024 与 Release Gates 全量 | 全部 | DONE | 本地 138 E2E + 19 条件 skip、E2E-023/024、805 unit、139+2 security、6 perf、50-lap soak；tag workflow 再跑全量 |
-| M12-07 | Beta 修复、RC 冻结、Stable 发布 | M12-06 | DONE (Beta RC) / BLOCKED (Stable) | `1.0.0-beta.1` 零成本 unsigned RC；Stable 需 Apple/Windows 证书、notarization、真实 20-task eval 与 owner sign-off |
+| M12-07 | Beta 修复、RC 冻结、Stable 发布 | M12-06 | READY (Beta 3 candidate) / BLOCKED (Stable) | `1.0.0-beta.3` 由 tag workflow 重跑完整门禁和三平台打包后发布为 Prerelease；Beta 2 的 13 个资产与渠道元数据已验证。Stable 仍需 Apple/Windows 证书、notarization、真实 20-task eval 与 owner sign-off |
 
 ## Milestone 13: 会话编排（agent 指挥 agent）
 

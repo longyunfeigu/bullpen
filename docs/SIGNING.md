@@ -1,8 +1,13 @@
 # Signing and notarization handoff
 
-Charter `1.0.0-beta.1` intentionally uses the unsigned release path. No certificate is needed to
-build, test, or publish that GitHub prerelease. The instructions below are a dormant handoff for a
+Charter `1.0.0-beta.3` intentionally uses the unsigned release path. No certificate is needed to
+build, test, or publish a GitHub prerelease. The instructions below are a dormant handoff for a
 future signed release; they are not evidence that the current artifacts are signed or notarized.
+
+The 2026-07-22 audit found that the existing Beta 2 Release had been changed to
+`prerelease:false` / `Latest`. That metadata-only channel error was corrected without replacing the
+tag or assets. At 2026-07-22 23:27 CST, the public metadata was reverified as `prerelease:true`,
+`draft:false`; none of this makes the binaries signed or qualifies them as Stable.
 
 ## Current unsigned path
 
@@ -11,8 +16,8 @@ future signed release; they are not evidence that the current artifacts are sign
 - macOS receives electron-builder's valid ad-hoc bundle signature after Electron fuses are flipped,
   but no Developer ID identity or Apple notarization ticket.
 - Windows has no Authenticode signature. Linux has no additional platform signing layer.
-- The GitHub prerelease attaches SHA-256 checksums and a manifest. These verify bytes, not publisher
-  identity.
+- The intended GitHub prerelease attaches SHA-256 checksums and a manifest. These verify bytes, not
+  publisher identity.
 
 ## Future macOS signed build
 

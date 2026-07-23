@@ -13,8 +13,6 @@ test.describe('Shell v3 — Task Room and entry consolidation', () => {
     const { app, page } = await launchApp({
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
     });
-    // Accepting unverified changes asks once more (E2E-018 semantics).
-    page.on('dialog', (dialog) => void dialog.accept());
     try {
       await page.getByTestId('surface-home').click();
       await expect(page.getByTestId('home-model')).toContainText(/mock/i);
@@ -39,6 +37,7 @@ test.describe('Shell v3 — Task Room and entry consolidation', () => {
       await expect(page.getByTestId('review-view')).toBeVisible();
       await expect(page.getByTestId('review-file-src/index.ts')).toBeVisible();
       await page.getByTestId('review-accept-all').click();
+      await page.getByTestId('review-accept-all-confirm').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IDLE', {
         timeout: 20000,
       });

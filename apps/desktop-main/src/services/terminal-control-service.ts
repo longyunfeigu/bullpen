@@ -260,10 +260,12 @@ export class TerminalControlService implements TerminalControlPort {
     const relations = this.snapshot().workers;
     const relationById = new Map(relations.map((worker) => [worker.terminalId, worker]));
     return {
+      cwdSemantics: 'managed-context',
       terminals: this.terminals.list().map((terminal) => ({
         id: terminal.id,
         title: terminal.title,
         cwd: terminal.cwd,
+        contextCwd: terminal.cwd,
         projectName: terminal.projectName,
         launch: terminal.launch,
         agent: this.terminals.agentFor(terminal.id),

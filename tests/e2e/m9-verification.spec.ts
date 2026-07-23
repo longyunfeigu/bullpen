@@ -111,12 +111,6 @@ test.describe('M9 verification, final report and rollback (E2E-016/017/018)', ()
       env: { PI_IDE_OPEN_WORKSPACE: fixture, PI_IDE_FORCE_MOCK: '1' },
     });
     try {
-      const dialogMessages: string[] = [];
-      page.on('dialog', (dialog) => {
-        dialogMessages.push(dialog.message());
-        void dialog.accept();
-      });
-
       await createTask(page, '[scenario:edit-basic] small fix', 'auto', 'Unverified accept');
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY', {
         timeout: 30000,
@@ -129,10 +123,16 @@ test.describe('M9 verification, final report and rollback (E2E-016/017/018)', ()
       await expect(page.getByTestId('review-view')).toBeVisible();
       await page.getByTestId('review-accept-all').click();
 
+      // The first click only arms the explicit evidence-risk decision.
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY');
+      await expect(page.getByTestId('review-accept-all-confirm')).toContainText(
+        'accept unverified changes',
+      );
+      await page.getByTestId('review-accept-all-confirm').click();
+
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IDLE', {
         timeout: 20000,
       });
-      expect(dialogMessages.some((m) => m.includes('No verification was run'))).toBe(true);
     } finally {
       await app.close();
     }

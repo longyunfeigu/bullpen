@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { launchApp } from './helpers/launch';
 import { createTsSmallFixture } from './helpers/fixtures';
+import { terminalPtyOutput, terminalPtySnapshot, waitForTerminalOutput } from './helpers/terminal';
 
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -233,65 +234,74 @@ test.describe('M4 search, intelligence, terminal', () => {
       await expect(page.getByTestId('terminal-panel')).toBeVisible();
       await expect(page.locator('.xterm')).toBeVisible({ timeout: 15000 });
 
-      // Run a command and observe output.
+      const initial = await terminalPtySnapshot(page);
+      expect(initial.items).toHaveLength(1);
+      const first = initial.items[0]!;
+      shellPid = first.pid;
+
+      // Business evidence comes from the host-owned PTY tail, not xterm's DOM
+      // rows (which intentionally disappear when WebGL is active).
       await page.locator('.xterm').click();
-      await page.keyboard.type('echo pi-ide-terminal-works');
+      await page.keyboard.type("printf '__TERM_RUN__\\n'; stty size | sed 's/^/__SIZE_BEFORE__ /'");
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('terminal-panel')).toContainText('pi-ide-terminal-works', {
-        timeout: 15000,
-      });
+      await waitForTerminalOutput(page, '__TERM_RUN__', { terminalId: first.id });
+      await waitForTerminalOutput(page, /__SIZE_BEFORE__ \d+ \d+/, { terminalId: first.id });
+      const beforeOutput = await terminalPtyOutput(page, first.id);
+      const beforeSize = beforeOutput.match(/__SIZE_BEFORE__ (\d+) (\d+)/);
+      expect(beforeSize).not.toBeNull();
 
-      // Get shell pid from main for orphan check.
-      shellPid = await page.evaluate(async () => {
-        const bridge = (
-          window as never as {
-            product: {
-              rpc: Record<
-                string,
-                (p: unknown) => Promise<{ ok: boolean; data?: { items: Array<{ pid: number }> } }>
-              >;
-            };
-          }
-        ).product;
-        const res = await bridge.rpc['terminal.list']!({});
-        return res.data?.items[0]?.pid ?? null;
+      // Resize the real BrowserWindow and prove xterm propagated a different
+      // row/column geometry through terminal.resize into the PTY.
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.setBounds({ x: 0, y: 0, width: 980, height: 700 });
       });
-      expect(shellPid).not.toBeNull();
+      await expect(page.locator('.xterm')).toBeVisible();
+      await page.waitForTimeout(500);
+      await page.locator('.xterm').click();
+      await page.keyboard.type("stty size | sed 's/^/__SIZE_AFTER__ /'");
+      await page.keyboard.press('Enter');
+      await waitForTerminalOutput(page, /__SIZE_AFTER__ \d+ \d+/, { terminalId: first.id });
+      const afterOutput = await terminalPtyOutput(page, first.id);
+      const afterSize = afterOutput.match(/__SIZE_AFTER__ (\d+) (\d+)/);
+      expect(afterSize).not.toBeNull();
+      expect(afterSize!.slice(1)).not.toEqual(beforeSize!.slice(1));
 
-      // Second terminal + switch.
+      // A second terminal with a live child takes the confirmed kill path.
       await page.getByTestId('terminal-new').click();
+      await expect.poll(async () => (await terminalPtySnapshot(page)).items.length).toBe(2);
+      const second = (await terminalPtySnapshot(page)).items.find((item) => item.id !== first.id)!;
+      await page.locator('.xterm').click();
+      await page.keyboard.type('sleep 30');
+      await page.keyboard.press('Enter');
+      await page.getByTestId(`terminal-tab-${second.id}`).getByRole('button').click();
+      await expect(page.getByTestId('terminal-kill-confirm')).toBeVisible();
+      await page.getByTestId('terminal-kill-force').click();
       await expect
-        .poll(async () => {
-          const bridge = await page.evaluate(async () => {
-            const b = (
-              window as never as {
-                product: {
-                  rpc: Record<
-                    string,
-                    (p: unknown) => Promise<{ ok: boolean; data?: { items: unknown[] } }>
-                  >;
-                };
-              }
-            ).product;
-            const res = await b.rpc['terminal.list']!({});
-            return res.data?.items.length ?? 0;
-          });
-          return bridge;
-        })
-        .toBe(2);
+        .poll(async () => (await terminalPtySnapshot(page)).items.map((item) => item.id))
+        .not.toContain(second.id);
+      await expect.poll(() => processIsAlive(second.pid)).toBe(false);
+
+      // Killing the neighbour must not damage the original PTY.
+      await page.locator('.xterm').click();
+      await page.keyboard.type("printf '\\137\\137FIRST_SURVIVES_KILL\\137\\137\\n'");
+      await page.keyboard.press('Enter');
+      await waitForTerminalOutput(page, '__FIRST_SURVIVES_KILL__', { terminalId: first.id });
     } finally {
       await app.close();
     }
     // TERM-004/REL: after app exit the shell process must be gone.
     if (shellPid) {
       await new Promise((r) => setTimeout(r, 2500));
-      let alive = true;
-      try {
-        process.kill(shellPid, 0);
-      } catch {
-        alive = false;
-      }
-      expect(alive).toBe(false);
+      expect(processIsAlive(shellPid)).toBe(false);
     }
   });
 });
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}

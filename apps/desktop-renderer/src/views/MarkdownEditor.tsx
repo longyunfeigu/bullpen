@@ -169,8 +169,8 @@ export function MarkdownEditor(props: { path: string }): React.JSX.Element | nul
       setSelectionToolbar({
         top: Math.max(48, rect.top - hostRect.top - 42),
         left: Math.min(
-          Math.max(12, rect.left - hostRect.left + rect.width / 2),
-          hostRect.width - 12,
+          Math.max(58, rect.left - hostRect.left + rect.width / 2),
+          Math.max(58, hostRect.width - 58),
         ),
       });
     };
@@ -392,6 +392,8 @@ export function MarkdownEditor(props: { path: string }): React.JSX.Element | nul
         <div
           className="md-selection-toolbar"
           data-testid="md-selection-toolbar"
+          role="toolbar"
+          aria-label="Format selection"
           style={{ top: selectionToolbar.top, left: selectionToolbar.left }}
           onMouseDown={(event) => event.preventDefault()}
         >

@@ -9,7 +9,7 @@ const tools = [
   {
     name: 'terminal_list',
     description:
-      'Charter terminal.list: list visible sibling terminals and their orchestration state.',
+      'Charter terminal.list: list visible sibling terminals, their host-managed context cwd (updated by product context switching, not by shell cd), and orchestration state.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {

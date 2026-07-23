@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch.js';
 import { createTsSmallFixture } from './helpers/fixtures.js';
+import { terminalPtySnapshot, waitForTerminalOutput } from './helpers/terminal.js';
 
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -145,12 +146,11 @@ test.describe('ADR-0021 terminal blocks', () => {
     try {
       await page.keyboard.press('Control+`');
       await expect(page.locator('.xterm')).toBeVisible({ timeout: 15000 });
+      const terminalId = (await terminalPtySnapshot(page)).items[0]!.id;
       await page.locator('.xterm').click();
-      await page.keyboard.type('echo degraded-but-fine');
+      await page.keyboard.type("printf 'degraded-%s\\n' 'but-fine'");
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('terminal-panel')).toContainText('degraded-but-fine', {
-        timeout: 15000,
-      });
+      await waitForTerminalOutput(page, 'degraded-but-fine', { terminalId });
       // No marks → no blocks, no rail, no toolbar; the feature disappears
       // instead of erroring (TERM-003 preserved).
       await expect(page.getByTestId('terminal-block-rail')).toHaveCount(0);

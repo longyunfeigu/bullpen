@@ -12,6 +12,7 @@ import { rpcResult } from '../bridge.js';
 import { useMemoryStore } from '../store/memoryStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { Markdown } from './Markdown.js';
+import { Ic } from './home-icons.js';
 import '../styles/memory.css';
 
 /**
@@ -578,11 +579,15 @@ function SyncLine(props: { sync: MemorySyncStateDto; projectPath: string }): Rea
           className={`mv-status ${sync.status}`}
           data-testid={`memory-sync-status-${sync.target}`}
         >
-          {sync.status === 'ok'
-            ? '✓ synced'
-            : sync.status === 'drift'
-              ? '⚠ hand-edited'
-              : sync.status}
+          {sync.status === 'ok' ? (
+            '✓ synced'
+          ) : sync.status === 'drift' ? (
+            <>
+              <Ic name="alert" size={11} /> hand-edited
+            </>
+          ) : (
+            sync.status
+          )}
         </span>
         <span className="path">{sync.filePath}</span>
         {sync.enabled && sync.status !== 'drift' ? (

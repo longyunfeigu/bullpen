@@ -1,4 +1,4 @@
-import { app, Menu, type MenuItemConstructorOptions } from 'electron';
+import { Menu, type MenuItemConstructorOptions } from 'electron';
 import { broadcast } from './broadcast.js';
 
 const send = (action: string) => () => broadcast('app.menuAction', { action });
@@ -11,7 +11,7 @@ export function installApplicationMenu(opts: { isDev: boolean }): void {
     ...(isMac
       ? [
           {
-            label: app.name,
+            label: 'Charter',
             submenu: [
               { label: 'About Charter', click: send('app.about') },
               { type: 'separator' },
@@ -19,11 +19,11 @@ export function installApplicationMenu(opts: { isDev: boolean }): void {
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
-              { role: 'hide' },
+              { label: 'Hide Charter', role: 'hide' },
               { role: 'hideOthers' },
               { role: 'unhide' },
               { type: 'separator' },
-              { role: 'quit' },
+              { label: 'Quit Charter', role: 'quit' },
             ] as MenuItemConstructorOptions[],
           },
         ]

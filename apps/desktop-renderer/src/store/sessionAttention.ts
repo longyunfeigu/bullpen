@@ -66,7 +66,7 @@ export function sessionDisplayTitle(task: TaskDto): string {
     .split('\n')
     .map((line) => line.trim())
     .find(Boolean);
-  return goalLine?.slice(0, 72) || 'New Pi session';
+  return goalLine?.slice(0, 72) || 'New Charter session';
 }
 
 /**

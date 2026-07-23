@@ -20,6 +20,15 @@ async function startOrchestrationTask(
   await expect(page.getByTestId('task-room')).toBeVisible();
 }
 
+async function useSoftwareTerminalRenderer(page: Page): Promise<void> {
+  // These scenarios assert the rewritten viewport through DOM rows. WebGL
+  // rendering and fallback have their own dedicated Electron coverage.
+  await page.getByTestId('home-settings').click();
+  await page.getByTestId('settings-section-terminal').click();
+  await page.getByTestId('settings-terminal-renderer').selectOption('software');
+  await page.keyboard.press('Escape');
+}
+
 function pendingPermission(page: Page, toolName: string) {
   return page.getByTestId('perm-card').filter({ hasText: toolName });
 }
@@ -133,6 +142,7 @@ test.describe('M13 session orchestration', () => {
       },
     });
     try {
+      await useSoftwareTerminalRenderer(page);
       await startOrchestrationTask(page, 'M13 direct Codex worker', 'orchestration-codex');
       const createPermission = pendingPermission(page, 'terminal.create').first();
       await expect(createPermission).toBeVisible({ timeout: 20_000 });
@@ -142,7 +152,7 @@ test.describe('M13 session orchestration', () => {
       const args = JSON.parse(readFileSync(workerDriver.probe, 'utf8')) as string[];
       expect(args.slice(-2)).toEqual(['--', 'Report your identity and wait for the commander.']);
 
-      await expect(page.getByTestId('task-room-fleet-tab')).toContainText('编队 1');
+      await expect(page.getByTestId('task-room-fleet-tab')).toContainText('Fleet 1');
       await page.setViewportSize({ width: 1024, height: 700 });
       const identityName = await page.locator('.session-identity-name').boundingBox();
       const identityMeta = await page.locator('.session-identity-meta').boundingBox();
@@ -185,6 +195,7 @@ test.describe('M13 session orchestration', () => {
       await expect(page.getByTestId('workbench')).toBeVisible();
       await expect.poll(() => existsSync(socketPath)).toBe(true);
 
+      await useSoftwareTerminalRenderer(page);
       await startOrchestrationTask(page, 'M13 orchestration');
       const taskId = await page.getByTestId('task-room').getAttribute('data-task-id');
       expect(taskId).toBeTruthy();
@@ -194,7 +205,7 @@ test.describe('M13 session orchestration', () => {
       await expect(createPermission.first().getByTestId('perm-risk')).toHaveText('R2');
       await createPermission.first().getByTestId('perm-allow-once').click();
 
-      await expect(page.getByTestId('task-room-fleet-tab')).toContainText('编队 1');
+      await expect(page.getByTestId('task-room-fleet-tab')).toContainText('Fleet 1');
       await expect(page.getByTestId('task-room-conversation-tab')).toHaveAttribute(
         'aria-current',
         'page',

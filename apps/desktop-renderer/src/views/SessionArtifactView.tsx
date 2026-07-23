@@ -528,10 +528,13 @@ function HtmlArtifact(props: {
   url: string;
   mode: 'safe' | 'interactive';
   onMode: (mode: 'safe' | 'interactive') => void;
+  busy: boolean;
   anchor: ArtifactAnchorDto;
   onAnchor: (anchor: ArtifactAnchorDto) => void;
 }): React.JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const [pickerReady, setPickerReady] = useState(false);
+  useEffect(() => setPickerReady(false), [props.url, props.mode]);
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (event.source !== frameRef.current?.contentWindow) return;
@@ -563,13 +566,19 @@ function HtmlArtifact(props: {
         <div className="artifact-segmented">
           <button
             className={props.mode === 'safe' ? 'active' : ''}
-            onClick={() => props.onMode('safe')}
+            onClick={() => {
+              setPickerReady(false);
+              props.onMode('safe');
+            }}
           >
             Safe
           </button>
           <button
             className={props.mode === 'interactive' ? 'active' : ''}
-            onClick={() => props.onMode('interactive')}
+            onClick={() => {
+              setPickerReady(false);
+              props.onMode('interactive');
+            }}
           >
             Interactive
           </button>
@@ -577,6 +586,7 @@ function HtmlArtifact(props: {
         <span>Network blocked. Local assets stay inside the task root.</span>
         <button
           type="button"
+          disabled={props.busy || !pickerReady}
           onClick={() =>
             frameRef.current?.contentWindow?.postMessage({ type: 'charter-artifact-pick' }, '*')
           }
@@ -585,10 +595,12 @@ function HtmlArtifact(props: {
         </button>
       </div>
       <iframe
+        key={`${props.url}:${props.mode}`}
         ref={frameRef}
         src={props.url}
         title="Static HTML artifact"
         sandbox={props.mode === 'interactive' ? 'allow-scripts allow-forms' : 'allow-scripts'}
+        onLoad={() => setPickerReady(true)}
       />
       {props.anchor.type === 'html' ? (
         <div className="artifact-inline-note">Picked {props.anchor.selector}</div>
@@ -601,6 +613,7 @@ function ArtifactBody(props: {
   opened: ArtifactOpenResultDto;
   htmlMode: 'safe' | 'interactive';
   onHtmlMode: (mode: 'safe' | 'interactive') => void;
+  busy: boolean;
   anchor: ArtifactAnchorDto;
   onAnchor: (anchor: ArtifactAnchorDto) => void;
 }): React.JSX.Element {
@@ -646,6 +659,7 @@ function ArtifactBody(props: {
         url={opened.assetUrl}
         mode={props.htmlMode}
         onMode={props.onHtmlMode}
+        busy={props.busy}
         anchor={props.anchor}
         onAnchor={props.onAnchor}
       />
@@ -934,6 +948,7 @@ export function SessionArtifactView({
                 opened={opened}
                 htmlMode={htmlMode}
                 onHtmlMode={setHtmlMode}
+                busy={loading}
                 anchor={anchor}
                 onAnchor={setAnchor}
               />

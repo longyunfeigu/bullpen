@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore.js';
 import { handleGlobalKeydown, registerCommands, executeCommand } from '../commands.js';
 import { onEvent, platform, rpcResult } from '../bridge.js';
@@ -200,6 +200,24 @@ export const homeSurfaceRegistry: { main: React.ComponentType | null } = { main:
 export const editorBannerRegistry: React.ComponentType[] = [];
 export { initRegistry } from './init.js';
 
+const MODAL_FOCUSABLE = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'summary',
+  '[contenteditable="true"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+function focusableIn(dialog: HTMLElement): HTMLElement[] {
+  return [...dialog.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE)].filter(
+    (element) =>
+      element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+  );
+}
+
 export function Workbench(): React.JSX.Element {
   useRegisterCoreCommands();
   const overlay = useAppStore((s) => s.overlay);
@@ -207,10 +225,22 @@ export function Workbench(): React.JSX.Element {
   const toasts = useAppStore((s) => s.toasts);
   const dismissToast = useAppStore((s) => s.dismissToast);
   const sessionNotices = useAppStore((s) => s.sessionNotices);
+  const taskRoomTaskId = useAppStore((s) => s.taskRoomTaskId);
   const dismissSessionNotice = useAppStore((s) => s.dismissSessionNotice);
   const pushToast = useAppStore((s) => s.pushToast);
   const appInfo = useAppStore((s) => s.appInfo);
   const railView = useAppStore((s) => s.railView);
+  const overlayDialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (overlay === 'none') return;
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = overlayDialogRef.current;
+      if (!dialog) return;
+      (focusableIn(dialog)[0] ?? dialog).focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [overlay]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -250,7 +280,10 @@ export function Workbench(): React.JSX.Element {
 
   return (
     <div className="workbench" data-testid="workbench">
-      <header className={`titlebar ${platform() === 'darwin' ? '' : 'not-mac'}`}>
+      <header
+        className={`titlebar ${platform() === 'darwin' ? '' : 'not-mac'}`}
+        inert={overlay !== 'none'}
+      >
         <span className="tb-title">Charter</span>
         <button
           className="tb-chip"
@@ -276,7 +309,7 @@ export function Workbench(): React.JSX.Element {
           title="Toggle the persistent quick console"
           onClick={() => executeCommand('terminal.quickConsole')}
         >
-          <Ic name="terminal" size={12} /> ⌥Space 速召台
+          <Ic name="terminal" size={12} /> ⌥Space Quick Console
         </button>
         <button
           className="tb-chip"
@@ -287,7 +320,7 @@ export function Workbench(): React.JSX.Element {
         </button>
       </header>
 
-      <div className="wb-main">
+      <div className="wb-main" inert={overlay !== 'none'}>
         <SessionRail />
         {railView === 'skills' ? (
           <SkillsView />
@@ -298,7 +331,7 @@ export function Workbench(): React.JSX.Element {
         ) : null}
       </div>
 
-      <footer className="statusbar" aria-label="Status bar">
+      <footer className="statusbar" aria-label="Status bar" inert={overlay !== 'none'}>
         {statusBarRegistry.left.map((C, i) => (
           <C key={`l${i}`} />
         ))}
@@ -323,10 +356,34 @@ export function Workbench(): React.JSX.Element {
           onClick={(e) => e.target === e.currentTarget && setOverlay('none')}
         >
           <div
+            ref={overlayDialogRef}
             className={`modal ${overlay === 'about' ? 'small' : ''}`}
             role="dialog"
+            aria-modal="true"
             aria-label={overlay}
             data-testid={`overlay-${overlay}`}
+            tabIndex={-1}
+            onKeyDown={(event) => {
+              if (event.key !== 'Tab') return;
+              const dialog = overlayDialogRef.current;
+              if (!dialog) return;
+              const focusable = focusableIn(dialog);
+              if (focusable.length === 0) {
+                event.preventDefault();
+                dialog.focus();
+                return;
+              }
+              const first = focusable[0]!;
+              const last = focusable.at(-1)!;
+              const active = document.activeElement;
+              if (event.shiftKey && (active === first || !dialog.contains(active))) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+                event.preventDefault();
+                first.focus();
+              }
+            }}
           >
             <div className="modal-header">
               <span style={{ textTransform: 'capitalize' }}>{overlay}</span>
@@ -362,60 +419,62 @@ export function Workbench(): React.JSX.Element {
       ))}
 
       <div className="session-notices" aria-live="polite" aria-label="Session updates">
-        {sessionNotices.map((notice) => (
-          <article
-            key={notice.id}
-            className={`session-notice ${notice.tone}`}
-            data-testid="session-completion-notice"
-            data-kind={notice.kind}
-            data-task-id={notice.taskId}
-            data-state={notice.state}
-          >
-            <button
-              className="session-notice-open"
-              aria-label={`Open Session ${notice.title}`}
-              onClick={() => {
-                dismissSessionNotice(notice.id);
-                void useTaskStore.getState().openTask(notice.taskId);
-                useAppStore.getState().revealTaskSession(notice.taskId);
-              }}
+        {sessionNotices
+          .filter((notice) => notice.taskId !== taskRoomTaskId)
+          .map((notice) => (
+            <article
+              key={notice.id}
+              className={`session-notice ${notice.tone}`}
+              data-testid="session-completion-notice"
+              data-kind={notice.kind}
+              data-task-id={notice.taskId}
+              data-state={notice.state}
             >
-              <span className="session-notice-icon" aria-hidden="true">
-                <Ic
-                  name={
-                    notice.tone === 'error'
-                      ? 'xCircle'
-                      : notice.tone === 'warning'
-                        ? 'alert'
-                        : 'checkCircle'
-                  }
-                  size={16}
-                />
-              </span>
-              <span className="session-notice-copy">
-                <span className="session-notice-kicker">
-                  <b>{notice.label}</b>
-                  <span>{notice.projectName}</span>
+              <button
+                className="session-notice-open"
+                aria-label={`Open Session ${notice.title}`}
+                onClick={() => {
+                  dismissSessionNotice(notice.id);
+                  void useTaskStore.getState().openTask(notice.taskId);
+                  useAppStore.getState().revealTaskSession(notice.taskId);
+                }}
+              >
+                <span className="session-notice-icon" aria-hidden="true">
+                  <Ic
+                    name={
+                      notice.tone === 'error'
+                        ? 'xCircle'
+                        : notice.tone === 'warning'
+                          ? 'alert'
+                          : 'checkCircle'
+                    }
+                    size={16}
+                  />
                 </span>
-                <strong>{notice.title}</strong>
-                <small>{notice.body}</small>
-              </span>
-            </button>
-            <button
-              className="session-notice-close"
-              aria-label="Dismiss Session notification"
-              onClick={() => dismissSessionNotice(notice.id)}
-            >
-              <Ic name="x" size={12} />
-            </button>
-          </article>
-        ))}
+                <span className="session-notice-copy">
+                  <span className="session-notice-kicker">
+                    <b>{notice.label}</b>
+                    <span>{notice.projectName}</span>
+                  </span>
+                  <strong>{notice.title}</strong>
+                  <small>{notice.body}</small>
+                </span>
+              </button>
+              <button
+                className="session-notice-close"
+                aria-label="Dismiss Session notification"
+                onClick={() => dismissSessionNotice(notice.id)}
+              >
+                <Ic name="x" size={12} />
+              </button>
+            </article>
+          ))}
       </div>
 
       {/* ADR-0036: fresh OS screenshots pop the quick card here. */}
       <ScreenshotQuickCard />
 
-      <div className="toasts" aria-live="polite">
+      <div className={`toasts ${taskRoomTaskId ? 'with-task-room' : ''}`} aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}>
             <span style={{ flex: 1 }}>{t.message}</span>

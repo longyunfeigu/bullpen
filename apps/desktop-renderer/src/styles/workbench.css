@@ -1481,6 +1481,9 @@ html.xp-resizing * {
 }
 .screenshot-card-btn .ic {
   width: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   flex: none;
   font-size: 14px;
@@ -1543,6 +1546,10 @@ html.xp-resizing * {
   gap: 8px;
   z-index: 200;
   max-width: 420px;
+}
+.toasts.with-task-room {
+  /* Keep transient feedback clear of the Session decision dock. */
+  bottom: calc(var(--statusbar-height) + 164px);
 }
 .toast {
   padding: 10px 14px;
@@ -1682,6 +1689,13 @@ kbd {
   padding: 4px 10px;
   cursor: pointer;
   font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.md-mode-toggle button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .md-mode-toggle button.on {
   background: var(--bg-active);

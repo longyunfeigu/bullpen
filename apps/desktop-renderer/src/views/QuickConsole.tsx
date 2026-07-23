@@ -11,6 +11,7 @@ import {
   mountTerminal,
   observeTerminalFit,
   terminalShareText,
+  useBlocksVersion,
   useTerminalStore,
   type TermInstance,
   type TerminalWorkingContext,
@@ -40,10 +41,10 @@ function contextKey(item: TermInstance): string {
 }
 
 function contextTitle(item: TermInstance): string {
-  if (item.contextKind === 'focused') return `聚焦项目 · ${item.projectName}`;
-  if (item.contextKind === 'recent') return `最近项目 · ${item.projectName}`;
+  if (item.contextKind === 'focused') return `Focused project · ${item.projectName}`;
+  if (item.contextKind === 'recent') return `Recent project · ${item.projectName}`;
   if (item.contextKind === 'task') return `✳ ${item.contextLabel}`;
-  return 'Scratch 目录';
+  return 'Scratch directory';
 }
 
 function lineCount(text: string): number {
@@ -69,6 +70,8 @@ export function QuickConsole(): React.JSX.Element {
   const item = useTerminalStore((state) =>
     terminalId ? (state.items.find((entry) => entry.id === terminalId) ?? null) : null,
   );
+  useBlocksVersion((state) => (terminalId ? (state.versions[terminalId] ?? 0) : 0));
+  const commandRunning = item ? item.blocks.runningBlock() !== null : false;
   const hostRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -83,9 +86,9 @@ export function QuickConsole(): React.JSX.Element {
       choices.push({
         key: 'focused',
         request: { kind: 'focused' },
-        title: `聚焦项目 · ${workspace.displayName}`,
+        title: `Focused project · ${workspace.displayName}`,
         cwd: workspace.path,
-        meta: '当前 Editor 项目',
+        meta: 'Current Editor project',
         worktree: false,
       });
     }
@@ -95,9 +98,9 @@ export function QuickConsole(): React.JSX.Element {
       choices.push({
         key: `recent:${project.path}`,
         request: { kind: 'recent', projectPath: project.path },
-        title: `最近项目 · ${project.displayName}`,
+        title: `Recent project · ${project.displayName}`,
         cwd: project.path,
-        meta: '独立于 Editor 聚焦',
+        meta: 'Independent of Editor focus',
         worktree: false,
       });
     }
@@ -107,18 +110,18 @@ export function QuickConsole(): React.JSX.Element {
       choices.push({
         key: `task:${task.id}`,
         request: { kind: 'task', taskId: task.id },
-        title: `✳ ${task.title} 的 worktree`,
+        title: `✳ ${task.title} worktree`,
         cwd: task.worktree!.path,
-        meta: 'WORKTREE · 隔离',
+        meta: 'WORKTREE · ISOLATED',
         worktree: true,
       });
     }
     choices.push({
       key: 'scratch',
       request: { kind: 'scratch' },
-      title: 'Scratch 目录',
+      title: 'Scratch directory',
       cwd: 'Charter data/scratch/terminal-*',
-      meta: '临时目录 · 不计入项目',
+      meta: 'Temporary · outside projects',
       worktree: false,
     });
     return choices;
@@ -215,7 +218,7 @@ export function QuickConsole(): React.JSX.Element {
       const changed = await useTerminalStore.getState().setContext(item.id, choice.request);
       if (changed) {
         setContextOpen(false);
-        useAppStore.getState().pushToast('success', `速召台已切到 ${choice.title}`);
+        useAppStore.getState().pushToast('success', `Quick Console switched to ${choice.title}`);
         setTimeout(() => item.term.focus(), 0);
       }
     } finally {
@@ -228,7 +231,7 @@ export function QuickConsole(): React.JSX.Element {
     event.preventDefault();
     const text = terminalShareText(item);
     if (!text) {
-      useAppStore.getState().pushToast('info', '终端里还没有可发送的输出。');
+      useAppStore.getState().pushToast('info', 'The terminal has no output to share yet.');
       return;
     }
     const panel = panelRef.current?.getBoundingClientRect();
@@ -246,7 +249,7 @@ export function QuickConsole(): React.JSX.Element {
     const count = lineCount(outputMenu.text);
     useDraftStore.getState().addTerminalRef(taskRoomTaskId, {
       id: `terminal-ref-${Date.now()}`,
-      title: `速召台输出 · ${count} 行`,
+      title: `Quick Console output · ${count} lines`,
       text: outputMenu.text,
       cwd: item.cwd,
       contextLabel: contextTitle(item),
@@ -254,13 +257,15 @@ export function QuickConsole(): React.JSX.Element {
     });
     setOutputMenu(null);
     useQuickConsoleStore.getState().setOpen(false);
-    useAppStore.getState().pushToast('success', `已把 ${count} 行终端输出放进当前 Room 回复。`);
+    useAppStore
+      .getState()
+      .pushToast('success', `Added ${count} lines of terminal output to the current Room reply.`);
     useAppStore.getState().focusComposer();
   };
 
   const rerun = (): void => {
     if (!item?.lastCommand) {
-      useAppStore.getState().pushToast('info', '当前会话还没有可重跑的命令。');
+      useAppStore.getState().pushToast('info', 'This terminal has no command to run again yet.');
       return;
     }
     void rpcResult('terminal.write', { id: item.id, data: `${item.lastCommand}\r` });
@@ -276,14 +281,15 @@ export function QuickConsole(): React.JSX.Element {
         ref={panelRef}
         className="quick-console"
         data-testid="quick-console"
-        aria-label="速召台"
+        aria-label="Quick Console"
       >
         <header className="quick-console-head">
           <span className="quick-console-key">⌥Space</span>
-          <strong>速召台</strong>
+          <strong>Quick Console</strong>
           <button
             className={`quick-console-context ${item?.contextKind === 'task' ? 'worktree' : ''}`}
             data-testid="quick-console-context"
+            data-terminal-busy={commandRunning ? 'true' : 'false'}
             aria-expanded={contextOpen}
             disabled={!item}
             onClick={() => {
@@ -291,28 +297,35 @@ export function QuickConsole(): React.JSX.Element {
               setContextOpen((value) => !value);
             }}
           >
-            <span>{item ? contextTitle(item) : '正在准备会话…'}</span>
+            <span>{item ? contextTitle(item) : 'Preparing terminal…'}</span>
             {item?.contextKind === 'task' ? (
-              <span className="quick-console-worktree">WORKTREE · 隔离</span>
+              <span className="quick-console-worktree">WORKTREE · ISOLATED</span>
             ) : null}
-            <span className="quick-console-cwd" title={item?.cwd}>
-              {item ? compactTerminalPath(item.cwd) : ''}
+            <span
+              className="quick-console-cwd"
+              title={item ? `Host-set context cwd: ${item.cwd}` : undefined}
+            >
+              {item ? `Context cwd · ${compactTerminalPath(item.cwd)}` : ''}
             </span>
             <Ic name="chevron" size={12} />
           </button>
-          <span className="quick-console-hint">Esc 收回 · 失焦自动收 ✓ · 会话保持</span>
+          <span className="quick-console-hint">
+            Esc close · closes on blur ✓ · session persists
+          </span>
         </header>
 
         {contextOpen ? (
           <div className="quick-console-context-menu" data-testid="quick-console-context-menu">
             <div className="quick-console-menu-caption">
-              工作上下文 · cwd 由主进程解析，不信任渲染器路径
+              {commandRunning
+                ? 'Command running · context switching unlocks when it finishes'
+                : 'Working context · the host resolves cwd; renderer paths are not trusted'}
             </div>
             {contexts.map((choice) => (
               <button
                 key={choice.key}
                 className={choice.key === activeContext ? 'selected' : ''}
-                disabled={changingContext}
+                disabled={changingContext || commandRunning}
                 data-testid={`quick-console-context-${choice.request.kind}`}
                 onClick={() => void chooseContext(choice)}
               >
@@ -337,7 +350,7 @@ export function QuickConsole(): React.JSX.Element {
         >
           {!item ? (
             <div className="quick-console-loading">
-              <span /> 正在连接持久 PTY…
+              <span /> Connecting to persistent PTY…
             </div>
           ) : null}
         </div>
@@ -352,22 +365,26 @@ export function QuickConsole(): React.JSX.Element {
               onClick={() => {
                 void navigator.clipboard.writeText(outputMenu.text);
                 setOutputMenu(null);
-                useAppStore.getState().pushToast('success', '终端输出已复制。');
+                useAppStore.getState().pushToast('success', 'Terminal output copied.');
               }}
             >
               <Ic name="clipboard" size={13} />
-              复制输出
+              Copy output
               <span>⌘C</span>
             </button>
             <button
               className="primary"
               data-testid="quick-console-send-room"
               disabled={!taskRoomTaskId}
-              title={taskRoomTaskId ? '把输出引用放进当前 Room 的回复框' : '先进入一个 Task Room'}
+              title={
+                taskRoomTaskId
+                  ? 'Add an output reference to the current Room reply'
+                  : 'Open a Task Room first'
+              }
               onClick={sendToRoom}
             >
               <Ic name="arrowUp" size={13} />
-              发给当前 Room
+              Send to current Room
             </button>
             <button
               onClick={() => {
@@ -376,11 +393,11 @@ export function QuickConsole(): React.JSX.Element {
               }}
             >
               <Ic name="file" size={13} />
-              存为附件
+              Save as attachment
             </button>
             <button onClick={rerun} disabled={!item?.lastCommand}>
               <Ic name="refresh" size={13} />
-              重跑上一条命令
+              Run last command again
             </button>
           </div>
         ) : null}

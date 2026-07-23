@@ -67,7 +67,7 @@ function providerLabel(provider: 'pi' | 'shell' | 'claude' | 'codex'): string {
   if (provider === 'claude') return 'Claude';
   if (provider === 'codex') return 'Codex';
   if (provider === 'shell') return 'Shell';
-  return 'Pi';
+  return 'Charter';
 }
 
 export function timeAgo(value: string, now: number): string {
@@ -700,7 +700,7 @@ export function SessionRail(): React.JSX.Element {
         {visibleGroups.length === 0 ? (
           <div className="sr-empty">
             {groups.length === 0
-              ? 'No sessions yet. Start with Pi, Claude or Codex.'
+              ? 'No sessions yet. Start with Charter Agent, Claude or Codex.'
               : 'No sessions match this search or filter.'}
           </div>
         ) : (

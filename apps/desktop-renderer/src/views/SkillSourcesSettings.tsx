@@ -47,7 +47,7 @@ export function SkillSourcesSettingsSection(): React.JSX.Element {
           <div>
             <div className="st-card-title">Sources &amp; trust</div>
             <div className="st-card-sub">
-              Choose where Charter scans and whether linked instructions may enter Pi context.
+              Choose where Charter scans and whether linked instructions may enter Charter context.
             </div>
           </div>
           <span className="st-sp" />

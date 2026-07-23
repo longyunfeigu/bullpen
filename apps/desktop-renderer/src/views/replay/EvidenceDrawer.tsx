@@ -74,7 +74,7 @@ export function EvidenceDrawer({
       aria-label="Evidence for the selected moment"
     >
       <header className="rp-drawer-head">
-        <span>当前主张</span>
+        <span>Current claim</span>
         <span className={`rp-level rp-level-${fact.level}`} data-testid="replay-fact-level">
           {LEVEL_LABEL[fact.level]}
         </span>
@@ -86,7 +86,7 @@ export function EvidenceDrawer({
 
       <section className="rp-drawer-section">
         <div className="rp-section-label">
-          <span>直接证据</span>
+          <span>Direct evidence</span>
           <small>{fact.evidenceRefs.length}</small>
         </div>
         <div className="rp-evidence-items" data-testid="replay-evidence-list">
@@ -99,7 +99,9 @@ export function EvidenceDrawer({
             >
               <Ic name={ref.startsWith('change:') ? 'pencil' : 'clipboard'} size={13} />
               <span>
-                <strong>{ref.startsWith('change:') ? '文件变更记录' : '事件账本记录'}</strong>
+                <strong>
+                  {ref.startsWith('change:') ? 'File change record' : 'Event ledger record'}
+                </strong>
                 <small className="mono">{ref}</small>
               </span>
               <em>#{String(index + 1).padStart(2, '0')}</em>
@@ -132,7 +134,7 @@ export function EvidenceDrawer({
                     <dd className="mono">
                       {detail.integrityHash
                         ? `sha256 ${detail.integrityHash.slice(0, 16)}…`
-                        : '账本行（无独立哈希）'}
+                        : 'Ledger row (no independent hash)'}
                     </dd>
                   </div>
                 </dl>
@@ -146,7 +148,7 @@ export function EvidenceDrawer({
 
       <section className="rp-drawer-section">
         <div className="rp-section-label">
-          <span>来源与完整性</span>
+          <span>Source and integrity</span>
         </div>
         <dl className="rp-provenance">
           <div>
@@ -177,7 +179,7 @@ export function EvidenceDrawer({
       {fact.relations.length > 0 ? (
         <section className="rp-drawer-section">
           <div className="rp-section-label">
-            <span>明确关系</span>
+            <span>Explicit relationships</span>
             <small>id-backed only</small>
           </div>
           {fact.relations.map((relation) => {
@@ -200,20 +202,23 @@ export function EvidenceDrawer({
       {fact.level === 'observed' ? (
         <div className="rp-boundary-note" data-testid="replay-boundary">
           <Ic name="alert" size={14} />
-          <p>这一步由终端或文件系统观察得到；记录无法确认应用内部语义或原因。</p>
+          <p>
+            This step was observed through the terminal or file system. The record cannot confirm
+            the app's internal meaning or cause.
+          </p>
         </div>
       ) : null}
 
       <form className="rp-ask" onSubmit={submit}>
         <label htmlFor="rp-ask-input">
-          <Ic name="help" size={14} /> 询问这段回放
+          <Ic name="help" size={14} /> Ask about this replay
         </label>
         <div>
           <input
             id="rp-ask-input"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
-            placeholder="这一步有什么证据？"
+            placeholder="What evidence supports this step?"
             autoComplete="off"
           />
           <button type="submit" aria-label="Ask replay">
@@ -223,11 +228,11 @@ export function EvidenceDrawer({
       </form>
       {answer ? (
         <div className="rp-answer" data-testid="replay-answer">
-          <strong>基于记录的回答（推导叙事，非原始证据）</strong>
+          <strong>Record-based answer (inferred narrative, not primary evidence)</strong>
           <p>{answer.text}</p>
           {answer.boundary ? <p className="rp-answer-boundary">{answer.boundary}</p> : null}
           {answer.citations.length > 0 ? (
-            <small className="mono">引用 {answer.citations.slice(0, 3).join(' · ')}</small>
+            <small className="mono">Citations {answer.citations.slice(0, 3).join(' · ')}</small>
           ) : null}
         </div>
       ) : null}
@@ -236,7 +241,7 @@ export function EvidenceDrawer({
         <footer className="rp-drawer-actions">
           <button className="rp-primary-btn" data-testid="replay-to-verify" onClick={onVerify}>
             <Ic name="shield" size={13} />
-            进入核验
+            Open Verify
           </button>
         </footer>
       ) : null}

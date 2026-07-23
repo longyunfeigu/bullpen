@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launchApp } from './helpers/launch';
 import { createTsSmallFixture } from './helpers/fixtures';
+import { waitForTerminalOutput } from './helpers/terminal';
 
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 const modLabel = process.platform === 'darwin' ? '⌘' : 'Ctrl';
@@ -15,6 +16,13 @@ test.describe('terminal file links', () => {
     writeFileSync(join(fixture, 'rocket.html'), '<!doctype html><title>rocket</title>\n');
     const { app, page } = await launchApp({ env: { PI_IDE_OPEN_WORKSPACE: fixture } });
     try {
+      // Link hit-testing is renderer-independent, but this test needs a DOM row
+      // as a stable Playwright target. WebGL behavior is covered separately.
+      await page.getByTestId('home-settings').click();
+      await page.getByTestId('settings-section-terminal').click();
+      await page.getByTestId('settings-terminal-renderer').selectOption('software');
+      await page.keyboard.press('Escape');
+
       await page.keyboard.press('Control+`');
       await expect(page.getByTestId('terminal-panel')).toBeVisible();
       await expect(page.locator('.xterm')).toBeVisible({ timeout: 15000 });
@@ -22,9 +30,7 @@ test.describe('terminal file links', () => {
       await page.locator('.xterm').click();
       await page.keyboard.type('echo rocket.html');
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('terminal-panel')).toContainText('rocket.html', {
-        timeout: 15000,
-      });
+      await waitForTerminalOutput(page, 'rocket.html');
 
       // The pure output row (not the prompt line that still contains `echo`).
       const outputRow = page

@@ -102,6 +102,13 @@ const PATHS: Record<string, React.JSX.Element> = {
       <path d="M14 2v6h6" />
     </>
   ),
+  pin: (
+    <>
+      <path d="M12 17v5" />
+      <path d="M5 17h14" />
+      <path d="M6 3h12l-2 7 3 3H5l3-3Z" />
+    </>
+  ),
   check: <path d="M20 6 9 17l-5-5" />,
   circle: <circle cx="12" cy="12" r="9" />,
   archive: (

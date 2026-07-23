@@ -164,27 +164,37 @@ test.describe('Preview gate (ADR-0022)', () => {
     });
     try {
       await startWorktreeTask(page, '[scenario:edit-basic] expiry hint');
+      const reviewNotice = page
+        .getByTestId('session-completion-notice')
+        .filter({ hasText: 'Ready for review' });
+      await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'REVIEW_READY');
+      await expect(reviewNotice).toHaveCount(0);
       const logBefore = execFileSync('git', ['log', '--oneline'], { cwd: fixture })
         .toString()
         .trim();
 
       await page.getByTestId('review-bar-open').click();
       await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
-      page.once('dialog', (d) => void d.accept());
       await page.getByTestId('review-accept-all').click();
+      await page.getByTestId('review-accept-all-confirm').click();
       await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IDLE', {
         timeout: 30000,
       });
 
-      // The draft card: evidence-ledger body, copy-out only.
-      await expect(page.getByTestId('pr-draft-card')).toBeVisible({ timeout: 15000 });
+      // Accept settles first: stale review attention is gone and the PR draft
+      // is a durable, non-blocking next step rather than an automatic modal.
+      await expect(reviewNotice).toHaveCount(0);
+      await expect(page.getByTestId('pr-draft-card')).toHaveCount(0);
+      await expect(page.getByTestId('tl-pr-draft')).toBeVisible({ timeout: 15_000 });
+      await page.getByTestId('tl-pr-draft-open').click();
+      await expect(page.getByTestId('pr-draft-card')).toBeVisible();
       const body = page.getByTestId('pr-draft-body');
       await expect(body).toContainText('## Goal');
       await expect(body).toContainText('src/index.ts');
       await expect(body).toContainText('## Verification');
       await expect(body).toContainText('GIT-007');
 
-      // Dismissing loses nothing — the draft persists on the timeline.
+      // Dismissing loses nothing — the explicit entry persists on the timeline.
       await page.getByTestId('pr-draft-dismiss').click();
       await expect(page.getByTestId('pr-draft-card')).toHaveCount(0);
       await expect(page.getByTestId('tl-pr-draft')).toBeVisible();

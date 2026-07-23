@@ -11,7 +11,7 @@ export const SKILL_AGENTS: ReadonlyArray<{
   shortLabel: string;
   consumer: SkillConsumer;
 }> = [
-  { id: 'pi', label: 'Pi Agent', shortLabel: 'Pi', consumer: 'charter' },
+  { id: 'pi', label: 'Charter Agent', shortLabel: 'Charter', consumer: 'charter' },
   { id: 'claude', label: 'Claude Code', shortLabel: 'Claude', consumer: 'claude' },
   { id: 'codex', label: 'Codex', shortLabel: 'Codex', consumer: 'codex' },
 ];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -28,6 +28,17 @@ describe('release policy and metadata helpers', () => {
     expect(() => validateReleasePolicy({ version: '1.0.0-beta.1', tag: 'v1.0.0' })).toThrow(
       /does not match/,
     );
+  });
+
+  it('publishes the unsigned tag workflow as a GitHub prerelease, never Latest', () => {
+    const workflow = readFileSync(
+      new URL('../../.github/workflows/release.yml', import.meta.url),
+      'utf8',
+    );
+    const publishLine = workflow.split('\n').find((line) => line.includes('gh release create'));
+
+    expect(publishLine).toContain('--prerelease --latest=false');
+    expect(publishLine).not.toMatch(/--latest(?:\s|$)/);
   });
 
   it('collects only distributable artifacts and hashes bytes', () => {

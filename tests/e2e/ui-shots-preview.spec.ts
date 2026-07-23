@@ -107,7 +107,7 @@ test('preview gate visual walk', async () => {
     await page.screenshot({ path: `${OUT}/pg-3-preview-live.png` });
 
     // 4 — marquee armed.
-    await page.getByTestId('preview-mark').click();
+    await page.getByTestId('preview-mode-draw').click();
     await expect(page.getByTestId('preview-overlay')).toBeVisible();
     await page.screenshot({ path: `${OUT}/pg-4-mark-armed.png` });
 
@@ -143,7 +143,7 @@ test('preview gate visual walk', async () => {
     await page.getByTestId('review-bar-open').click();
     await expect(page.getByTestId('review-view')).toBeVisible({ timeout: 15000 });
     await page.getByTestId('review-tab-checks').click();
-    await expect(page.getByTestId('checks-pane')).toBeVisible();
+    await expect(page.getByTestId('review-view').getByTestId('checks-pane')).toBeVisible();
     await page.waitForTimeout(500);
     await page.screenshot({ path: `${OUT}/pg-7-checks.png` });
 
@@ -156,18 +156,23 @@ test('preview gate visual walk', async () => {
     await page.emulateMedia({ colorScheme: 'light' });
     await page.waitForTimeout(400);
 
-    // 10 — accept → PR draft card.
-    page.once('dialog', (d) => void d.accept());
+    // 10 — accept settles unobscured; the PR draft remains inline.
     await page.getByTestId('review-accept-all').click();
-    await expect(page.getByTestId('pr-draft-card')).toBeVisible({ timeout: 20000 });
+    await page.getByTestId('review-accept-all-confirm').click();
+    await expect(page.getByTestId('task-state')).toHaveAttribute('data-state', 'IDLE', {
+      timeout: 20000,
+    });
+    await expect(page.getByTestId('pr-draft-card')).toHaveCount(0);
+    await expect(page.getByTestId('tl-pr-draft')).toBeVisible();
     await page.waitForTimeout(400);
-    await page.screenshot({ path: `${OUT}/pg-10-pr-draft.png` });
+    await page.screenshot({ path: `${OUT}/pg-10-room-settled.png` });
 
-    // 11 — dismissed: the timeline entry remains.
+    // 11 — the larger draft is an explicit next step.
+    await page.getByTestId('tl-pr-draft-open').click();
+    await expect(page.getByTestId('pr-draft-card')).toBeVisible();
+    await page.screenshot({ path: `${OUT}/pg-11-pr-draft-explicit.png` });
     await page.getByTestId('pr-draft-dismiss').click();
     await expect(page.getByTestId('tl-pr-draft')).toBeVisible();
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: `${OUT}/pg-11-room-done.png` });
   } finally {
     server?.kill();
     await app.close();

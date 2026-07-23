@@ -1060,19 +1060,48 @@ export class TaskService {
     ) {
       return { task, status: 'accepted', prDraft: null };
     }
-    // VER-007/E2E-018: accepting real changes without any verification needs a
-    // second, explicit confirmation.
+    // VER-007/E2E-018: every accept entry point shares this trust boundary.
+    // Missing, failed, cancelled, timed-out, running, or stale current checks
+    // all need a second explicit confirmation. Superseded failures are history
+    // and do not block once their replacement passed against current code.
     const verificationRuns = context.verifications.listForTask(taskId);
-    if (verificationRuns.length === 0 && task.mode !== 'ask' && !options.confirmUnverified) {
-      if (changeSetAtAccept.files.length > 0) {
-        throw new ProductFailure(
-          productError('ACCEPT_NEEDS_CONFIRM', {
-            userMessage:
-              'No verification was run for this task. Confirm explicitly to accept unverified changes.',
-            retryable: true,
-          }),
-        );
-      }
+    const currentVerificationRuns = verificationRuns.filter((run) => run.supersededBy === null);
+    const configuredLabels = new Set(task.verification.map((command) => command.label));
+    const currentLabels = new Set(currentVerificationRuns.map((run) => run.label));
+    const missingConfiguredChecks = [...configuredLabels].filter(
+      (label) => !currentLabels.has(label),
+    );
+    const failedChecks = currentVerificationRuns.filter(
+      (run) => run.state !== 'passed' && run.state !== 'running',
+    );
+    const pendingChecks = currentVerificationRuns.filter((run) => run.state === 'running');
+    const staleChecks = currentVerificationRuns.filter((run) => run.stale);
+    const hasRealChanges = changeSetAtAccept.files.length > 0;
+    const needsEvidenceConfirmation =
+      task.mode !== 'ask' &&
+      hasRealChanges &&
+      (currentVerificationRuns.length === 0 ||
+        missingConfiguredChecks.length > 0 ||
+        failedChecks.length > 0 ||
+        pendingChecks.length > 0 ||
+        staleChecks.length > 0);
+    if (needsEvidenceConfirmation && !options.confirmUnverified) {
+      const userMessage =
+        failedChecks.length > 0
+          ? `${failedChecks.length} current verification check${failedChecks.length === 1 ? '' : 's'} failed or stopped. Accept the changes despite failed checks?`
+          : staleChecks.length > 0
+            ? `${staleChecks.length} current verification result${staleChecks.length === 1 ? ' is' : 's are'} stale because the code changed. Accept without fresh verification?`
+            : pendingChecks.length > 0
+              ? 'Verification is still running. Accept before it finishes?'
+              : missingConfiguredChecks.length > 0
+                ? `${missingConfiguredChecks.length} configured verification check${missingConfiguredChecks.length === 1 ? ' has' : 's have'} not run. Accept the unverified changes anyway?`
+                : 'No verification was run for this task. Accept the unverified changes anyway?';
+      throw new ProductFailure(
+        productError('ACCEPT_NEEDS_CONFIRM', {
+          userMessage,
+          retryable: true,
+        }),
+      );
     }
 
     // §6.1: acceptance requires a final report; it is recorded when the run completes.
@@ -1086,7 +1115,10 @@ export class TaskService {
         await this.buildFinalReportData(taskId, null, 'completed'),
       );
     }
-    const unverifiedConfirmed = verificationRuns.length === 0 && options.confirmUnverified === true;
+    const unverifiedConfirmed =
+      needsEvidenceConfirmation &&
+      currentVerificationRuns.length === 0 &&
+      options.confirmUnverified === true;
     // ADR-0032: settle the turn ledger. Accepting confirms the current
     // workspace state, so by default every finished-but-unsettled run settles.
     const reviewState = options.actor === 'system:full-auto' ? 'auto_accepted' : 'accepted';

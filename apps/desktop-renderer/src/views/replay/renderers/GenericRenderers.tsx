@@ -19,7 +19,9 @@ export function TerminalRenderer({ fact }: { fact: ReplayFactDto }): React.JSX.E
       </header>
       <pre className="mono">{fact.detail ?? '(no recorded output for this moment)'}</pre>
       {fact.capture === 'observed' ? (
-        <footer>终端像素不能证明应用内部状态；仅记录可见输出。</footer>
+        <footer>
+          Terminal pixels cannot prove internal app state; only visible output is recorded.
+        </footer>
       ) : null}
     </article>
   );
@@ -27,12 +29,12 @@ export function TerminalRenderer({ fact }: { fact: ReplayFactDto }): React.JSX.E
 
 export function ApprovalRenderer({ fact }: { fact: ReplayFactDto }): React.JSX.Element {
   const disposition =
-    fact.status === 'ok' ? '已批准' : fact.status === 'denied' ? '已拒绝' : '等待决定';
+    fact.status === 'ok' ? 'Approved' : fact.status === 'denied' ? 'Denied' : 'Awaiting decision';
   return (
     <article className={`rp-approval-artifact status-${fact.status}`}>
       <header>
         <Ic name="shield" size={18} />
-        <span>审批检查点</span>
+        <span>Approval checkpoint</span>
         {fact.risk !== 'none' ? (
           <em className={`rp-risk-${fact.risk}`}>risk: {fact.risk}</em>
         ) : null}
@@ -58,18 +60,18 @@ export function VerificationRenderer({ fact }: { fact: ReplayFactDto }): React.J
         <Ic name={fact.status === 'ok' ? 'checkCircle' : 'xCircle'} size={18} />
         <span>
           {fact.status === 'ok'
-            ? '验证通过'
+            ? 'Verification passed'
             : fact.status === 'running'
-              ? '验证进行中'
-              : '验证未通过'}
+              ? 'Verification in progress'
+              : 'Verification failed'}
         </span>
       </header>
       <h2>{fact.action}</h2>
       {fact.detail ? <pre className="mono">{fact.detail}</pre> : null}
       <footer>
         {fact.status === 'ok'
-          ? '这是可核验的系统证据：命令、退出码与输出均已记录。'
-          : '失败输出已保留为证据；该验证不支持任何 Verified 主张。'}
+          ? 'This is verifiable system evidence: the command, exit code, and output are recorded.'
+          : 'The failure output is preserved as evidence; this check supports no Verified claim.'}
       </footer>
     </article>
   );
@@ -99,7 +101,9 @@ export function WebSourceRenderer({ fact }: { fact: ReplayFactDto }): React.JSX.
       <div className="rp-web-address mono">{fact.resource}</div>
       <h2>{fact.action}</h2>
       {fact.detail ? <blockquote>{fact.detail}</blockquote> : null}
-      <footer>只展示事件记录的地址与摘录；不重建页面内容。</footer>
+      <footer>
+        Only the recorded address and excerpt are shown; page content is not reconstructed.
+      </footer>
     </article>
   );
 }

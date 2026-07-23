@@ -6,6 +6,7 @@ import { useScreenshotStore } from '../store/screenshotStore.js';
 import { useTaskStore } from '../store/taskStore.js';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { Annotator } from './Annotator.js';
+import { Ic } from './home-icons.js';
 import {
   feedAnnotatedScreenshot,
   feedScreenshot,
@@ -215,7 +216,9 @@ export function ScreenshotQuickCard(): React.JSX.Element | null {
           disabled={busy}
           onClick={() => void act(feedScreenshot)}
         >
-          <span className="ic">⚡</span>
+          <span className="ic">
+            <Ic name="zap" size={17} />
+          </span>
           <span>
             <span className="lbl">{primaryLabel}</span>
             <span className="desc">{primaryDesc}</span>
@@ -228,7 +231,9 @@ export function ScreenshotQuickCard(): React.JSX.Element | null {
           disabled={busy}
           onClick={() => void openAnnotator()}
         >
-          <span className="ic">✏️</span>
+          <span className="ic">
+            <Ic name="pencil" size={17} />
+          </span>
           <span>
             <span className="lbl">Annotate first</span>
             <span className="desc">Box the bug, redact secrets, then send</span>
@@ -241,7 +246,9 @@ export function ScreenshotQuickCard(): React.JSX.Element | null {
           disabled={busy}
           onClick={() => void act(saveScreenshotToProject)}
         >
-          <span className="ic">🗂</span>
+          <span className="ic">
+            <Ic name="folder" size={17} />
+          </span>
           <span>
             <span className="lbl">Save to project assets</span>
             <span className="desc">assets/screenshots/ — no message sent</span>

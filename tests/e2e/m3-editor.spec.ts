@@ -70,6 +70,11 @@ test.describe('M3 workspace and editor', () => {
       await expect(page.getByTestId('conflict-compare')).toBeVisible();
       await expect(page.getByTestId('conflict-reload')).toBeVisible();
       await expect(page.getByTestId('conflict-keep')).toBeVisible();
+      const conflictedTab = page.getByTestId('tab-src/util.ts');
+      await expect(
+        conflictedTab.locator('[aria-label="External change"] [data-icon="alert"]'),
+      ).toBeVisible();
+      await expect(conflictedTab).not.toContainText('⚠');
 
       // Saving while conflicted must NOT overwrite silently.
       await page.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
@@ -93,7 +98,12 @@ test.describe('M3 workspace and editor', () => {
     try {
       await page.getByTestId('rail-tab-files').click();
       await page.getByTestId('tree-item-README.md').click();
-      await expect(page.getByTestId('tab-README.md')).toBeVisible();
+      const tab = page.getByTestId('tab-README.md');
+      await expect(tab).toBeVisible();
+      await tab.click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'Pin / Unpin' }).click();
+      await expect(tab.locator('[aria-label="pinned"] [data-icon="pin"]')).toBeVisible();
+      await expect(tab).not.toContainText('📌');
       writeFileSync(join(fixture, 'README.md'), '# Reloaded externally\n');
       await expect(page.locator('.monaco-editor').first()).toContainText('Reloaded externally', {
         timeout: 15000,

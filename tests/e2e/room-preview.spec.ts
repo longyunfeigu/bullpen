@@ -66,11 +66,18 @@ test.describe('Room live preview (ADR-0022 am.2)', () => {
       await expect(badge).toBeVisible({ timeout: 15000 });
       await expect(page.getByTestId('room-preview-rail')).toHaveCount(0);
 
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.setBounds({ x: 0, y: 0, width: 980, height: 760 });
+      });
+
       await badge.click();
       await expect(page.getByTestId('room-preview-rail')).toBeVisible();
+      await expect(page.getByTestId('preview-mode-live')).toHaveAttribute('aria-selected', 'true');
       const frame = page.getByTestId('preview-frame');
       await expect(frame).toBeVisible({ timeout: 15000 });
       await expect(frame).toHaveAttribute('src', new RegExp(`localhost:${started.port}`));
+      expect((await frame.boundingBox())?.height ?? 0).toBeGreaterThan(80);
+      await expect(page.locator('.session-canvas-body > .tr-main')).toBeVisible();
       // Wait for the iframe content to actually commit before picking.
       await expect(page.frameLocator('[data-testid="preview-frame"]').locator('#hint')).toBeVisible(
         { timeout: 15000 },
@@ -143,7 +150,10 @@ test.describe('Room live preview (ADR-0022 am.2)', () => {
       // send lands it in the conversation as a steer.
       const chip = page.getByTestId('preview-console-chip');
       await expect(chip).toBeVisible({ timeout: 15000 });
-      await expect(chip).toContainText('⚠');
+      await expect(chip).toHaveClass(/bad/);
+      await expect(chip).toHaveAttribute('title', 'Console errors from the preview page');
+      await expect(chip.locator('svg')).toBeVisible();
+      await expect(chip).toContainText('1');
       await chip.click();
       await expect(page.getByTestId('preview-console')).toBeVisible();
       await page.getByTestId('preview-console-send').click();

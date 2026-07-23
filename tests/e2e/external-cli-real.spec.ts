@@ -171,7 +171,7 @@ test.describe('ADR-0017 rev.2 real external CLIs (manual, gated)', () => {
       await page.getByTestId('replay-open').click();
       await expect(page.getByTestId('replay-view')).toBeVisible();
       await expect(page.getByTestId('replay-source')).toContainText('Claude Terminal');
-      await expect(page.getByTestId('replay-source')).toContainText('观察记录');
+      await expect(page.getByTestId('replay-source')).toContainText('Observed');
       await expect(page.getByTestId('replay-story-list')).toBeVisible();
       await expect(page.getByTestId('replay-timeline')).toBeVisible();
       await page.waitForTimeout(180);

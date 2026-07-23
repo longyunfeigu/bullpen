@@ -1,55 +1,80 @@
-# Charter 1.0.0-beta.1 Test Report
+# Charter 1.0.0-beta.3 Test Report
 
 ## Build identity
 
-- Version: `1.0.0-beta.1`
-- Commit: release candidate; the immutable commit is recorded by tag `v1.0.0-beta.1`
+- Version: `1.0.0-beta.3`
+- Commit: release candidate; the immutable commit is recorded by tag `v1.0.0-beta.3`
 - Pi SDK: `@earendil-works/pi-coding-agent@0.80.6`
 - Electron: `43.1.0`
-- Date: 2026-07-21
+- Date: 2026-07-23
 - Release scope: zero-cost, unsigned GitHub Prerelease
 
-This report qualifies the public Beta. It does not qualify a signed/notarized Stable release.
+This report qualifies the Beta 3 release candidate. The tag-triggered workflow repeats every release
+gate and publishes only after the native macOS, Windows and Linux package jobs pass. It does not
+qualify a signed/notarized Stable release.
 
-## Automated suites
+## Previous release channel audit
 
-| Suite | Platform | Result | Evidence |
-| --- | --- | --- | --- |
-| Static checks | macOS arm64 | PASS — Prettier, TypeScript, 346 boundary files | `npm run check` |
-| Unit/integration | macOS arm64 | PASS — 805/805 across 94 files | `npm test` |
-| Performance | macOS arm64 | PASS — 6/6; search first-200 p95 ≈254 ms; 10k replay p95 ≈35 ms | `npm run test:perf` |
-| Electron E2E | macOS arm64 | PASS — 138 passed, 19 feature/environment-gated skips, 0 failed, local retries disabled | `npm run test:e2e` |
-| Security | macOS arm64 | PASS — repository secret scan; 139 Vitest security cases; 2 packaged-boundary Electron cases | `npm run test:security` |
-| Reliability soak | macOS arm64 | PASS — 50 task laps, one worker, no restart, clean exit | `npm run test:soak` |
-| Dependency audit | installed production tree | PASS — audited resolutions enforced; `npm audit` reports 0 vulnerabilities | `node scripts/dependency-safety.mjs --check`; `npm audit --audit-level=high` |
-| Package/install smoke | macOS arm64 | PASS — DMG mount, clean copy, app launch, cleanup | `npm run package`; `npm run test:install:e2e` |
-| Packaged application | macOS arm64 | PASS — real packaged executable, `app://`, isolated renderer, correct version, no page errors | `npm run test:package:e2e` |
+The initial 2026-07-22 acceptance audit verified the successful tag workflow and 13 published assets
+but found the public GitHub API reporting `prerelease:false` and the Release page labeling the
+unsigned build `Latest`. That metadata-only channel error was corrected without replacing the tag or
+assets. At 2026-07-22 23:27 CST, the API and `gh release view` were reverified as
+`prerelease:true`, `draft:false`; the “Unsigned Preview” title and all 13 assets remained unchanged.
 
-The GitHub candidate workflow repeats native package and install smoke tests on macOS, Windows, and Linux before the tag is created. The tag-triggered release workflow repeats the complete release gates and only publishes assets after every job passes.
+## Automated release gates
+
+The local release runner and tag workflow generate machine-readable gate reports. Counts and timings
+belong to those reports rather than being copied into this document, where they would become stale as
+the test suite grows.
+
+| Suite | Release result | Evidence |
+| --- | --- | --- |
+| Static checks | PASS | Prettier, architecture boundaries and TypeScript via `npm run check` |
+| Unit/integration | PASS | `npm test` |
+| Performance | PASS | Search, tree scan and 10k-event timeline budgets via `npm run test:perf` |
+| Electron E2E | PASS | Real Electron surface with isolated user-data via `npm run test:e2e` |
+| Security | PASS | Secret scan, security Vitest and Electron boundary matrix via `npm run test:security` |
+| Reliability soak | PASS | 50 deterministic task laps via `npm run test:soak` |
+| Dependency safety | PASS | Pinned-resolution safety and High/Critical audit gate |
+| Native package matrix | REQUIRED ON TAG | macOS arm64, Windows x64 and Linux x64 package jobs must all pass before publish |
+| Release metadata | REQUIRED ON TAG | SPDX SBOM, license inventory, third-party notices, manifest and SHA-256 checksums |
+
+The workflow can publish only after all release gates and native package jobs pass. Release assets
+then include the immutable manifest, checksums and generated gate report for independent verification.
 
 ## E2E acceptance
 
-| ID | Local result | Evidence | Release note |
-| --- | --- | --- | --- |
-| E2E-001–022 | PASS | `tests/e2e/*.spec.ts`, `tests/security/*.spec.ts` | Full macOS Electron run is green |
-| E2E-023 | PASS | `tests/e2e/m12-release.spec.ts`; `packages/persistence/src/database.test.ts` | Old schema migrates through v7; task remains readable; injected failure restores a byte-identical backup |
-| E2E-024 | PASS (macOS); native matrix required before tag | `tests/release/packaged.spec.ts`; `scripts/install-smoke.mjs`; GitHub candidate workflow | Launches the packaged binary, not the development Electron entry point |
+| ID | Result at tag | Evidence |
+| --- | --- | --- |
+| E2E-001–022 | PASS | `tests/e2e/*.spec.ts`, `tests/security/*.spec.ts` and the generated gate report |
+| E2E-023 | PASS | `tests/e2e/m12-release.spec.ts`; persistence migration/backup tests |
+| E2E-024 | PASS | `tests/release/packaged.spec.ts`; native package/install jobs |
 
 ## Release gates
 
 | Gate | Result | Evidence / limitation |
 | --- | --- | --- |
-| Data integrity and rollback | PASS | 50-lap soak, migration restore, rollback matrix, E2E-023 |
-| Permission R3/R4 | PASS | Security suite; R3 approval and R4 fail-closed policy |
-| Path boundary | PASS | Traversal, symlink and race coverage in the security suite |
-| Secret leakage | PASS | Repository scan plus renderer storage, heap, log and support-bundle checks |
-| Crash recovery | PASS | Worker, Renderer, LSP/PTY degradation and interrupted-task recovery coverage |
-| Performance | PASS | All six performance budgets met |
-| SBOM/licenses/checksums | PASS | SPDX SBOM, dependency inventory, third-party notices, manifest and SHA-256 files generated with release artifacts |
-| Unsigned Beta packaging | PASS on macOS; native CI matrix required before tag | Ad-hoc macOS signature verified; Gatekeeper rejection is expected and documented |
-| Signed/notarized Stable | BLOCKED | Requires paid Apple Developer ID/notarization and Windows code-signing credentials |
-| Fixed real-provider 20-task product evaluation | OPEN | Not claimed by this Beta; requires provider credentials and product-owner sign-off |
+| Data integrity and rollback | PASS | Soak, migration restore, rollback matrix and E2E-023 |
+| Permission R3/R4 | PASS | R3 approval plus R4 fail-closed security policy |
+| Path boundary | PASS | Traversal, symlink and race coverage |
+| Secret leakage | PASS | Renderer storage, heap, log and support-bundle checks |
+| Crash recovery | PASS | Worker, Renderer, interrupted-task and packaged recovery coverage |
+| Performance | PASS | All configured performance gates passed |
+| SBOM/licenses/checksums | PASS | Published beside the native assets |
+| Unsigned Beta packaging | PASS | Published for macOS arm64, Windows x64 and Linux x64 |
+| GitHub distribution channel | REQUIRED ON TAG | Workflow enforces `prerelease:true`, `draft:false` and `--latest=false` |
+| Signed/notarized Stable | BLOCKED | Requires Apple Developer ID/notarization and Windows signing credentials |
+| Fixed real-provider 20-task evaluation | OPEN | Requires owner credentials and sign-off; not claimed by this Beta |
+
+## Development-head rule
+
+This tagged report must not be used to certify later source changes. A development candidate records
+its own commit, fresh build, current test counts, Electron traces and any failing gates. A new release
+updates this file to the new immutable tag only after its native release workflow succeeds.
 
 ## Release decision
 
-`1.0.0-beta.1` is approved for an **unsigned GitHub Prerelease** after the native candidate matrix and tag release workflow pass. Stable remains blocked and the release policy rejects an unsigned stable version.
+`1.0.0-beta.3` is approved as an **unsigned GitHub Prerelease candidate** after the local release
+gates pass. Publication remains conditional on the tag workflow's repeated gates, native package
+matrix and artifact metadata. Stable remains blocked, and the release policy rejects an unsigned
+Stable version.

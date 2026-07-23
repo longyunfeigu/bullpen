@@ -29,15 +29,15 @@ not require them, but an unsigned binary cannot honestly claim the trust propert
 8. Keep signed/notarized Stable, the real-provider fixed 20-task evaluation, and automatic update
    delivery as open Stable gates. M12 may be preview-complete without relabeling those gates as passed.
 
-## Amendment (2026-07-22, product owner decision)
+## Release metadata correction (2026-07-22)
 
-Decision 1's GitHub **prerelease** flag is dropped: betas publish as full "Latest" releases so the
-repository sidebar features them (GitHub never surfaces prerelease-only repos there — the sidebar
-fell back to a bare tag count). `v1.0.0-beta.2` was flipped in place; the workflow now passes
-`--latest` instead of `--prerelease --latest=false`. Everything substantive is unchanged: the
-SemVer prerelease channel and its policy gate (decision 5 — unsigned stable is still a build
-error), the "Unsigned Preview" title, and every trust caveat in the release notes. This is a
-presentation-level change only; signed Stable gates (decision 8) remain open.
+`v1.0.0-beta.2` was temporarily changed after publication to `prerelease:false` / `Latest` so the
+repository sidebar would feature it. That metadata contradicts decisions 1 and 5: a SemVer Beta
+with unsigned artifacts must not occupy the GitHub Stable/Latest channel, regardless of its title or
+release-note caveats. The workflow therefore retains `--prerelease --latest=false`. The live Beta 2
+metadata was corrected independently without replacing the tag or assets. At 2026-07-22 23:27 CST,
+the public API and `gh release view` were reverified as `prerelease:true`, `draft:false`, with the
+“Unsigned Preview” title and all 13 assets unchanged.
 
 ## Alternatives
 

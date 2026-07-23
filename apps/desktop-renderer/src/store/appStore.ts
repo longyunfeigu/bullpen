@@ -24,6 +24,7 @@ export type OverlayKind = 'none' | 'settings' | 'diagnostics' | 'about' | 'memor
 /** Contextual tools owned by the active Session. These replace the old
  * app-level workspace shell. */
 export type SessionTool = 'summary' | 'diff' | 'file' | 'preview' | 'terminal' | 'review';
+export type PreviewRailMode = 'artifact' | 'live';
 /** Primary content inside a Commander Session. Fleet is a Session-local view,
  * never a global navigation destination or a replacement for Home. */
 export type SessionRoomView = 'conversation' | 'fleet';
@@ -148,6 +149,8 @@ interface AppStore {
   peek: PeekState | null;
   /** ADR-0022 am.2: the Room's live-preview rail (taskId), exclusive with peek. */
   previewRailTaskId: string | null;
+  /** Explicit entry intent: a live-preview badge must not be redirected to artifacts. */
+  previewRailMode: PreviewRailMode;
   /** The right-hand tool canvas follows the Session instead of becoming a
    * second application shell. */
   sessionTool: SessionTool;
@@ -174,7 +177,7 @@ interface AppStore {
   /** ADR-0042: each nav group's last main surface, restored when the rail
    * returns to that group so left nav and main content always correspond. */
   savedSurfaces: Record<RailGroup, MainSurface>;
-  openPreviewRail(taskId: string): void;
+  openPreviewRail(taskId: string, mode?: PreviewRailMode): void;
   closePreviewRail(): void;
   setSessionTool(tool: SessionTool): void;
   setSessionToolExpanded(expanded: boolean): void;
@@ -266,6 +269,42 @@ function sessionSplitKey(taskId: string): string {
 }
 
 const RAIL_VIEW_KEY = 'charter.rail.view.v1';
+
+interface OverlayFocusOrigin {
+  element: HTMLElement;
+  fallbackTestId: string | null;
+}
+
+let overlayFocusOrigin: OverlayFocusOrigin | null = null;
+let overlayFocusRevision = 0;
+
+function rememberOverlayFocus(): void {
+  if (typeof document === 'undefined') return;
+  const element = document.activeElement;
+  if (!(element instanceof HTMLElement) || element === document.body) return;
+  overlayFocusRevision += 1;
+  overlayFocusOrigin = {
+    element,
+    fallbackTestId: element.dataset.overlayFocusReturn ?? null,
+  };
+}
+
+function restoreOverlayFocus(): void {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  const origin = overlayFocusOrigin;
+  overlayFocusOrigin = null;
+  const revision = ++overlayFocusRevision;
+  window.requestAnimationFrame(() => {
+    if (!origin || revision !== overlayFocusRevision) return;
+    const fallback = origin.fallbackTestId
+      ? Array.from(document.querySelectorAll<HTMLElement>('[data-testid]')).find(
+          (candidate) => candidate.dataset.testid === origin.fallbackTestId,
+        )
+      : null;
+    const target = origin.element.isConnected ? origin.element : fallback;
+    target?.focus();
+  });
+}
 
 function loadRailView(): RailView {
   try {
@@ -382,6 +421,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     lens: null,
     peek: null,
     previewRailTaskId: null,
+    previewRailMode: 'live',
     sessionTool: 'summary',
     sessionToolExpanded: false,
     sessionSplit: {},
@@ -463,9 +503,10 @@ export const useAppStore = create<AppStore>((set, get) => {
     closePeek() {
       set({ peek: null, sessionTool: 'summary', sessionToolExpanded: false });
     },
-    openPreviewRail(taskId) {
+    openPreviewRail(taskId, previewRailMode = 'live') {
       set({
         previewRailTaskId: taskId,
+        previewRailMode,
         peek: null,
         sessionTool: 'preview',
         sessionToolExpanded: false,
@@ -562,6 +603,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         projectTool: null,
         projectBottomTab: null,
         archaeology: null,
+        sessionNotices: get().sessionNotices.filter((notice) => notice.taskId !== taskId),
         ...(peek && peek.taskId !== taskId ? { peek: null } : {}),
         ...crossRailPatch('sessions'),
       });
@@ -723,9 +765,13 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ launcherOpen: open });
     },
     setOverlay(overlay) {
+      const previous = get().overlay;
+      if (previous === 'none' && overlay !== 'none') rememberOverlayFocus();
       set({ overlay });
+      if (previous !== 'none' && overlay === 'none') restoreOverlayFocus();
     },
     openSettings(settingsSection = 'general') {
+      if (get().overlay === 'none') rememberOverlayFocus();
       set({ overlay: 'settings', settingsSection });
     },
 
@@ -749,7 +795,14 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     pushToast(kind, message) {
       const toast: Toast = { id: newId('toast'), kind, message };
-      set({ toasts: [...get().toasts, toast] });
+      // Repeated feedback describes one current state, not a queue of separate
+      // events. Replacing it also refreshes the dismissal deadline.
+      set({
+        toasts: [
+          ...get().toasts.filter((item) => item.kind !== kind || item.message !== message),
+          toast,
+        ],
+      });
       setTimeout(() => get().dismissToast(toast.id), kind === 'error' ? 8000 : 4000);
     },
     dismissToast(id) {
@@ -773,6 +826,12 @@ export const useAppStore = create<AppStore>((set, get) => {
       // If the process already crossed a terminal task-state edge, that stronger
       // task notification owns the banner. The row presence signal still runs.
       if (sessionCompletionInfo(task)) return;
+      if (get().taskRoomTaskId === task.id) {
+        set({
+          sessionNotices: get().sessionNotices.filter((notice) => notice.taskId !== task.id),
+        });
+        return;
+      }
       if (get().sessionNotices.some((notice) => notice.edgeKey === edgeKey)) return;
 
       const id = newId('session-reply-notice');
@@ -802,7 +861,18 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
     signalSessionCompletion(task) {
       const info = sessionCompletionInfo(task);
-      if (!info) return;
+      if (!info) {
+        // A transient completion card describes one exact task-state edge. As
+        // soon as the Session resumes or settles, remove the old edge instead
+        // of letting REVIEW_READY copy contradict the current state.
+        set({
+          sessionCompletionSignals: get().sessionCompletionSignals.filter(
+            (candidate) => candidate.taskId !== task.id,
+          ),
+          sessionNotices: get().sessionNotices.filter((candidate) => candidate.taskId !== task.id),
+        });
+        return;
+      }
       const edgeKey = `${task.id}:${task.state}:${task.updatedAt}`;
       if (get().sessionCompletionSignals.some((signal) => signal.edgeKey === edgeKey)) return;
 
@@ -815,7 +885,10 @@ export const useAppStore = create<AppStore>((set, get) => {
         tone: info.tone,
       };
       set({
-        sessionCompletionSignals: [...get().sessionCompletionSignals, signal].slice(-24),
+        sessionCompletionSignals: [
+          ...get().sessionCompletionSignals.filter((candidate) => candidate.taskId !== task.id),
+          signal,
+        ].slice(-24),
       });
       setTimeout(() => {
         set({
@@ -827,6 +900,12 @@ export const useAppStore = create<AppStore>((set, get) => {
 
       // The global notification preference gates banners, while the quieter row
       // pulse remains available as local Session-page feedback.
+      if (get().taskRoomTaskId === task.id) {
+        set({
+          sessionNotices: get().sessionNotices.filter((notice) => notice.taskId !== task.id),
+        });
+        return;
+      }
       if (get().settings?.notifications.enabled === false) return;
       const notice: SessionNotice = {
         ...signal,

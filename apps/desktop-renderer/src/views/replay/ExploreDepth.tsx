@@ -77,7 +77,7 @@ export function ExploreDepth({
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索事件、路径或应用"
+              placeholder="Search events, paths, or apps"
               data-testid="replay-search"
             />
           </label>
@@ -96,7 +96,7 @@ export function ExploreDepth({
               onChange={(event) => setAppFilter(event.target.value)}
               aria-label="Filter by application"
             >
-              <option value="all">全部应用</option>
+              <option value="all">All apps</option>
               {apps.map((app) => (
                 <option key={app} value={app}>
                   {app}
@@ -115,8 +115,8 @@ export function ExploreDepth({
           {visible.length === 0 ? (
             <div className="rp-empty-list">
               <Ic name="alert" size={18} />
-              <strong>没有匹配事件</strong>
-              <span>换一个问题或搜索词。</span>
+              <strong>No matching events</strong>
+              <span>Try another question or search term.</span>
             </div>
           ) : (
             <div style={{ height: visible.length * ROW_HEIGHT, position: 'relative' }}>
@@ -140,7 +140,7 @@ export function ExploreDepth({
       <section className="rp-explore-inspector">
         <ArtifactStage fact={fact} taskId={task.id} compact />
         <div className="rp-surrounding" data-testid="replay-surrounding">
-          <span>周围上下文（时间相邻，不代表因果）</span>
+          <span>Nearby context (time-adjacent, not causal)</span>
           <div>
             {surrounding.map((item) => (
               <button

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeSetDto, TaskDto } from '@pi-ide/ipc-contracts';
+import type { ChangeSetDto, PrDraftDto, TaskDto } from '@pi-ide/ipc-contracts';
+import { rpcResult } from '../bridge.js';
 import { useAppStore, type SessionTool } from '../store/appStore.js';
 import { useTaskStore, RUNNING_TASK_STATES } from '../store/taskStore.js';
 import { currentActionLine, useActivityStore } from '../store/activityStore.js';
@@ -209,7 +210,7 @@ export function SessionToolCanvas(props: {
         )}
       </div>
 
-      <SessionActionDock task={task} files={files} />
+      <SessionActionDock task={task} files={files} verifications={verifications} />
     </aside>
   );
 }
@@ -306,9 +307,9 @@ function ColorizedDiffCode(props: { path: string; code: string }): React.JSX.Ele
 }
 
 const DIFF_VERSION_LABEL: Record<'working-tree' | 'baseline' | 'diff-patch', string> = {
-  'working-tree': '新版本',
-  baseline: '旧版本',
-  'diff-patch': 'diff 片段',
+  'working-tree': 'new version',
+  baseline: 'old version',
+  'diff-patch': 'diff excerpt',
 };
 
 function SessionDiffReview(props: {
@@ -596,11 +597,13 @@ function SessionDiffReview(props: {
             </button>
             <button
               type="button"
+              className="session-open-review-details"
               aria-label="Open advanced review"
               title="Open advanced review"
               onClick={() => void store.openReview()}
             >
-              <Ic name="sliders" size={15} />
+              <Ic name="sliders" size={14} />
+              <span>Full review</span>
             </button>
           </header>
           {selected.binary ? (
@@ -662,7 +665,7 @@ function SessionDiffReview(props: {
             <CodeContextFloat
               testid="diff-code-selection-bar"
               buttonTestid="diff-add-code-context"
-              label={`已选 ${contextSelection.rowEnd - contextSelection.rowStart + 1} 行 · ${DIFF_VERSION_LABEL[contextSelection.version]}`}
+              label={`${contextSelection.rowEnd - contextSelection.rowStart + 1} lines selected · ${DIFF_VERSION_LABEL[contextSelection.version]}`}
               style={{ top: contextSelection.anchorTop }}
               onAttach={() => void attachDiffSelection()}
             />
@@ -1084,15 +1087,58 @@ function VerificationSection(props: {
   );
 }
 
-function SessionActionDock({ task, files }: { task: TaskDto; files: string[] }): React.JSX.Element {
+function SessionActionDock({
+  task,
+  files,
+  verifications,
+}: {
+  task: TaskDto;
+  files: string[];
+  verifications: SessionVerification[];
+}): React.JSX.Element {
   const store = useTaskStore();
   const app = useAppStore();
   const running = RUNNING_TASK_STATES.has(task.state);
   const answered = isAnswered(task);
+  const failedChecks = verifications.filter((verification) => verification.state !== 'passed');
+  const recordedLabels = new Set(verifications.map((verification) => verification.label));
+  const missingChecks = task.verification.filter((check) => !recordedLabels.has(check.label));
+  const hasUnverifiedChanges = verifications.length === 0 || missingChecks.length > 0;
+  const hasEvidenceRisk = task.mode !== 'ask' && (failedChecks.length > 0 || hasUnverifiedChanges);
+  const [settledPrDraft, setSettledPrDraft] = useState<PrDraftDto | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setSettledPrDraft(null);
+    if (!task.external || task.state !== 'IDLE' || (task.changedFiles ?? 0) === 0) {
+      return () => {
+        active = false;
+      };
+    }
+    void rpcResult('task.prDraft', { taskId: task.id }).then((result) => {
+      if (active && result.ok) setSettledPrDraft(result.data.draft ?? null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [task.changedFiles, task.external, task.id, task.state]);
 
   if (task.state === 'REVIEW_READY' && !answered) {
     return (
       <footer className="session-action-dock review-decision" data-testid="session-action-dock">
+        {hasEvidenceRisk ? (
+          <span className="session-review-failure" data-testid="review-failed-checks-warning">
+            <Ic name="alert" size={14} />{' '}
+            {failedChecks.length > 0
+              ? `${failedChecks.length} check${failedChecks.length === 1 ? '' : 's'} failed · accepting keeps an unverified result`
+              : missingChecks.length > 0
+                ? `${missingChecks.length} configured check${missingChecks.length === 1 ? ' has' : 's have'} not run · accepting requires confirmation`
+                : 'No verification has run · accepting requires confirmation'}
+          </span>
+        ) : null}
+        <span className="session-action-note">
+          Keeps reviewed files in your workspace · does not create a Git commit
+        </span>
         {task.external ? (
           <button
             type="button"
@@ -1121,16 +1167,33 @@ function SessionActionDock({ task, files }: { task: TaskDto; files: string[] }):
           testid="task-rollback"
           quiet
           icon="undo"
-          onConfirm={() => void store.rollbackTask()}
+          onConfirm={() => void store.rollbackTask({ confirmDestructive: true })}
         />
-        <button
-          type="button"
-          className="btn primary session-approve"
-          data-testid="review-bar-accept"
-          onClick={() => void store.acceptTask()}
-        >
-          <Ic name="checkCircle" size={15} /> Approve changes
-        </button>
+        {hasEvidenceRisk ? (
+          <ConfirmDangerButton
+            label={
+              failedChecks.length > 0
+                ? 'Accept despite failed checks…'
+                : 'Accept without verification…'
+            }
+            confirmLabel={
+              failedChecks.length > 0
+                ? 'Confirm — accept failed checks'
+                : 'Confirm — accept unverified changes'
+            }
+            testid="review-bar-accept"
+            onConfirm={() => void store.acceptTask({ confirmEvidenceRisk: true })}
+          />
+        ) : (
+          <button
+            type="button"
+            className="btn primary session-approve"
+            data-testid="review-bar-accept"
+            onClick={() => void store.acceptTask()}
+          >
+            <Ic name="checkCircle" size={15} /> Approve changes
+          </button>
+        )}
       </footer>
     );
   }
@@ -1175,7 +1238,7 @@ function SessionActionDock({ task, files }: { task: TaskDto; files: string[] }):
             confirmLabel={task.worktree ? 'Confirm — discard worktree' : 'Confirm — roll back'}
             testid="task-rollback"
             quiet
-            onConfirm={() => void store.rollbackTask()}
+            onConfirm={() => void store.rollbackTask({ confirmDestructive: true })}
           />
         ) : null}
         <span className="session-action-note">The Session stopped before completion.</span>
@@ -1186,6 +1249,21 @@ function SessionActionDock({ task, files }: { task: TaskDto; files: string[] }):
         >
           Resume
         </button>
+      </footer>
+    );
+  }
+
+  if (task.state === 'AWAITING_PERMISSION' || task.state === 'AWAITING_PLAN_APPROVAL') {
+    return (
+      <footer className="session-action-dock compact waiting" data-testid="session-action-dock">
+        <span className="session-action-live">
+          <i /> Waiting for your decision
+        </span>
+        <span className="session-action-note">
+          {task.state === 'AWAITING_PERMISSION'
+            ? 'Review the requested action before the Agent can continue.'
+            : 'Approve, edit, or cancel the proposed plan.'}
+        </span>
       </footer>
     );
   }
@@ -1218,12 +1296,22 @@ function SessionActionDock({ task, files }: { task: TaskDto; files: string[] }):
         <span className="session-action-note" data-testid="task-room-accepted">
           Settled · snapshots retained
         </span>
+        {settledPrDraft ? (
+          <button
+            type="button"
+            className="btn"
+            data-testid="settled-pr-draft-open"
+            onClick={() => store.openPrDraft(task.id, settledPrDraft)}
+          >
+            Review PR draft
+          </button>
+        ) : null}
         <ConfirmDangerButton
           label="Roll back everything…"
           confirmLabel="Confirm — restore all files"
           testid="task-rollback"
           quiet
-          onConfirm={() => void store.rollbackTask()}
+          onConfirm={() => void store.rollbackTask({ confirmDestructive: true })}
         />
       </footer>
     );
@@ -1240,7 +1328,7 @@ function SessionActionDock({ task, files }: { task: TaskDto; files: string[] }):
           confirmLabel="Confirm — restore all files"
           testid="task-rollback"
           quiet
-          onConfirm={() => void store.rollbackTask()}
+          onConfirm={() => void store.rollbackTask({ confirmDestructive: true })}
         />
       </footer>
     );

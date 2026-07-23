@@ -200,7 +200,12 @@ export function ExternalPanel(): React.JSX.Element | null {
             <span>{files.length} files changed</span>
           </div>
         </div>
-        <div ref={hostRef} className="xp-term" data-testid="external-panel-terminal" />
+        <div
+          ref={hostRef}
+          className="xp-term"
+          data-testid="external-panel-terminal"
+          data-terminal-id={promoted.terminalId}
+        />
         <div className="xp-strip" data-testid="external-strip">
           <div className="xp-strip-h">
             <span>Session changes</span>

@@ -61,7 +61,7 @@ function receiptHtml(
     )
     .join('\n');
   return `<!doctype html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <title>Replay evidence receipt — ${esc(task.title)}</title>
@@ -76,13 +76,14 @@ td, th { border: 1px solid #d8d2c8; padding: 4px 8px; text-align: left; }
 </head>
 <body>
 <h1>Replay evidence receipt</h1>
-<p class="note"><strong>完整性说明：</strong>本导出为按顺序记录的账本快照，逐行附 SHA-256 哈希；
-它<strong>未经密码学签名</strong>，不声称防篡改。Manifest SHA-256:
+<p class="note"><strong>Integrity note:</strong> This export is an ordered ledger snapshot with a
+SHA-256 hash for every row. It is <strong>not cryptographically signed</strong> and makes no claim
+of tamper resistance. Manifest SHA-256:
 <span class="mono">${manifestSha256}</span></p>
 <h2>Task</h2>
 <table>
 <tr><th>Task</th><td>${esc(task.title)} <span class="mono">(${esc(task.id)})</span></td></tr>
-<tr><th>Goal</th><td>${esc(task.goal || '未记录原始目标')}</td></tr>
+<tr><th>Goal</th><td>${esc(task.goal || 'Original goal not recorded')}</td></tr>
 <tr><th>State</th><td>${esc(task.state)}</td></tr>
 <tr><th>Result</th><td>${esc(session.summary.result)}</td></tr>
 <tr><th>Verification</th><td>${esc(session.verification)}</td></tr>
@@ -233,9 +234,9 @@ export class ReplayService {
     const fact = projection.facts.find((f) => f.id === factId);
     if (!fact) {
       return {
-        text: '记录无法确认这个时刻：该事实不属于此任务的账本。',
+        text: 'The record cannot confirm this moment: the fact is not in this task ledger.',
         citations: [],
-        boundary: '没有可引用的证据。',
+        boundary: 'No evidence is available to cite.',
       };
     }
     // Candidate citations, validated against this task's ledger (fail closed).
@@ -249,9 +250,9 @@ export class ReplayService {
     ];
     if (citations.length === 0) {
       return {
-        text: '记录无法回答这个问题。',
+        text: 'The record cannot answer this question.',
         citations: [],
-        boundary: '该时刻没有可核验的证据引用。',
+        boundary: 'This moment has no verifiable evidence references.',
       };
     }
 
@@ -259,28 +260,28 @@ export class ReplayService {
     const lines: string[] = [];
     if (fact.capture === 'observed') {
       lines.push(
-        `记录只能确认：${when}，${fact.actor.label} 的终端/文件系统观察中出现了“${fact.action}”（状态 ${fact.status}）。`,
+        `The record only confirms that at ${when}, the terminal or file-system observation for ${fact.actor.label} included "${fact.action}" (status: ${fact.status}).`,
       );
     } else {
       lines.push(
-        `账本确认：${when}，${fact.actor.label} ${fact.action}（状态 ${fact.status}，${fact.evidenceRefs.length} 条直接证据）。`,
+        `The ledger confirms that at ${when}, ${fact.actor.label} ${fact.action} (status: ${fact.status}; ${fact.evidenceRefs.length} direct evidence reference${fact.evidenceRefs.length === 1 ? '' : 's'}).`,
       );
     }
     for (const relation of fact.relations) {
       const target = projection.facts.find((f) => f.id === relation.factId);
-      if (target) lines.push(`记录的关系（${relation.type}）：“${target.action}”。`);
+      if (target) lines.push(`Recorded relationship (${relation.type}): "${target.action}".`);
     }
     if (fact.kind === 'verification') {
       lines.push(
         fact.status === 'ok'
-          ? '这是一次成功的验证运行：命令、退出码和输出均已记录。'
-          : '这次验证未通过；失败输出保留为证据。',
+          ? 'This verification passed; its command, exit code, and output are recorded.'
+          : 'This verification failed; its failure output is preserved as evidence.',
       );
     }
     const boundary =
       fact.capture === 'observed'
-        ? '记录无法确认应用内部语义，也无法确认为什么发生这一步。'
-        : '记录只能确认发生了什么；无法确认 Agent 的内部原因或隐藏推理。';
+        ? 'The record cannot confirm internal app meaning or why this step occurred.'
+        : "The record only confirms what happened; it cannot confirm the agent's internal reasons or hidden reasoning.";
     this.logger.info('replay.ask', { taskId, factId, question: question.slice(0, 80) });
     return { text: lines.join(' '), citations, boundary };
   }

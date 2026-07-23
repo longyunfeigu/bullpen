@@ -52,7 +52,7 @@ export function SkillsRailPanel(): React.JSX.Element {
       <div className="skills-rail-coverage">
         <div>
           <i className="agent-pi" />
-          <span>Pi Agent</span>
+          <span>Charter Agent</span>
           <small>exact</small>
         </div>
         <div>

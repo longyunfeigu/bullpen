@@ -267,6 +267,17 @@ export function ReviewView(): React.JSX.Element | null {
   const cs = store.changeSet;
   const files = useMemo(() => cs?.files ?? [], [cs]);
   const selectedFile = files.find((f) => f.path === selectedPath) ?? files[0] ?? null;
+  const reviewVerification = useMemo(() => {
+    const byLabel = new Map<string, { label: string; state: string }>();
+    for (const event of store.timeline) {
+      if (event.type !== 'verification.completed') continue;
+      const run = (event.payload as { run?: { label?: unknown; state?: unknown } }).run;
+      if (run && typeof run.label === 'string') {
+        byLabel.set(run.label, { label: run.label, state: String(run.state ?? '') });
+      }
+    }
+    return [...byLabel.values()];
+  }, [store.timeline]);
 
   // Auto-select the first file; keep the selection when the set refreshes.
   useEffect(() => {
@@ -301,6 +312,12 @@ export function ReviewView(): React.JSX.Element | null {
 
   if (!store.reviewOpen || !task) return null;
   const canDecide = task.state === 'REVIEW_READY';
+  const failedChecks = reviewVerification.filter((run) => run.state !== 'passed');
+  const recordedLabels = new Set(reviewVerification.map((run) => run.label));
+  const missingChecks = task.verification.filter((check) => !recordedLabels.has(check.label));
+  const hasEvidenceRisk =
+    task.mode !== 'ask' &&
+    (failedChecks.length > 0 || reviewVerification.length === 0 || missingChecks.length > 0);
 
   const sendFix = async (): Promise<void> => {
     if (!fix) return;
@@ -345,14 +362,31 @@ export function ReviewView(): React.JSX.Element | null {
         {!canDecide ? (
           <span className="rv-readonly">Read-only — {stateLabel(task.state)}</span>
         ) : null}
-        <button
-          className="btn primary"
-          data-testid="review-accept-all"
-          disabled={!canDecide}
-          onClick={() => void store.acceptTask()}
-        >
-          Accept all changes
-        </button>
+        {canDecide && hasEvidenceRisk ? (
+          <ConfirmDangerButton
+            label={
+              failedChecks.length > 0
+                ? 'Accept despite failed checks…'
+                : 'Accept without verification…'
+            }
+            confirmLabel={
+              failedChecks.length > 0
+                ? 'Confirm — accept failed checks'
+                : 'Confirm — accept unverified changes'
+            }
+            testid="review-accept-all"
+            onConfirm={() => void store.acceptTask({ confirmEvidenceRisk: true })}
+          />
+        ) : (
+          <button
+            className="btn primary"
+            data-testid="review-accept-all"
+            disabled={!canDecide}
+            onClick={() => void store.acceptTask()}
+          >
+            Accept all changes
+          </button>
+        )}
         <button className="btn" data-testid="review-close" onClick={() => store.closeReview()}>
           Close
         </button>
@@ -523,7 +557,7 @@ export function ReviewView(): React.JSX.Element | null {
           quiet
           disabled={!canDecide}
           title="Restore every touched file to its pre-Session state"
-          onConfirm={() => void store.rollbackTask()}
+          onConfirm={() => void store.rollbackTask({ confirmDestructive: true })}
         />
         <span className="rv-footnote">
           Baseline (left) is the pre-Session snapshot; current file (right) is what accept keeps.

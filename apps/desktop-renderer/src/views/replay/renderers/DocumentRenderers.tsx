@@ -46,7 +46,7 @@ export function DocumentRenderer({
       <article className="rp-paper">
         <header>
           <Ic name="file" size={13} />
-          <span>之前{frame.beforeHash ? ` · ${frame.beforeHash.slice(0, 10)}` : ''}</span>
+          <span>Before{frame.beforeHash ? ` · ${frame.beforeHash.slice(0, 10)}` : ''}</span>
         </header>
         <div className="rp-paper-body">
           {(frame.beforeText ?? '∅  Document did not exist').split('\n').map((line, index) => (
@@ -61,7 +61,7 @@ export function DocumentRenderer({
         <header>
           <Ic name="checkCircle" size={13} />
           <span>
-            之后 · {frame.path}
+            After · {frame.path}
             {frame.afterHash ? ` · ${frame.afterHash.slice(0, 10)}` : ''}
           </span>
         </header>
@@ -117,7 +117,7 @@ export function SpreadsheetRenderer({
       <header>
         <Ic name="layout" size={14} />
         <span>{frame.path}</span>
-        <small>变更单元格来自记录的前后版本对比</small>
+        <small>Changed cells come from the recorded before/after versions</small>
       </header>
       <div className="rp-sheet-scroll">
         <table>
@@ -130,7 +130,7 @@ export function SpreadsheetRenderer({
                     className={changedCell(rowIndex, cellIndex) ? 'changed' : ''}
                     title={
                       changedCell(rowIndex, cellIndex)
-                        ? `之前: ${before[rowIndex]?.[cellIndex] ?? '∅'}`
+                        ? `Before: ${before[rowIndex]?.[cellIndex] ?? '∅'}`
                         : undefined
                     }
                   >
@@ -143,7 +143,8 @@ export function SpreadsheetRenderer({
         </table>
       </div>
       <footer>
-        <Ic name="checkCircle" size={12} /> 前后版本均以 SHA-256 blob 保存，可逐单元格核对。
+        <Ic name="checkCircle" size={12} /> Both versions are stored as SHA-256 blobs for
+        cell-by-cell comparison.
       </footer>
     </div>
   );
