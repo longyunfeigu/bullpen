@@ -12,6 +12,9 @@ export type SessionEntry =
       launch: 'shell' | 'claude' | 'codex';
       projectName: string;
       exited: boolean;
+      /** ADR-0047: true when this terminal runs on a remote SSH host. The host
+       * label is already the projectName, so grouping puts it under the host. */
+      remote?: boolean;
     };
 
 export interface RailGroup {

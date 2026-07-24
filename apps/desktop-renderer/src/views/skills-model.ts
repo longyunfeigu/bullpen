@@ -3,7 +3,7 @@ import type { SkillConsumer, SkillDto, SkillUsageDto } from '@pi-ide/ipc-contrac
 export type SkillAgent = 'pi' | 'claude' | 'codex';
 export type SkillStatusFilter = 'all' | 'active' | 'review' | 'disabled';
 export type SkillAgentFilter = 'all' | SkillAgent;
-export type SkillSort = 'uses' | 'recent' | 'name' | 'context';
+export type SkillSort = 'uses' | 'recent' | 'name';
 
 export const SKILL_AGENTS: ReadonlyArray<{
   id: SkillAgent;
@@ -131,9 +131,6 @@ export function filterSkillGroups(
 
   return filtered.sort((a, b) => {
     if (options.sort === 'name') return a.displayName.localeCompare(b.displayName);
-    if (options.sort === 'context') {
-      return b.preambleTokens - a.preambleTokens || b.uses - a.uses;
-    }
     if (options.sort === 'recent') {
       return (
         (b.lastUsedAt ? Date.parse(b.lastUsedAt) : 0) -

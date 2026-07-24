@@ -233,9 +233,6 @@
 .skills-col-last {
   width: 10%;
 }
-.skills-col-context {
-  width: 10%;
-}
 .skills-col-manage {
   width: 12%;
 }
@@ -407,23 +404,6 @@
   display: flex;
   align-items: center;
   gap: 6px;
-}
-.skills-decision > span {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--fg-muted);
-  font-size: 9.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.skills-decision .keep {
-  color: var(--success);
-}
-.skills-decision .review {
-  color: var(--warning);
-}
-.skills-decision .system {
-  color: #287650;
 }
 .skills-decision button {
   flex: none;

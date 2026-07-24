@@ -4,6 +4,7 @@ import { WorkspaceDtoSchema } from './dto.js';
 import { TaskDtoSchema, TaskStateSchema, TimelineEventDtoSchema } from './agent-dto.js';
 import { ScreenshotCaptureSchema } from './screenshots.js';
 import { OrchestrationSnapshotSchema } from './orchestration.js';
+import { SftpTransferStateSchema, SshConnectionStateSchema, SshForwardStateSchema } from './ssh.js';
 
 export interface EventChannelDef<S extends z.ZodType = z.ZodType> {
   name: string;
@@ -51,6 +52,51 @@ export const EVENT_CHANNELS = {
     1,
     z.object({ workspace: WorkspaceDtoSchema.nullable() }),
   ),
+  // ADR-0047: SSH Remotes. Payloads never carry secrets or key material.
+  'ssh.state': ev(
+    'ssh.state',
+    1,
+    z.object({
+      hostId: z.string(),
+      state: SshConnectionStateSchema,
+      error: z.string().nullable(),
+      /** Live terminal sessions multiplexed on this connection. */
+      sessions: z.number().int().min(0),
+    }),
+  ),
+  /** Unknown or mismatching host key — the user decides in a modal and the
+   * renderer answers via ssh.respondHostKey with this requestId. */
+  'ssh.hostKeyPrompt': ev(
+    'ssh.hostKeyPrompt',
+    1,
+    z.object({
+      requestId: z.string(),
+      hostId: z.string(),
+      host: z.string(),
+      port: z.number().int(),
+      keyType: z.string(),
+      fingerprintSha256: z.string(),
+      status: z.enum(['unknown', 'mismatch']),
+      /** Previously trusted fingerprint when status is 'mismatch'. */
+      knownFingerprint: z.string().nullable(),
+    }),
+  ),
+  /** Interactive auth (password / key passphrase / keyboard-interactive 2FA).
+   * Prompt text comes from the server; answers return via ssh.respondAuth. */
+  'ssh.authPrompt': ev(
+    'ssh.authPrompt',
+    1,
+    z.object({
+      requestId: z.string(),
+      hostId: z.string(),
+      kind: z.enum(['password', 'passphrase', 'keyboard-interactive']),
+      prompts: z.array(z.object({ prompt: z.string().max(400), echo: z.boolean() })).max(8),
+    }),
+  ),
+  /** PR2: SFTP transfer lifecycle + throttled progress ticks. */
+  'ssh.sftpProgress': ev('ssh.sftpProgress', 1, SftpTransferStateSchema),
+  /** PR3: forward listener state (started / stopped / error / conn count). */
+  'ssh.forwardState': ev('ssh.forwardState', 1, SshForwardStateSchema),
   'fs.batch': ev('fs.batch', 1, z.object({ changes: z.array(FsChangeSchema).max(2000) })),
   'doc.changedExternally': ev('doc.changedExternally', 1, z.object({ doc: DocumentDtoSchema })),
   'search.results': ev(

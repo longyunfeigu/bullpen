@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SFTP 上传 · 方案 A · 双栏指挥官</title>
+    <style>
+      /* ---- Charter theme tokens (studio) ---- */
+      :root,
+      [data-theme='light'] {
+        color-scheme: light;
+        --bg-app: #eceae5;
+        --bg-editor: #fbfaf7;
+        --bg-panel: #f6f5f1;
+        --bg-input: #ffffff;
+        --bg-card: #ffffff;
+        --bg-chip: #edeae3;
+        --bg-hover: #e8e5de;
+        --bg-active: #e2dfd7;
+        --border: #e5e1d8;
+        --border-soft: #edeae3;
+        --border-strong: #cfcabf;
+        --fg: #201e1a;
+        --fg-muted: #6e6a61;
+        --fg-faint: #a39e94;
+        --accent: #1b1a16;
+        --accent-fg: #ffffff;
+        --danger: #c4453d;
+        --warning: #b06f10;
+        --success: #2f9e63;
+        --info: #3f7bd9;
+        --shadow-card: 0 1px 2px rgba(30, 26, 18, 0.05), 0 14px 40px rgba(30, 26, 18, 0.08);
+        --radius-card: 14px;
+      }
+      [data-theme='dark'] {
+        color-scheme: dark;
+        --bg-app: #171614;
+        --bg-editor: #1a1917;
+        --bg-panel: #1d1c19;
+        --bg-input: #232120;
+        --bg-card: #211f1c;
+        --bg-chip: #2a2825;
+        --bg-hover: #2b2926;
+        --bg-active: #322f2b;
+        --border: #322e29;
+        --border-soft: #26231f;
+        --border-strong: #443f39;
+        --fg: #ece9e3;
+        --fg-muted: #9c968b;
+        --fg-faint: #6b665d;
+        --accent: #ede9e2;
+        --accent-fg: #1b1a16;
+        --danger: #e0655c;
+        --warning: #d3922e;
+        --success: #4fb37f;
+        --info: #6c9fe6;
+        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 50px rgba(0, 0, 0, 0.5);
+        --radius-card: 14px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+        background: var(--bg-app);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'PingFang SC', sans-serif;
+        --font-mono: Menlo, Monaco, 'SF Mono', Consolas, monospace;
+        --font-display: 'Charter', 'Iowan Old Style', Georgia, serif;
+      }
+
+      /* ---- mockup chrome ---- */
+      .chrome {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 22px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-panel);
+      }
+      .chrome .badge {
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--accent-fg);
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+      }
+      .chrome h1 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 19px;
+        font-weight: 650;
+      }
+      .chrome p {
+        margin: 0;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .chrome .sp {
+        margin-left: auto;
+      }
+      .toggle {
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg-muted);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .stage {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        padding: 26px;
+      }
+      /* the in-app surface */
+      .surface {
+        width: min(1120px, 100%);
+        background: var(--bg-editor);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+      }
+
+      /* ---- panel header ---- */
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 15px 18px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .back {
+        padding: 5px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg-muted);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .title strong {
+        display: block;
+        font-family: var(--font-display);
+        font-size: 16px;
+      }
+      .title span {
+        color: var(--fg-faint);
+        font: 11px var(--font-mono);
+      }
+      .tools {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 11px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .btn:hover {
+        background: var(--bg-hover);
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--accent-fg);
+        border-color: var(--accent);
+        font-weight: 600;
+      }
+
+      /* ---- dual pane ---- */
+      .cols {
+        display: grid;
+        grid-template-columns: 1fr 56px 1fr;
+        gap: 0;
+        min-height: 430px;
+      }
+      .pane {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .pane.local {
+        border-right: 1px solid var(--border-soft);
+      }
+      .pane-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        background: var(--bg-panel);
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .pane-head .who {
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--fg-muted);
+      }
+      .pane-head .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--fg-faint);
+      }
+      .pane.remote .pane-head .dot {
+        background: var(--success);
+        box-shadow: 0 0 6px color-mix(in srgb, var(--success) 70%, transparent);
+      }
+      .crumbs {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 7px 12px;
+        border-bottom: 1px solid var(--border-soft);
+        font: 11.5px var(--font-mono);
+        color: var(--fg-muted);
+      }
+      .crumbs b {
+        color: var(--fg);
+      }
+      .crumbs .sep {
+        color: var(--fg-faint);
+      }
+      .list {
+        flex: 1;
+        overflow: auto;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) 78px;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 14px;
+        font-size: 12.5px;
+        border-bottom: 1px solid var(--border-soft);
+        cursor: default;
+        user-select: none;
+      }
+      .row:hover {
+        background: var(--bg-hover);
+      }
+      .row.sel {
+        background: color-mix(in srgb, var(--info) 15%, transparent);
+      }
+      .row .ic {
+        display: grid;
+        place-items: center;
+        color: var(--fg-faint);
+      }
+      .row.dir .ic {
+        color: var(--info);
+      }
+      .row .nm {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row .sz {
+        text-align: right;
+        color: var(--fg-faint);
+        font: 10.5px var(--font-mono);
+      }
+      /* center transfer gutter */
+      .gutter {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        background: var(--bg-panel);
+        border-left: 1px solid var(--border-soft);
+        border-right: 1px solid var(--border-soft);
+      }
+      .xfer-btn {
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: var(--bg-card);
+        color: var(--fg-muted);
+        font-size: 18px;
+        cursor: pointer;
+      }
+      .xfer-btn.on {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--accent-fg);
+      }
+      .xfer-btn:not(.on) {
+        opacity: 0.5;
+      }
+      .gutter small {
+        writing-mode: vertical-rl;
+        color: var(--fg-faint);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+      }
+
+      /* ---- transfer queue ---- */
+      .queue {
+        border-top: 1px solid var(--border);
+        background: var(--bg-panel);
+      }
+      .queue-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 16px;
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--fg-muted);
+      }
+      .queue-head .clear {
+        margin-left: auto;
+        color: var(--info);
+        font-size: 11px;
+        text-transform: none;
+        letter-spacing: 0;
+        cursor: pointer;
+      }
+      .q-row {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr) 150px 120px 26px;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 16px;
+        border-top: 1px solid var(--border-soft);
+        font-size: 12px;
+      }
+      .q-row .dir {
+        color: var(--fg-muted);
+        font: 13px var(--font-mono);
+      }
+      .q-row.up .dir {
+        color: var(--success);
+      }
+      .q-nm {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .q-nm small {
+        color: var(--fg-faint);
+        font: 10px var(--font-mono);
+        margin-left: 6px;
+      }
+      .bar {
+        height: 5px;
+        border-radius: 3px;
+        background: var(--bg-chip);
+        overflow: hidden;
+      }
+      .bar > i {
+        display: block;
+        height: 100%;
+        border-radius: 3px;
+        background: var(--accent);
+      }
+      .q-meta {
+        text-align: right;
+        color: var(--fg-faint);
+        font: 10.5px var(--font-mono);
+      }
+      .q-meta.done {
+        color: var(--success);
+      }
+      .x {
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--fg-faint);
+        cursor: pointer;
+      }
+      .x:hover {
+        border-color: var(--border);
+        color: var(--fg);
+      }
+      .note {
+        width: min(1120px, 100%);
+        margin: 16px auto 0;
+        color: var(--fg-muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .note b {
+        color: var(--fg);
+      }
+      .kbd {
+        padding: 1px 6px;
+        border: 1px solid var(--border-strong);
+        border-radius: 5px;
+        background: var(--bg-card);
+        font: 10.5px var(--font-mono);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chrome">
+      <span class="badge">方案 A</span>
+      <div>
+        <h1>双栏指挥官 &nbsp;·&nbsp; Dual-Pane Commander</h1>
+        <p>左本地 ↔ 右远程,两侧同时可见;选中一侧再按方向键或直接拖到对面即传。FileZilla / WinSCP / Transmit / ForkLift 范式。</p>
+      </div>
+      <div class="sp"></div>
+      <button class="toggle" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme==='dark'?'light':'dark'">明 / 暗</button>
+    </div>
+
+    <div class="stage">
+      <div>
+        <div class="surface">
+          <div class="head">
+            <button class="back">← Hosts</button>
+            <div class="title">
+              <strong>prod-api-01</strong>
+              <span>root@10.0.3.46 · Files</span>
+            </div>
+            <div class="tools">
+              <button class="btn">＋ New Folder</button>
+              <button class="btn">⟳ Refresh</button>
+            </div>
+          </div>
+
+          <div class="cols">
+            <!-- LOCAL -->
+            <div class="pane local">
+              <div class="pane-head">
+                <span class="dot"></span>
+                <span class="who">This Mac</span>
+              </div>
+              <div class="crumbs">~<span class="sep">/</span>Projects<span class="sep">/</span><b>charter</b></div>
+              <div class="list">
+                <div class="row dir"><span class="ic">▸📁</span><span class="nm">dist</span><span class="sz">—</span></div>
+                <div class="row dir"><span class="ic">📁</span><span class="nm">src</span><span class="sz">—</span></div>
+                <div class="row sel"><span class="ic">📄</span><span class="nm">release-notes.md</span><span class="sz">4.1 KB</span></div>
+                <div class="row sel"><span class="ic">📄</span><span class="nm">charter-1.0.0.dmg</span><span class="sz">98.2 MB</span></div>
+                <div class="row"><span class="ic">📄</span><span class="nm">package.json</span><span class="sz">2.3 KB</span></div>
+                <div class="row"><span class="ic">📄</span><span class="nm">.env.production</span><span class="sz">612 B</span></div>
+                <div class="row"><span class="ic">📄</span><span class="nm">README.md</span><span class="sz">8.9 KB</span></div>
+              </div>
+            </div>
+
+            <!-- transfer gutter -->
+            <div class="gutter">
+              <button class="xfer-btn on" title="Upload selected → remote">›</button>
+              <small>TRANSFER</small>
+              <button class="xfer-btn" title="Download selected ← remote">‹</button>
+            </div>
+
+            <!-- REMOTE -->
+            <div class="pane remote">
+              <div class="pane-head">
+                <span class="dot"></span>
+                <span class="who">root@10.0.3.46</span>
+              </div>
+              <div class="crumbs">/<span class="sep"></span>home<span class="sep">/</span>deploy<span class="sep">/</span><b>releases</b></div>
+              <div class="list">
+                <div class="row dir"><span class="ic">📁</span><span class="nm">v0.9.3</span><span class="sz">—</span></div>
+                <div class="row dir"><span class="ic">📁</span><span class="nm">current</span><span class="sz">—</span></div>
+                <div class="row"><span class="ic">📄</span><span class="nm">manifest.json</span><span class="sz">1.1 KB</span></div>
+                <div class="row"><span class="ic">📄</span><span class="nm">deploy.log</span><span class="sz">44 KB</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- transfer queue -->
+          <div class="queue">
+            <div class="queue-head">
+              传输队列 · 2 active
+              <span class="clear">清除已完成</span>
+            </div>
+            <div class="q-row up">
+              <span class="dir">↑</span>
+              <span class="q-nm">charter-1.0.0.dmg <small>→ /home/deploy/releases</small></span>
+              <div class="bar"><i style="width: 61%"></i></div>
+              <span class="q-meta">60.1 MB · 8.2 MB/s · 4s</span>
+              <button class="x">✕</button>
+            </div>
+            <div class="q-row up">
+              <span class="dir">↑</span>
+              <span class="q-nm">release-notes.md <small>→ /home/deploy/releases</small></span>
+              <div class="bar"><i style="width: 100%; background: var(--success)"></i></div>
+              <span class="q-meta done">完成 · 4.1 KB</span>
+              <button class="x">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <p class="note">
+          <b>心智模型:显式空间搬运。</b>两侧目录始终可见,选中 <span class="kbd">release-notes.md</span> +
+          <span class="kbd">charter-1.0.0.dmg</span> 后点中间 <span class="kbd">›</span>(或直接拖到右栏)即上传到远程当前目录;反向 <span class="kbd">‹</span> 为下载。
+          <br />
+          <b>优点:</b>可发现性最强、控制最细、上传/下载对称一致,老 SFTP 用户零学习成本。
+          <b>代价:</b>需要新增本地文件系统列目录的主进程能力(渲染层沙箱不能直接读盘),占屏更宽,信息密度高。
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Forwards 弹窗重设计 · A 隧道图 vs B 精排表单</title>
+    <style>
+      :root,
+      [data-theme='light'] {
+        color-scheme: light;
+        --bg-app: #eceae5;
+        --bg-editor: #fbfaf7;
+        --bg-panel: #f6f5f1;
+        --bg-input: #ffffff;
+        --bg-card: #ffffff;
+        --bg-chip: #edeae3;
+        --bg-hover: #e8e5de;
+        --border: #e5e1d8;
+        --border-soft: #edeae3;
+        --border-strong: #cfcabf;
+        --fg: #201e1a;
+        --fg-muted: #6e6a61;
+        --fg-faint: #a39e94;
+        --accent: #1b1a16;
+        --accent-fg: #ffffff;
+        --danger: #c4453d;
+        --warning: #b06f10;
+        --success: #2f9e63;
+        --info: #3f7bd9;
+        --shadow-card: 0 1px 2px rgba(30, 26, 18, 0.05), 0 14px 40px rgba(30, 26, 18, 0.08);
+        --radius-card: 14px;
+      }
+      [data-theme='dark'] {
+        color-scheme: dark;
+        --bg-app: #171614;
+        --bg-editor: #1a1917;
+        --bg-panel: #1d1c19;
+        --bg-input: #232120;
+        --bg-card: #211f1c;
+        --bg-chip: #2a2825;
+        --bg-hover: #2b2926;
+        --border: #322e29;
+        --border-soft: #26231f;
+        --border-strong: #443f39;
+        --fg: #ece9e3;
+        --fg-muted: #9c968b;
+        --fg-faint: #6b665d;
+        --accent: #ede9e2;
+        --accent-fg: #1b1a16;
+        --danger: #e0655c;
+        --warning: #d3922e;
+        --success: #4fb37f;
+        --info: #6c9fe6;
+        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 50px rgba(0, 0, 0, 0.5);
+        --radius-card: 14px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg-app);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'PingFang SC', sans-serif;
+        --font-mono: Menlo, Monaco, 'SF Mono', Consolas, monospace;
+        --font-display: 'Charter', 'Iowan Old Style', Georgia, serif;
+      }
+      .chrome {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 22px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-panel);
+        position: sticky;
+        top: 0;
+        z-index: 5;
+      }
+      .chrome h1 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 18px;
+      }
+      .chrome p {
+        margin: 0;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .toggle {
+        margin-left: auto;
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg-muted);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .stage {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+        gap: 30px;
+        padding: 30px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      .col h2 {
+        margin: 0 0 4px;
+        font-family: var(--font-display);
+        font-size: 16px;
+      }
+      .col > p {
+        margin: 0 0 14px;
+        color: var(--fg-muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .shots {
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+      }
+
+      /* dialog shell (shared) */
+      .dlg {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        background: var(--bg-card);
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+      }
+      .dlg-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 15px 18px 12px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .dlg-head h3 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 17px;
+        font-weight: 650;
+      }
+      .dlg-head .addr {
+        color: var(--fg-faint);
+        font: 11px var(--font-mono);
+      }
+      .dlg-head .x {
+        margin-left: auto;
+        color: var(--fg-faint);
+        cursor: pointer;
+      }
+      .dlg-body {
+        padding: 16px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .dlg-foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 18px;
+        border-top: 1px solid var(--border-soft);
+      }
+      .btn {
+        padding: 7px 13px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .btn.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--accent-fg);
+        font-weight: 600;
+      }
+      .btn.primary:disabled {
+        opacity: 0.45;
+      }
+
+      /* ============ A · tunnel diagram ============ */
+      .tunnel {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: stretch;
+        gap: 0;
+      }
+      .endpoint {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        padding: 12px 13px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-input);
+      }
+      .endpoint .who {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--fg-muted);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .endpoint .who .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--fg-faint);
+      }
+      .endpoint.remote .who .dot {
+        background: var(--success);
+      }
+      .addr-line {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font: 13px var(--font-mono);
+      }
+      .addr-line .fixed {
+        color: var(--fg-muted);
+      }
+      .addr-line input {
+        width: 100%;
+        min-width: 0;
+        height: 30px;
+        padding: 0 8px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--bg-card);
+        color: var(--fg);
+        font: 13px var(--font-mono);
+      }
+      .addr-line input.port {
+        width: 74px;
+        flex: none;
+        text-align: center;
+      }
+      .addr-line input:focus {
+        outline: 0;
+        border-color: var(--border-strong);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
+      }
+      .endpoint small {
+        color: var(--fg-faint);
+        font-size: 10.5px;
+      }
+      .via {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        padding: 0 14px;
+        color: var(--fg-faint);
+      }
+      .via .pipe {
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+      .via .line {
+        width: 26px;
+        height: 0;
+        border-top: 2px dashed var(--border-strong);
+      }
+      .via .hostchip {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--bg-chip);
+        color: var(--fg-muted);
+        font: 10.5px var(--font-mono);
+        white-space: nowrap;
+      }
+      .via .arrow {
+        color: var(--border-strong);
+        margin-left: -2px;
+      }
+      .via small {
+        font-size: 9.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .composer-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--fg-muted);
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+      .switch .track {
+        width: 30px;
+        height: 17px;
+        border-radius: 999px;
+        background: var(--accent);
+        position: relative;
+      }
+      .switch .track::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: var(--accent-fg);
+      }
+      .composer-foot .btn {
+        margin-left: auto;
+      }
+      /* saved rows (A) */
+      .fwd-a {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 9px 12px;
+        border: 1px solid var(--border-soft);
+        border-radius: 11px;
+        background: var(--bg-input);
+      }
+      .fwd-a .st {
+        width: 8px;
+        height: 8px;
+        flex: none;
+        border-radius: 50%;
+        background: var(--success);
+        box-shadow: 0 0 6px color-mix(in srgb, var(--success) 60%, transparent);
+      }
+      .fwd-a.stopped .st {
+        background: var(--fg-faint);
+        box-shadow: none;
+      }
+      .fwd-a .route {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .fwd-a .route b {
+        font: 600 12.5px var(--font-mono);
+      }
+      .fwd-a .route b .arr {
+        color: var(--fg-faint);
+        font-weight: 400;
+        padding: 0 5px;
+      }
+      .fwd-a .route small {
+        color: var(--fg-faint);
+        font-size: 10.5px;
+      }
+      .fwd-a .route small.live {
+        color: var(--success);
+      }
+      .fwd-a .act {
+        display: flex;
+        gap: 5px;
+      }
+      .mini {
+        padding: 5px 11px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--bg-card);
+        color: var(--fg);
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+      .mini.stop {
+        color: var(--fg-muted);
+      }
+      .icon {
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--fg-faint);
+        cursor: pointer;
+      }
+      .icon:hover {
+        border-color: var(--border);
+        color: var(--danger);
+      }
+      /* empty state (A) */
+      .empty-a {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 22px 16px 18px;
+        border: 1px dashed var(--border-strong);
+        border-radius: 12px;
+        text-align: center;
+      }
+      .empty-a .diagram {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--fg-faint);
+        font: 11px var(--font-mono);
+      }
+      .empty-a .node {
+        padding: 5px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-chip);
+        color: var(--fg-muted);
+      }
+      .empty-a .dash {
+        letter-spacing: 2px;
+      }
+      .empty-a p {
+        margin: 0;
+        max-width: 330px;
+        color: var(--fg-muted);
+        font-size: 11.5px;
+        line-height: 1.55;
+      }
+
+      /* ============ B · refined form ============ */
+      .b-hint {
+        color: var(--fg-muted);
+        font-size: 11.5px;
+        line-height: 1.55;
+      }
+      .b-hint code {
+        font: 10.5px var(--font-mono);
+        background: var(--bg-chip);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      .b-row {
+        display: grid;
+        grid-template-columns: 96px 22px minmax(0, 1fr) 96px;
+        align-items: end;
+        gap: 8px;
+      }
+      .b-field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .b-field label {
+        color: var(--fg-muted);
+        font-size: 10.5px;
+        font-weight: 650;
+      }
+      .b-field input {
+        height: 31px;
+        width: 100%;
+        padding: 0 9px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-input);
+        color: var(--fg);
+        font: 12.5px var(--font-mono);
+      }
+      .b-arrow {
+        display: grid;
+        place-items: center;
+        height: 31px;
+        color: var(--fg-faint);
+      }
+      .b-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .b-actions .btn {
+        margin-left: auto;
+      }
+      .b-list {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--border-soft);
+        border-radius: 11px;
+        overflow: hidden;
+      }
+      .b-item {
+        display: grid;
+        grid-template-columns: 14px minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        background: var(--bg-input);
+      }
+      .b-item + .b-item {
+        border-top: 1px solid var(--border-soft);
+      }
+      .b-item .st {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--success);
+      }
+      .b-item.stopped .st {
+        background: var(--fg-faint);
+      }
+      .b-item .r {
+        font: 12px var(--font-mono);
+      }
+      .b-item .r .arr {
+        color: var(--fg-faint);
+        padding: 0 4px;
+      }
+      .b-item small {
+        color: var(--fg-faint);
+        font: 10.5px var(--font-mono);
+      }
+      .note {
+        margin: 6px 30px 40px;
+        text-align: center;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chrome">
+      <div>
+        <h1>Forwards 弹窗重设计</h1>
+        <p>左 A=隧道图式(方向自解释,推荐) · 右 B=精排表单式(最小改动)。各含「空态」与「已有转发」两种状态。</p>
+      </div>
+      <button class="toggle" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'">明 / 暗</button>
+    </div>
+
+    <div class="stage">
+      <!-- ================= A ================= -->
+      <div class="col">
+        <h2>A · 隧道图式(推荐)</h2>
+        <p>把「本机端口 → 经 s → 目标」画成一条可编辑的隧道,方向一目了然;空态用示意图教学;已保存的转发一行一条,活跃有呼吸灯。</p>
+        <div class="shots">
+          <!-- A empty -->
+          <div class="dlg">
+            <div class="dlg-head">
+              <h3>Forwards</h3>
+              <span class="addr">s · root@10.0.3.46</span>
+              <span class="x">✕</span>
+            </div>
+            <div class="dlg-body">
+              <div class="empty-a">
+                <div class="diagram">
+                  <span class="node">This Mac :8080</span>
+                  <span class="dash">╌╌▶</span>
+                  <span class="node">s</span>
+                  <span class="dash">╌╌▶</span>
+                  <span class="node">127.0.0.1:80</span>
+                </div>
+                <p>把远程服务映射到本机端口 — 比如访问只在服务器上监听的数据库或内网面板。活跃的转发会保持连接不断开。</p>
+              </div>
+
+              <div class="tunnel">
+                <div class="endpoint">
+                  <span class="who"><span class="dot"></span>This Mac</span>
+                  <div class="addr-line">
+                    <span class="fixed">127.0.0.1 :</span>
+                    <input class="port" value="8080" />
+                  </div>
+                  <small>本机监听端口</small>
+                </div>
+                <div class="via">
+                  <div class="pipe">
+                    <span class="line"></span>
+                    <span class="hostchip">⚿ s</span>
+                    <span class="line"></span>
+                    <span class="arrow">▶</span>
+                  </div>
+                  <small>ssh tunnel</small>
+                </div>
+                <div class="endpoint remote">
+                  <span class="who"><span class="dot"></span>From s</span>
+                  <div class="addr-line">
+                    <input value="127.0.0.1" />
+                    <span class="fixed">:</span>
+                    <input class="port" value="80" />
+                  </div>
+                  <small>目标主机与端口(从服务器视角)</small>
+                </div>
+              </div>
+
+              <div class="composer-foot">
+                <label class="switch"><span class="track"></span>立即启动</label>
+                <button class="btn primary">Add Forward</button>
+              </div>
+            </div>
+            <div class="dlg-foot"><button class="btn">Close</button></div>
+          </div>
+
+          <!-- A populated -->
+          <div class="dlg">
+            <div class="dlg-head">
+              <h3>Forwards</h3>
+              <span class="addr">s · root@10.0.3.46</span>
+              <span class="x">✕</span>
+            </div>
+            <div class="dlg-body">
+              <div class="fwd-a">
+                <span class="st"></span>
+                <div class="route">
+                  <b>127.0.0.1:8080 <span class="arr">→ s →</span> 127.0.0.1:80</b>
+                  <small class="live">active · 2 connections</small>
+                </div>
+                <div class="act">
+                  <button class="mini stop">Stop</button>
+                  <button class="icon">🗑</button>
+                </div>
+              </div>
+              <div class="fwd-a stopped">
+                <span class="st"></span>
+                <div class="route">
+                  <b>127.0.0.1:5432 <span class="arr">→ s →</span> db.internal:5432</b>
+                  <small>stopped</small>
+                </div>
+                <div class="act">
+                  <button class="mini">Start</button>
+                  <button class="icon">🗑</button>
+                </div>
+              </div>
+
+              <div class="tunnel">
+                <div class="endpoint">
+                  <span class="who"><span class="dot"></span>This Mac</span>
+                  <div class="addr-line">
+                    <span class="fixed">127.0.0.1 :</span>
+                    <input class="port" placeholder="9000" />
+                  </div>
+                  <small>本机监听端口</small>
+                </div>
+                <div class="via">
+                  <div class="pipe">
+                    <span class="line"></span>
+                    <span class="hostchip">⚿ s</span>
+                    <span class="line"></span>
+                    <span class="arrow">▶</span>
+                  </div>
+                  <small>ssh tunnel</small>
+                </div>
+                <div class="endpoint remote">
+                  <span class="who"><span class="dot"></span>From s</span>
+                  <div class="addr-line">
+                    <input value="127.0.0.1" />
+                    <span class="fixed">:</span>
+                    <input class="port" placeholder="80" />
+                  </div>
+                  <small>目标主机与端口(从服务器视角)</small>
+                </div>
+              </div>
+
+              <div class="composer-foot">
+                <label class="switch"><span class="track"></span>立即启动</label>
+                <button class="btn primary" disabled>Add Forward</button>
+              </div>
+            </div>
+            <div class="dlg-foot"><button class="btn">Close</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= B ================= -->
+      <div class="col">
+        <h2>B · 精排表单式(最小改动)</h2>
+        <p>保持原结构,只修排版:字段等高对齐、行内 → 指示方向、列表收进圆角容器、提示语精简并高亮示例。</p>
+        <div class="shots">
+          <!-- B empty -->
+          <div class="dlg">
+            <div class="dlg-head">
+              <h3>Forwards</h3>
+              <span class="addr">s · root@10.0.3.46</span>
+              <span class="x">✕</span>
+            </div>
+            <div class="dlg-body">
+              <p class="b-hint">访问 <code>127.0.0.1:&lt;本机端口&gt;</code> 的连接会经 <b>s</b> 隧道到目标。活跃转发会保持连接。</p>
+              <div class="b-row">
+                <div class="b-field">
+                  <label>Local port</label>
+                  <input placeholder="8080" />
+                </div>
+                <span class="b-arrow">→</span>
+                <div class="b-field">
+                  <label>Target host (from s)</label>
+                  <input value="127.0.0.1" />
+                </div>
+                <div class="b-field">
+                  <label>Target port</label>
+                  <input placeholder="80" />
+                </div>
+              </div>
+              <div class="b-actions">
+                <label class="switch"><span class="track"></span>立即启动</label>
+                <button class="btn primary">Add Forward</button>
+              </div>
+            </div>
+            <div class="dlg-foot"><button class="btn">Close</button></div>
+          </div>
+
+          <!-- B populated -->
+          <div class="dlg">
+            <div class="dlg-head">
+              <h3>Forwards</h3>
+              <span class="addr">s · root@10.0.3.46</span>
+              <span class="x">✕</span>
+            </div>
+            <div class="dlg-body">
+              <div class="b-list">
+                <div class="b-item">
+                  <span class="st"></span>
+                  <span class="r">127.0.0.1:8080<span class="arr">→</span>127.0.0.1:80</span>
+                  <small>active · 2 conns</small>
+                  <div class="act"><button class="mini stop">Stop</button> <button class="icon">🗑</button></div>
+                </div>
+                <div class="b-item stopped">
+                  <span class="st"></span>
+                  <span class="r">127.0.0.1:5432<span class="arr">→</span>db.internal:5432</span>
+                  <small>stopped</small>
+                  <div class="act"><button class="mini">Start</button> <button class="icon">🗑</button></div>
+                </div>
+              </div>
+              <div class="b-row">
+                <div class="b-field">
+                  <label>Local port</label>
+                  <input placeholder="9000" />
+                </div>
+                <span class="b-arrow">→</span>
+                <div class="b-field">
+                  <label>Target host (from s)</label>
+                  <input value="127.0.0.1" />
+                </div>
+                <div class="b-field">
+                  <label>Target port</label>
+                  <input placeholder="80" />
+                </div>
+              </div>
+              <div class="b-actions">
+                <label class="switch"><span class="track"></span>立即启动</label>
+                <button class="btn primary">Add Forward</button>
+              </div>
+            </div>
+            <div class="dlg-foot"><button class="btn">Close</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="note">两案共同修正:标题瘦身(主机名进副标题)、去掉裸段落堆叠、开关替代复选框、活跃状态呼吸灯、删除键收进行内。选 A 或 B(或点名要改的细节),确认后 1:1 实现。</p>
+  </body>
+</html>

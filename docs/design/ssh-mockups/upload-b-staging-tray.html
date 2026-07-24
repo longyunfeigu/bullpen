@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SFTP 上传 · 方案 B · 装载篮(审阅后发送)</title>
+    <style>
+      :root,
+      [data-theme='light'] {
+        color-scheme: light;
+        --bg-app: #eceae5;
+        --bg-editor: #fbfaf7;
+        --bg-panel: #f6f5f1;
+        --bg-input: #ffffff;
+        --bg-card: #ffffff;
+        --bg-chip: #edeae3;
+        --bg-hover: #e8e5de;
+        --border: #e5e1d8;
+        --border-soft: #edeae3;
+        --border-strong: #cfcabf;
+        --fg: #201e1a;
+        --fg-muted: #6e6a61;
+        --fg-faint: #a39e94;
+        --accent: #1b1a16;
+        --accent-fg: #ffffff;
+        --danger: #c4453d;
+        --warning: #b06f10;
+        --success: #2f9e63;
+        --info: #3f7bd9;
+        --shadow-card: 0 1px 2px rgba(30, 26, 18, 0.05), 0 14px 40px rgba(30, 26, 18, 0.08);
+        --radius-card: 14px;
+      }
+      [data-theme='dark'] {
+        color-scheme: dark;
+        --bg-app: #171614;
+        --bg-editor: #1a1917;
+        --bg-panel: #1d1c19;
+        --bg-input: #232120;
+        --bg-card: #211f1c;
+        --bg-chip: #2a2825;
+        --bg-hover: #2b2926;
+        --border: #322e29;
+        --border-soft: #26231f;
+        --border-strong: #443f39;
+        --fg: #ece9e3;
+        --fg-muted: #9c968b;
+        --fg-faint: #6b665d;
+        --accent: #ede9e2;
+        --accent-fg: #1b1a16;
+        --danger: #e0655c;
+        --warning: #d3922e;
+        --success: #4fb37f;
+        --info: #6c9fe6;
+        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 50px rgba(0, 0, 0, 0.5);
+        --radius-card: 14px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+        background: var(--bg-app);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'PingFang SC', sans-serif;
+        --font-mono: Menlo, Monaco, 'SF Mono', Consolas, monospace;
+        --font-display: 'Charter', 'Iowan Old Style', Georgia, serif;
+      }
+      .chrome {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 22px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-panel);
+      }
+      .chrome .badge {
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--accent-fg);
+        font-size: 11px;
+        font-weight: 650;
+      }
+      .chrome h1 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 19px;
+        font-weight: 650;
+      }
+      .chrome p {
+        margin: 0;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .chrome .sp {
+        margin-left: auto;
+      }
+      .toggle {
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg-muted);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .stage {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        padding: 26px;
+      }
+      .surface {
+        width: min(940px, 100%);
+        background: var(--bg-editor);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 15px 18px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .back {
+        padding: 5px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg-muted);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .title strong {
+        display: block;
+        font-family: var(--font-display);
+        font-size: 16px;
+      }
+      .title span {
+        color: var(--fg-faint);
+        font: 11px var(--font-mono);
+      }
+      .tools {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 11px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .btn:hover {
+        background: var(--bg-hover);
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--accent-fg);
+        border-color: var(--accent);
+        font-weight: 600;
+      }
+
+      .body {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        min-height: 440px;
+      }
+      /* remote listing (left, primary) */
+      .listing {
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--border);
+        min-width: 0;
+      }
+      .crumbs {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 9px 16px;
+        border-bottom: 1px solid var(--border-soft);
+        font: 11.5px var(--font-mono);
+        color: var(--fg-muted);
+        background: var(--bg-panel);
+      }
+      .crumbs b {
+        color: var(--fg);
+      }
+      .crumbs .sep {
+        color: var(--fg-faint);
+      }
+      .rows {
+        flex: 1;
+        overflow: auto;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) 76px 70px;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 16px;
+        font-size: 12.5px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .row:hover {
+        background: var(--bg-hover);
+      }
+      .row .ic {
+        display: grid;
+        place-items: center;
+      }
+      .row.dir .ic {
+        color: var(--info);
+      }
+      .row .nm {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row .sz,
+      .row .mt {
+        text-align: right;
+        color: var(--fg-faint);
+        font: 10.5px var(--font-mono);
+      }
+
+      /* staging drawer (right) */
+      .tray {
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-panel);
+      }
+      .tray-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px 10px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .tray-head h3 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 14.5px;
+      }
+      .tray-head .count {
+        margin-left: auto;
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--accent-fg);
+        font: 11px var(--font-mono);
+      }
+      .stack {
+        flex: 1;
+        overflow: auto;
+        padding: 8px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .stage-row {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr) 20px;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid var(--border-soft);
+        border-radius: 9px;
+        background: var(--bg-card);
+      }
+      .stage-row .ic {
+        color: var(--fg-faint);
+      }
+      .stage-row .info {
+        min-width: 0;
+      }
+      .stage-row .rn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .stage-row .rn input {
+        flex: 1;
+        min-width: 0;
+        height: 24px;
+        padding: 0 7px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg-input);
+        color: var(--fg);
+        font: 12px var(--font-mono);
+      }
+      .stage-row small {
+        color: var(--fg-faint);
+        font: 10px var(--font-mono);
+      }
+      .stage-row .pencil {
+        color: var(--fg-faint);
+        font-size: 11px;
+      }
+      .stage-row .rm {
+        width: 20px;
+        height: 20px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 5px;
+        background: transparent;
+        color: var(--fg-faint);
+        cursor: pointer;
+      }
+      .stage-row .rm:hover {
+        color: var(--danger);
+        background: color-mix(in srgb, var(--danger) 12%, transparent);
+      }
+      .add-more {
+        margin: 0 12px 10px;
+        padding: 12px;
+        border: 1px dashed var(--border-strong);
+        border-radius: 10px;
+        text-align: center;
+        color: var(--fg-faint);
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+      .add-more:hover {
+        border-color: var(--accent);
+        color: var(--fg-muted);
+      }
+
+      /* commit controls */
+      .commit {
+        border-top: 1px solid var(--border-soft);
+        padding: 12px 16px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .field label {
+        font-size: 10.5px;
+        font-weight: 650;
+        color: var(--fg-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      .dest {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-input);
+        font: 11.5px var(--font-mono);
+        color: var(--fg);
+      }
+      .dest .pin {
+        color: var(--info);
+      }
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 3px;
+        border-radius: 9px;
+        background: var(--bg-chip);
+      }
+      .seg button {
+        flex: 1;
+        min-height: 26px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--fg-muted);
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+      .seg button.on {
+        background: var(--bg-card);
+        color: var(--fg);
+        font-weight: 650;
+        box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 10%, transparent);
+      }
+      .warn-conflict {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--warning) 13%, transparent);
+        color: var(--warning);
+        font-size: 11px;
+      }
+      .go {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        width: 100%;
+        padding: 11px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent);
+        color: var(--accent-fg);
+        cursor: pointer;
+      }
+      .go strong {
+        font-size: 13px;
+      }
+      .go small {
+        opacity: 0.75;
+        font: 10.5px var(--font-mono);
+      }
+      .note {
+        width: min(940px, 100%);
+        margin: 16px auto 0;
+        color: var(--fg-muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .note b {
+        color: var(--fg);
+      }
+      .kbd {
+        padding: 1px 6px;
+        border: 1px solid var(--border-strong);
+        border-radius: 5px;
+        background: var(--bg-card);
+        font: 10.5px var(--font-mono);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chrome">
+      <span class="badge">方案 B</span>
+      <div>
+        <h1>装载篮 &nbsp;·&nbsp; Stage &amp; Review</h1>
+        <p>先把文件攒进「装载篮」→ 确认目标目录、冲突策略、逐条改名 → 再一次性「上传」。把传输当成一次可审阅的事务。</p>
+      </div>
+      <div class="sp"></div>
+      <button class="toggle" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme==='dark'?'light':'dark'">明 / 暗</button>
+    </div>
+
+    <div class="stage">
+      <div>
+        <div class="surface">
+          <div class="head">
+            <button class="back">← Hosts</button>
+            <div class="title">
+              <strong>prod-api-01</strong>
+              <span>root@10.0.3.46 · Files</span>
+            </div>
+            <div class="tools">
+              <button class="btn">＋ New Folder</button>
+              <button class="btn">⟳ Refresh</button>
+            </div>
+          </div>
+
+          <div class="body">
+            <!-- remote listing -->
+            <div class="listing">
+              <div class="crumbs">/<span class="sep"></span>home<span class="sep">/</span>deploy<span class="sep">/</span><b>releases</b></div>
+              <div class="rows">
+                <div class="row dir"><span class="ic">📁</span><span class="nm">v0.9.3</span><span class="sz">—</span><span class="mt">昨天</span></div>
+                <div class="row dir"><span class="ic">📁</span><span class="nm">current</span><span class="sz">—</span><span class="mt">3d</span></div>
+                <div class="row"><span class="ic">📄</span><span class="nm">manifest.json</span><span class="sz">1.1 KB</span><span class="mt">14:02</span></div>
+                <div class="row"><span class="ic">📄</span><span class="nm">release-notes.md</span><span class="sz">3.7 KB</span><span class="mt">3d</span></div>
+                <div class="row"><span class="ic">📄</span><span class="nm">deploy.log</span><span class="sz">44 KB</span><span class="mt">14:05</span></div>
+              </div>
+            </div>
+
+            <!-- staging drawer -->
+            <div class="tray">
+              <div class="tray-head">
+                <h3>待上传</h3>
+                <span class="count">3 项 · 102 MB</span>
+              </div>
+              <div class="stack">
+                <div class="stage-row">
+                  <span class="ic">📦</span>
+                  <div class="info">
+                    <div class="rn"><input value="charter-1.0.0.dmg" /><span class="pencil">✎</span></div>
+                    <small>98.2 MB · from ~/Projects/charter</small>
+                  </div>
+                  <button class="rm">✕</button>
+                </div>
+                <div class="stage-row">
+                  <span class="ic">📄</span>
+                  <div class="info">
+                    <div class="rn"><input value="release-notes.md" /><span class="pencil">✎</span></div>
+                    <small>3.7 KB · <span style="color: var(--warning)">同名文件已存在</span></small>
+                  </div>
+                  <button class="rm">✕</button>
+                </div>
+                <div class="stage-row">
+                  <span class="ic">📄</span>
+                  <div class="info">
+                    <div class="rn"><input value="manifest.json" /><span class="pencil">✎</span></div>
+                    <small>1.1 KB · <span style="color: var(--warning)">同名文件已存在</span></small>
+                  </div>
+                  <button class="rm">✕</button>
+                </div>
+              </div>
+              <div class="add-more">＋ 拖入文件,或点此选择</div>
+
+              <div class="commit">
+                <div class="field">
+                  <label>上传到</label>
+                  <div class="dest"><span class="pin">◈</span> /home/deploy/releases</div>
+                </div>
+                <div class="field">
+                  <label>同名冲突时</label>
+                  <div class="seg">
+                    <button>覆盖</button>
+                    <button>跳过</button>
+                    <button class="on">两者保留</button>
+                  </div>
+                </div>
+                <div class="warn-conflict">⚠ 2 个文件会与远程同名 — 当前策略将保留为 <code>…(1)</code></div>
+                <button class="go">
+                  <strong>上传 3 个文件 · 102 MB</strong>
+                  <small>→ /home/deploy/releases</small>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p class="note">
+          <b>心智模型:先审阅、再提交的一次事务。</b>拖入或选择的文件先进入右侧装载篮,可逐条改名、剔除,统一确认
+          <span class="kbd">目标目录</span> 与 <span class="kbd">冲突策略</span>,最后点大按钮一次性发送 —— 而不是一拖就传。
+          <br />
+          <b>优点:</b>防误覆盖、防传错目录,尤其贴合「往生产服务器发布」的高风险场景;冲突可见、可改名、可回看。
+          <b>代价:</b>比「一拖即走」多一步确认;需要在上传前对每个目标做一次远程 stat 预检。
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

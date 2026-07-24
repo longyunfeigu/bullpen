@@ -587,6 +587,13 @@
   background: var(--success);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 16%, transparent);
 }
+/* ADR-0047: SSH remote session marker in the rail. */
+.sr-remote-mark {
+  flex: none;
+  color: var(--info);
+  font-size: 11px;
+  line-height: 1;
+}
 .sr-state {
   min-height: 18px;
   display: inline-flex;

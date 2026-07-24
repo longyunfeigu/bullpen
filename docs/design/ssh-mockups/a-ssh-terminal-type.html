@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>方案 A · SSH 作为终端类型 — Charter mockup</title>
+<style>
+  :root{
+    --bg-app:#171614; --bg-titlebar:#1d1c19; --bg-sidebar:#1d1c19; --bg-editor:#1a1917;
+    --bg-input:#24231f; --bg-card:#21201c; --bg-chip:#292823; --bg-hover:#292823;
+    --bg-active:#31302a; --bg-selected:#33322b; --bg-overlay:rgba(0,0,0,.55);
+    --border:#33312b; --border-soft:#2a2924; --border-strong:#4a473f;
+    --fg:#e8e6e0; --fg-muted:#a29d92; --fg-faint:#6e6a61; --fg-inverse:#1a1917;
+    --accent:#e8e6e0; --accent-fg:#1a1917;
+    --danger:#e06b62; --warning:#d29a3a; --success:#46b477; --info:#6ca1e8; --info-bg:#182739;
+    --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,'PingFang SC','Microsoft YaHei',sans-serif;
+    --font-display:'Charter','Iowan Old Style',Georgia,serif;
+    --font-mono:Menlo,Monaco,'SF Mono',Consolas,monospace;
+    --radius-card:14px; --radius-chip:9px;
+    --shadow-card:0 1px 2px rgba(0,0,0,.3),0 14px 40px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#100f0e;color:var(--fg);font-family:var(--font-ui);font-size:13px;padding-bottom:80px}
+  a{color:var(--info);text-decoration:none}
+
+  .mock-banner{background:#141312;border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:50}
+  .mock-banner .tag{font-size:11px;letter-spacing:.12em;color:var(--warning);border:1px solid var(--warning);border-radius:6px;padding:2px 8px}
+  .mock-banner h1{font-size:16px;font-weight:600}
+  .mock-banner p{color:var(--fg-muted);font-size:12.5px}
+  .mock-banner nav{margin-left:auto;display:flex;gap:14px;font-size:12.5px}
+  .mock-banner nav .cur{color:var(--fg);border-bottom:1px solid var(--fg)}
+
+  main{max-width:1280px;margin:0 auto;padding:0 24px}
+  section.screen{margin-top:44px}
+  section.screen>h2{font-size:14px;color:var(--fg-muted);font-weight:600;margin-bottom:6px}
+  section.screen>p.cap{font-size:12.5px;color:var(--fg-faint);margin-bottom:14px}
+
+  .app-window{width:100%;max-width:1200px;height:700px;margin:0 auto;background:var(--bg-app);
+    border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow-card);
+    display:flex;flex-direction:column;position:relative}
+
+  .titlebar{height:38px;background:var(--bg-titlebar);border-bottom:1px solid var(--border-soft);
+    display:flex;align-items:center;padding:0 14px;gap:14px;flex:none}
+  .traffic{display:flex;gap:7px}
+  .traffic i{width:11px;height:11px;border-radius:50%;background:#3a3833}
+  .tb-title{font-family:var(--font-display);font-size:14px;letter-spacing:.01em}
+  .tb-chips{display:flex;gap:4px;margin-left:10px}
+  .tb-chip{padding:3px 11px;border-radius:var(--radius-chip);color:var(--fg-muted);font-size:12px}
+  .tb-chip.active{background:var(--bg-chip);color:var(--fg)}
+  .tb-right{margin-left:auto;display:flex;gap:14px;color:var(--fg-faint);font-size:11.5px;align-items:center}
+  kbd{font-family:var(--font-mono);font-size:10px;background:var(--bg-chip);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--fg-muted)}
+
+  .wb-main{flex:1;display:flex;min-height:0}
+  .rail{width:252px;flex:none;background:var(--bg-sidebar);border-right:1px solid var(--border-soft);
+    padding:10px 8px;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+  .rail-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-faint);padding:10px 8px 3px}
+  .rail-row{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;color:var(--fg-muted);cursor:default}
+  .rail-row.active{background:var(--bg-selected);color:var(--fg)}
+  .rail-row .ic{width:15px;text-align:center;color:var(--fg-faint);font-size:12px;flex:none}
+  .rail-row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
+  .dot{width:6px;height:6px;border-radius:50%;flex:none}
+  .dot.g{background:var(--success);box-shadow:0 0 6px rgba(70,180,119,.7)}
+  .dot.grey{background:var(--fg-faint)}
+  .rail-new{margin-top:auto;border-top:1px solid var(--border-soft);padding-top:8px}
+  .rail-new .rail-row{color:var(--fg-muted)}
+
+  .surface{flex:1;display:flex;flex-direction:column;background:var(--bg-editor);min-width:0}
+  .sess-head{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border-soft)}
+  .sess-head .t{font-size:13px;font-weight:600}
+  .sess-head .sub{color:var(--fg-faint);font-size:11.5px}
+  .sess-head .sp{flex:1}
+  .btn{font-size:12px;padding:4px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--fg-muted);cursor:default}
+  .btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+  .btn.danger{color:var(--danger);border-color:#4a2c29}
+
+  .term{flex:1;background:#181818;color:#cccccc;font-family:var(--font-mono);font-size:12.5px;
+    line-height:1.6;padding:14px 16px;white-space:pre-wrap;overflow:hidden}
+  .term .p{color:#46b477}.term .h{color:#6ca1e8}.term .d{color:#8a877e}.term .w{color:#d29a3a}
+  .term .cursor{display:inline-block;width:7px;height:14px;background:#cccccc;vertical-align:text-bottom}
+
+  .statusbar{height:24px;background:var(--bg-titlebar);border-top:1px solid var(--border-soft);
+    display:flex;align-items:center;padding:0 12px;font-size:11px;color:var(--fg-faint);gap:16px;flex:none}
+  .statusbar .sp{flex:1}
+
+  .overlay{position:absolute;inset:0;background:var(--bg-overlay);display:flex;align-items:flex-start;justify-content:center;padding-top:70px;z-index:10}
+  .dialog{width:540px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-card);
+    box-shadow:var(--shadow-card);padding:20px 22px}
+  .dialog h3{font-size:14px;font-weight:600;margin-bottom:16px}
+  .step{font-size:10.5px;letter-spacing:.1em;color:var(--fg-faint);margin:14px 0 8px}
+  .type-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .type-card{background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-chip);
+    padding:10px 10px 9px;cursor:default}
+  .type-card .tn{font-size:12.5px;font-weight:600}
+  .type-card .td{font-size:10.5px;color:var(--fg-faint);margin-top:3px;line-height:1.4}
+  .type-card.sel{border-color:var(--accent);background:var(--bg-selected)}
+  .host-list{border:1px solid var(--border-soft);border-radius:10px;overflow:hidden}
+  .host-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border-soft)}
+  .host-row:last-child{border-bottom:none}
+  .host-row.sel{background:var(--bg-selected)}
+  .host-row .hn{font-size:12.5px;font-weight:600;width:120px}
+  .host-row .ha{font-family:var(--font-mono);font-size:11px;color:var(--fg-muted);flex:1}
+  .badge{font-size:10px;padding:1px 7px;border-radius:6px;background:var(--bg-chip);color:var(--fg-muted);flex:none}
+  .badge.jump{color:var(--warning)}
+  .badge.src{color:var(--fg-faint)}
+  .manual{margin-top:10px;display:flex;gap:8px}
+  .manual input{flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;
+    padding:7px 10px;color:var(--fg);font-family:var(--font-mono);font-size:12px;outline:none}
+  .hint{font-size:11px;color:var(--fg-faint);margin-top:10px;line-height:1.5}
+  .dialog-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+
+  .notes{margin-top:48px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-card);padding:22px 26px}
+  .notes h2{font-size:14px;margin-bottom:14px}
+  .notes .cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px}
+  .notes h4{font-size:12px;margin-bottom:8px;color:var(--fg-muted)}
+  .notes ul{list-style:none}
+  .notes li{font-size:12.5px;color:var(--fg-muted);padding:3px 0 3px 16px;position:relative;line-height:1.5}
+  .notes li::before{content:'·';position:absolute;left:4px;color:var(--fg-faint)}
+  .notes li.good::before{content:'+';color:var(--success)}
+  .notes li.bad::before{content:'−';color:var(--danger)}
+  .notes p.sum{font-size:12.5px;color:var(--fg-muted);line-height:1.6;margin-top:14px;border-top:1px solid var(--border-soft);padding-top:12px}
+  .notes code{font-family:var(--font-mono);font-size:11px;background:var(--bg-chip);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<header class="mock-banner">
+  <span class="tag">MOCKUP</span>
+  <h1>方案 A · SSH 作为终端类型</h1>
+  <p>复用现有 PTY 直接 spawn 系统 <b>ssh</b>，主机来自 <b>~/.ssh/config</b> —— 最薄的一层</p>
+  <nav>
+    <a class="cur" href="a-ssh-terminal-type.html">方案 A · 终端类型</a>
+    <a href="b-connection-manager.html">方案 B · 连接管理器</a>
+    <a href="c-remote-workspace.html">方案 C · 远程工作区</a>
+  </nav>
+</header>
+
+<main>
+
+<!-- ============ 屏 1：New Terminal 弹窗 ============ -->
+<section class="screen">
+  <h2>屏 1 · New Terminal 弹窗新增「SSH」类型</h2>
+  <p class="cap">在现有 Shell / Claude / Codex 三选一网格里加第四个类型；选中 SSH 后第二步从「working context」变为「目标主机」，列表直接解析 ~/.ssh/config，也可手输 user@host。</p>
+  <div class="app-window">
+    <div class="titlebar">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <span class="tb-title">Charter</span>
+      <div class="tb-chips"><span class="tb-chip active">Sessions</span><span class="tb-chip">Skills</span></div>
+      <div class="tb-right"><span>Quick Console <kbd>⌥Space</kbd></span><span>Commands <kbd>⌘⇧P</kbd></span></div>
+    </div>
+    <div class="wb-main">
+      <div class="rail">
+        <div class="rail-group">charter</div>
+        <div class="rail-row"><span class="ic">◆</span><span class="nm">Fix replay race condition</span><span class="dot g"></span></div>
+        <div class="rail-row"><span class="ic">❯</span><span class="nm">Terminal — zsh</span><span class="dot grey"></span></div>
+        <div class="rail-group">history</div>
+        <div class="rail-row"><span class="ic">◇</span><span class="nm">Refresh product overview</span></div>
+        <div class="rail-new">
+          <div class="rail-row"><span class="ic">＋</span><span class="nm">New Terminal</span></div>
+        </div>
+      </div>
+      <div class="surface">
+        <div class="term"><span class="d"># 背景：现有工作区，弹窗浮层于其上</span></div>
+      </div>
+      <div class="overlay">
+        <div class="dialog">
+          <h3>New Terminal</h3>
+          <div class="step">01 — TYPE</div>
+          <div class="type-grid">
+            <div class="type-card"><div class="tn">Shell</div><div class="td">Plain terminal</div></div>
+            <div class="type-card"><div class="tn">Claude</div><div class="td">Claude Code session</div></div>
+            <div class="type-card"><div class="tn">Codex</div><div class="td">Codex session</div></div>
+            <div class="type-card sel"><div class="tn">SSH</div><div class="td">Remote host</div></div>
+          </div>
+          <div class="step">02 — HOST</div>
+          <div class="host-list">
+            <div class="host-row sel"><span class="hn">prod-api-01</span><span class="ha">edy@10.0.4.21</span><span class="badge src">~/.ssh/config</span></div>
+            <div class="host-row"><span class="hn">staging-db</span><span class="ha">root@10.1.0.8</span><span class="badge jump">ProxyJump: bastion</span><span class="badge src">~/.ssh/config</span></div>
+            <div class="host-row"><span class="hn">gpu-box</span><span class="ha">edy@192.168.31.60</span><span class="badge src">~/.ssh/config</span></div>
+          </div>
+          <div class="manual"><input value="user@host[:port]  — or type an ad-hoc target"></div>
+          <div class="hint">Hosts are read from <b>~/.ssh/config</b> — keys, agent forwarding and ProxyJump are respected as-is. Charter never stores passwords in this mode.</div>
+          <div class="dialog-foot"><button class="btn">Cancel</button><button class="btn primary">Connect</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>v1.0.0-beta.2</span><span class="sp"></span><span>3 sessions</span></div>
+  </div>
+</section>
+
+<!-- ============ 屏 2：已连接会话 ============ -->
+<section class="screen">
+  <h2>屏 2 · 已连接的 SSH 会话（就是一个普通终端 Session）</h2>
+  <p class="cap">rail 里以主机名分组出现一行 SSH 会话；主区就是现有 SessionTerminalView，头部多了连接信息与 Disconnect。断线时终端行变灰、头部出现 Reconnect。</p>
+  <div class="app-window">
+    <div class="titlebar">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <span class="tb-title">Charter</span>
+      <div class="tb-chips"><span class="tb-chip active">Sessions</span><span class="tb-chip">Skills</span></div>
+      <div class="tb-right"><span>Quick Console <kbd>⌥Space</kbd></span><span>Commands <kbd>⌘⇧P</kbd></span></div>
+    </div>
+    <div class="wb-main">
+      <div class="rail">
+        <div class="rail-group">charter</div>
+        <div class="rail-row"><span class="ic">◆</span><span class="nm">Fix replay race condition</span><span class="dot g"></span></div>
+        <div class="rail-row"><span class="ic">❯</span><span class="nm">Terminal — zsh</span><span class="dot grey"></span></div>
+        <div class="rail-group">prod-api-01</div>
+        <div class="rail-row active"><span class="ic">⌁</span><span class="nm">SSH — edy@prod-api-01</span><span class="dot g"></span></div>
+        <div class="rail-group">history</div>
+        <div class="rail-row"><span class="ic">◇</span><span class="nm">Refresh product overview</span></div>
+        <div class="rail-new">
+          <div class="rail-row"><span class="ic">＋</span><span class="nm">New Terminal</span></div>
+        </div>
+      </div>
+      <div class="surface">
+        <div class="sess-head">
+          <span class="t">SSH — edy@prod-api-01</span>
+          <span class="sub">connected 12m · via ~/.ssh/config</span>
+          <span class="sp"></span>
+          <button class="btn">New tab on this host</button>
+          <button class="btn danger">Disconnect</button>
+        </div>
+        <div class="term"><span class="d">Last login: Thu Jul 23 10:02:11 2026 from 203.0.113.7</span>
+<span class="p">edy@prod-api-01</span>:<span class="h">~</span>$ systemctl status api-worker
+<span class="w">●</span> api-worker.service — API background worker
+     Active: active (running) since Wed 2026-07-22 21:14:03 CST; 13h ago
+   Main PID: 41283 (node)
+     Memory: 812.4M (peak: 1.9G)
+
+<span class="p">edy@prod-api-01</span>:<span class="h">~</span>$ tail -f /var/log/api/access.log
+<span class="d">10.0.4.9 - - [23/Jul/2026:10:14:22 +0800] "GET /v1/health HTTP/1.1" 200 17
+10.0.4.9 - - [23/Jul/2026:10:14:24 +0800] "POST /v1/tasks HTTP/1.1" 201 412
+10.0.4.11 - - [23/Jul/2026:10:14:25 +0800] "GET /v1/tasks/8843 HTTP/1.1" 200 1893</span>
+<span class="cursor"></span></div>
+      </div>
+    </div>
+    <div class="statusbar"><span>v1.0.0-beta.2</span><span class="sp"></span><span>⌁ prod-api-01 · 42 ms</span><span>4 sessions</span></div>
+  </div>
+</section>
+
+<!-- ============ 说明 ============ -->
+<section class="notes">
+  <h2>方案 A 要点</h2>
+  <div class="cols">
+    <div>
+      <h4>本质</h4>
+      <ul>
+        <li>用现有 node-pty 直接 spawn 系统 <code>ssh</code>（host-owned executable，不往 shell 打字）</li>
+        <li><code>launch</code> 联合类型加 <code>'ssh'</code>，SSH 会话就是一个普通终端 Session</li>
+        <li>主机清单只读解析 <code>~/.ssh/config</code>，产品不另存一份</li>
+      </ul>
+    </div>
+    <div>
+      <h4>优点 / 缺点</h4>
+      <ul>
+        <li class="good">OpenSSH 全兼容：密钥、agent、ProxyJump、ControlMaster 零成本继承</li>
+        <li class="good">不引入新依赖、不碰凭据存储，安全面不变</li>
+        <li class="good">改动集中在 3 处扩展 + 1 个 config 解析器，1–2 天量级</li>
+        <li class="bad">无 SFTP / 文件传输、无端口转发管理 UI</li>
+        <li class="bad">密码登录体验 = 在终端里敲密码（无保存）</li>
+      </ul>
+    </div>
+    <div>
+      <h4>适合谁</h4>
+      <ul>
+        <li>已经维护 ~/.ssh/config 的用户（键盘型用户）</li>
+        <li>把「连上去干活」当核心诉求，而非「管理一批服务器」</li>
+        <li>是 B / C 两方案的公共地基：先上 A 不会白做</li>
+      </ul>
+    </div>
+  </div>
+  <p class="sum">Warp / iTerm2 走的就是这条路线：终端只负责把你送上去。落点：<code>packages/terminal-service</code> 的 <code>CreateTerminalOptions.executable</code> 已支持直接 spawn，UI 只需扩展 <code>NewTerminalDialog</code> 的类型网格。</p>
+</section>
+
+</main>
+</body>
+</html>

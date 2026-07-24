@@ -44,7 +44,8 @@ export type MainSurface =
   | { kind: 'room'; taskId: string }
   | { kind: 'terminal'; terminalId: string }
   | { kind: 'project-tool'; tool: ProjectTool }
-  | { kind: 'archaeology'; scope: string | null };
+  | { kind: 'archaeology'; scope: string | null }
+  | { kind: 'remotes' };
 
 /** ADR-0042 — rail views form two navigation groups that each own their main
  * surface. sessions/inbox/files are one workbench (inbox is a filtered session
@@ -58,11 +59,15 @@ export function railGroupOf(view: RailView): RailGroup {
 }
 
 export function mainSurfaceOf(
-  s: Pick<AppStore, 'taskRoomTaskId' | 'sessionTerminalId' | 'archaeology' | 'projectTool'>,
+  s: Pick<
+    AppStore,
+    'taskRoomTaskId' | 'sessionTerminalId' | 'archaeology' | 'projectTool' | 'remotesOpen'
+  >,
 ): MainSurface {
   if (s.sessionTerminalId) return { kind: 'terminal', terminalId: s.sessionTerminalId };
   if (s.taskRoomTaskId) return { kind: 'room', taskId: s.taskRoomTaskId };
   if (s.archaeology) return { kind: 'archaeology', scope: s.archaeology.scope };
+  if (s.remotesOpen) return { kind: 'remotes' };
   if (s.projectTool) return { kind: 'project-tool', tool: s.projectTool };
   return { kind: 'home' };
 }
@@ -170,6 +175,11 @@ interface AppStore {
   archaeology: { scope: string | null } | null;
   openArchaeology(scope: string | null): void;
   closeArchaeology(): void;
+  /** ADR-0047: the SSH Remotes page (host book). Full-surface like archaeology;
+   * the rail keeps showing sessions so a remote session can be opened alongside. */
+  remotesOpen: boolean;
+  openRemotes(): void;
+  closeRemotes(): void;
   /** ADR-0029: the rail's panel view, lifted so commands and flows that mean
    * "show me the project files" can reveal the one tree. */
   railView: RailView;
@@ -381,6 +391,9 @@ export const useAppStore = create<AppStore>((set, get) => {
       case 'archaeology':
         get().openArchaeology(surface.scope);
         return;
+      case 'remotes':
+        get().openRemotes();
+        return;
       case 'project-tool':
         get().setProjectTool(surface.tool);
         return;
@@ -389,6 +402,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           taskRoomTaskId: null,
           sessionTerminalId: null,
           archaeology: null,
+          remotesOpen: false,
           projectTool: null,
           projectBottomTab: null,
           surface: 'home',
@@ -429,6 +443,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     projectTool: null,
     projectBottomTab: null,
     archaeology: null,
+    remotesOpen: false,
     railView: typeof window === 'undefined' ? 'sessions' : loadRailView(),
     savedSurfaces: {
       workbench: { kind: 'home' },
@@ -442,6 +457,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         archaeology: { scope },
         taskRoomTaskId: null,
         sessionTerminalId: null,
+        remotesOpen: false,
         projectTool: null,
         projectBottomTab: null,
         surface: 'home',
@@ -450,6 +466,24 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
     closeArchaeology() {
       set({ archaeology: null });
+    },
+
+    openRemotes() {
+      // The rail keeps showing sessions so a remote session opened from a host
+      // card lands right beside it (mockup screen 1).
+      set({
+        remotesOpen: true,
+        taskRoomTaskId: null,
+        sessionTerminalId: null,
+        archaeology: null,
+        projectTool: null,
+        projectBottomTab: null,
+        surface: 'home',
+        ...crossRailPatch('sessions'),
+      });
+    },
+    closeRemotes() {
+      set({ remotesOpen: false });
     },
 
     setRailView(railView) {
@@ -603,6 +637,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         projectTool: null,
         projectBottomTab: null,
         archaeology: null,
+        remotesOpen: false,
         sessionNotices: get().sessionNotices.filter((notice) => notice.taskId !== taskId),
         ...(peek && peek.taskId !== taskId ? { peek: null } : {}),
         ...crossRailPatch('sessions'),
@@ -640,6 +675,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         projectTool: null,
         projectBottomTab: null,
         archaeology: null,
+        remotesOpen: false,
         ...crossRailPatch('sessions'),
       });
     },

@@ -11,6 +11,15 @@ export {
   type ShellSpawnPlan,
 } from './shell-integration.js';
 
+/** SSH remote host coordinates for an adopted session (ADR-0047). */
+export interface TerminalRemoteInfo {
+  hostId: string;
+  hostLabel: string;
+  username: string;
+  host: string;
+  port: number;
+}
+
 export interface TerminalInfo {
   id: string;
   title: string;
@@ -23,6 +32,47 @@ export interface TerminalInfo {
   contextLabel: string;
   contextTaskId: string | null;
   launch: 'shell' | 'claude' | 'codex';
+  /** Present only for SSH remote sessions (ADR-0047); absent for local PTYs. */
+  remote?: TerminalRemoteInfo;
+}
+
+/**
+ * I/O and lifecycle contract for a terminal session's transport. Local
+ * terminals use the node-pty backed default ({@link PtyBackend}); SSH remote
+ * sessions (ADR-0047) supply their own implementation to
+ * {@link TerminalManager.adoptBackend}.
+ */
+export interface TerminalBackend {
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  /** Idempotent: safe to call more than once, or on an already-dead session. */
+  kill(): void;
+  /** Live child processes present (close confirmation, TERM-004). A non-pty
+   * backend has no local process tree and always returns false. */
+  hasChildren(): boolean;
+  /** Foreground process title for agent detection (ADR-0017), or null for a
+   * backend with no local process to poll (SSH remote sessions). */
+  processTitle(): string | null;
+  onData(cb: (data: string) => void): void;
+  onExit(cb: (exitCode: number) => void): void;
+  /** Optional display-only synthetic output (e.g. a connection-lost notice). */
+  injectData?(data: string): void;
+}
+
+/** Options for adopting an externally-created backend as a managed terminal
+ * (SSH remote sessions, ADR-0047). */
+export interface AdoptBackendOptions {
+  title: string;
+  shell?: string;
+  cwd: string;
+  projectName: string;
+  projectPath?: string | null;
+  contextKind?: 'focused' | 'recent' | 'task' | 'scratch';
+  contextLabel?: string;
+  contextTaskId?: string | null;
+  launch?: 'shell' | 'claude' | 'codex';
+  knownAgent?: 'claude' | 'codex';
+  remote?: TerminalRemoteInfo;
 }
 
 export interface CreateTerminalOptions {
@@ -58,7 +108,10 @@ export interface TerminalContextUpdate {
 
 interface Session {
   info: TerminalInfo;
-  pty: IPty;
+  backend: TerminalBackend;
+  /** Set only for PtyBackend sessions; retained so the readTitle DI seam keeps
+   * its existing pty-based semantics. */
+  pty?: IPty;
   tracker: AgentStateTracker;
   recentData: string;
   knownAgent: 'claude' | 'codex' | null;
@@ -278,8 +331,9 @@ export interface TerminalManagerOptions {
   agentPollMs?: number;
   /** ADR-0021: resolved at spawn time so a settings flip applies to the next terminal. */
   shellIntegration?: () => ShellIntegrationConfig | null;
-  /** DI seams for deterministic tests. */
-  readTitle?: (session: { pty: IPty }) => string;
+  /** DI seams for deterministic tests. Default reads the foreground title from
+   * the session backend; pty sessions still expose the raw pty for overrides. */
+  readTitle?: (session: { backend: TerminalBackend; pty?: IPty }) => string;
   readProcessTable?: () => ProcessTableEntry[] | null;
   /** Host-issued per-terminal capabilities (ADR-0044). Values are resolved
    * after the id exists and before the PTY is spawned; callers must never
@@ -303,6 +357,62 @@ export function hasChildProcesses(pid: number): boolean {
   }
 }
 
+/**
+ * Default backend: a node-pty child process. Owns the graceful-kill with
+ * process-group escalation (CMD-004/TERM-004) so the manager stays transport
+ * agnostic across local and SSH remote sessions (ADR-0047).
+ */
+class PtyBackend implements TerminalBackend {
+  constructor(private readonly pty: IPty) {}
+
+  write(data: string): void {
+    this.pty.write(data);
+  }
+
+  resize(cols: number, rows: number): void {
+    try {
+      this.pty.resize(cols, rows);
+    } catch {
+      // resizing a dying pty is harmless
+    }
+  }
+
+  kill(): void {
+    const pid = this.pty.pid;
+    try {
+      this.pty.kill();
+    } catch {
+      // already dead
+    }
+    if (process.platform !== 'win32') {
+      // Escalate to the whole process group if anything survives the HUP.
+      setTimeout(() => {
+        try {
+          process.kill(-pid, 'SIGKILL');
+        } catch {
+          // group already gone — expected on the happy path
+        }
+      }, 1500).unref();
+    }
+  }
+
+  hasChildren(): boolean {
+    return hasChildProcesses(this.pty.pid);
+  }
+
+  processTitle(): string | null {
+    return this.pty.process;
+  }
+
+  onData(cb: (data: string) => void): void {
+    this.pty.onData(cb);
+  }
+
+  onExit(cb: (exitCode: number) => void): void {
+    this.pty.onExit(({ exitCode }) => cb(exitCode));
+  }
+}
+
 /** User terminal sessions (separate security domain from agent commands, TERM-005). */
 export class TerminalManager {
   private readonly sessions = new Map<string, Session>();
@@ -316,7 +426,7 @@ export class TerminalManager {
     (info: { id: string; agent: string | null; cwd: string }) => void
   >();
   private readonly agentClis: readonly string[];
-  private readonly readTitle: (session: { pty: IPty }) => string;
+  private readonly readTitle: (session: { backend: TerminalBackend; pty?: IPty }) => string;
   private readonly readTable: () => ProcessTableEntry[] | null;
   private readonly shellIntegration: (() => ShellIntegrationConfig | null) | null;
   private readonly envForTerminal: ((id: string) => Record<string, string>) | null;
@@ -334,7 +444,7 @@ export class TerminalManager {
             .map((s) => s.trim().toLowerCase())
             .filter(Boolean)
         : DEFAULT_AGENT_CLIS);
-    this.readTitle = options.readTitle ?? ((s) => s.pty.process);
+    this.readTitle = options.readTitle ?? ((s) => s.backend.processTitle() ?? '');
     this.readTable = options.readProcessTable ?? readProcessTable;
     this.shellIntegration = options.shellIntegration ?? null;
     this.envForTerminal = options.envForTerminal ?? null;
@@ -416,6 +526,10 @@ export class TerminalManager {
       if (session.knownAgent) continue;
       let match: string | null = null;
       try {
+        // A backend with no local foreground process (an SSH remote session,
+        // ADR-0047) has nothing to poll; agent detection does not apply. Kept
+        // inside the try so a dying pty's throwing title read stays "no agent".
+        if (session.backend.processTitle() === null) continue;
         const title = this.readTitle(session);
         match = titleMatchesAgent(title, this.agentClis);
         if (!match && !isShellTitle(title, session.info.shell)) {
@@ -473,17 +587,51 @@ export class TerminalManager {
       contextTaskId: options.contextTaskId ?? null,
       launch: options.launch ?? 'shell',
     };
-    const tracker = new AgentStateTracker();
-    if (options.knownAgent) tracker.update(options.knownAgent);
-    const session: Session = {
-      info,
-      pty,
-      tracker,
-      recentData: '',
-      knownAgent: options.knownAgent ?? null,
+    // The pty is retained on the Session for the readTitle DI seam.
+    return this.registerSession(id, info, new PtyBackend(pty), options.knownAgent ?? null, pty);
+  }
+
+  /**
+   * Adopt an externally-created backend (an SSH remote session, ADR-0047) as a
+   * managed terminal. Data and exit fan out exactly like a local PTY; pid is -1
+   * because there is no local process behind the session.
+   */
+  adoptBackend(backend: TerminalBackend, options: AdoptBackendOptions): TerminalInfo {
+    const id = newId('term');
+    const info: TerminalInfo = {
+      id,
+      title: options.title,
+      shell: options.shell ?? options.title,
+      pid: -1,
+      cwd: options.cwd,
+      projectName: options.projectName,
+      projectPath: options.projectPath ?? null,
+      contextKind: options.contextKind ?? 'focused',
+      contextLabel: options.contextLabel ?? options.projectName,
+      contextTaskId: options.contextTaskId ?? null,
+      launch: options.launch ?? 'shell',
+      remote: options.remote,
     };
-    pty.onData((data) => this.emitData(id, data));
-    pty.onExit(({ exitCode }) => {
+    return this.registerSession(id, info, backend, options.knownAgent ?? null);
+  }
+
+  /**
+   * Wire a backend into a live session: data/exit fan-out and the immediate
+   * knownAgent notification, shared by {@link create} and {@link adoptBackend}.
+   * `pty` is set only for PtyBackend sessions (readTitle DI seam).
+   */
+  private registerSession(
+    id: string,
+    info: TerminalInfo,
+    backend: TerminalBackend,
+    knownAgent: 'claude' | 'codex' | null,
+    pty?: IPty,
+  ): TerminalInfo {
+    const tracker = new AgentStateTracker();
+    if (knownAgent) tracker.update(knownAgent);
+    const session: Session = { info, backend, pty, tracker, recentData: '', knownAgent };
+    backend.onData((data) => this.emitData(id, data));
+    backend.onExit((exitCode) => {
       const liveSession = this.sessions.get(id);
       this.sessions.delete(id);
       this.fireAgentExitIfActive(id, liveSession);
@@ -491,11 +639,11 @@ export class TerminalManager {
       for (const listener of this.exitListeners) listener({ id, exitCode });
     });
     this.sessions.set(id, session);
-    if (options.knownAgent) {
+    if (knownAgent) {
       queueMicrotask(() => {
         if (this.sessions.get(id) !== session) return;
         for (const listener of this.agentListeners) {
-          listener({ id, agent: options.knownAgent!, cwd: info.cwd });
+          listener({ id, agent: knownAgent, cwd: info.cwd });
         }
       });
     }
@@ -507,25 +655,32 @@ export class TerminalManager {
     if (!session) return;
     for (const listener of this.inputListeners) listener({ id, data });
     for (const listener of this.sourcedInputListeners) listener({ id, data, source });
-    session.pty.write(data);
+    session.backend.write(data);
+  }
+
+  /**
+   * Surface display-only synthetic output in a session's stream — a
+   * connection-lost notice on an SSH remote session (ADR-0047), for example.
+   * Routed through the same data fan-out as real backend output so scrollback
+   * and replay stay consistent; it never reaches the backend's write path.
+   */
+  injectData(id: string, data: string): void {
+    if (!this.sessions.has(id)) return;
+    this.emitData(id, data);
   }
 
   /** Retarget an idle persistent PTY without replacing its scrollback/session. */
   changeContext(id: string, context: TerminalContextUpdate): TerminalInfo | null {
     const session = this.sessions.get(id);
     if (!session) return null;
-    session.pty.write(`${terminalCwdCommand(session.info.shell, context.cwd)}\r`);
+    session.backend.write(`${terminalCwdCommand(session.info.shell, context.cwd)}\r`);
     Object.assign(session.info, context);
     return { ...session.info };
   }
 
   resize(id: string, cols: number, rows: number): void {
     if (cols < 2 || rows < 1 || cols > 1000 || rows > 500) return;
-    try {
-      this.sessions.get(id)?.pty.resize(cols, rows);
-    } catch {
-      // resizing a dying pty is harmless
-    }
+    this.sessions.get(id)?.backend.resize(cols, rows);
   }
 
   list(): TerminalInfo[] {
@@ -535,7 +690,7 @@ export class TerminalManager {
   hasRunningChildren(id: string): boolean {
     const session = this.sessions.get(id);
     if (!session) return false;
-    return hasChildProcesses(session.info.pid);
+    return session.backend.hasChildren();
   }
 
   /** A killed/exited terminal ends its agent session too (ADR-0017). */
@@ -546,27 +701,12 @@ export class TerminalManager {
     }
   }
 
-  /** Graceful kill with process-tree escalation (CMD-004/TERM-004). */
+  /** Graceful kill; the backend owns any process-tree escalation (CMD-004/TERM-004). */
   kill(id: string): void {
     const session = this.sessions.get(id);
     if (!session) return;
     this.fireAgentExitIfActive(id, session);
-    const pid = session.info.pid;
-    try {
-      session.pty.kill();
-    } catch {
-      // already dead
-    }
-    if (process.platform !== 'win32') {
-      // Escalate to the whole process group if anything survives the HUP.
-      setTimeout(() => {
-        try {
-          process.kill(-pid, 'SIGKILL');
-        } catch {
-          // group already gone — expected on the happy path
-        }
-      }, 1500).unref();
-    }
+    session.backend.kill();
     this.sessions.delete(id);
   }
 

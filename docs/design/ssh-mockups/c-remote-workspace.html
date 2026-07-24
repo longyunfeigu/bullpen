@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>方案 C · 远程工作区（Remote Agent）— Charter mockup</title>
+<style>
+  :root{
+    --bg-app:#171614; --bg-titlebar:#1d1c19; --bg-sidebar:#1d1c19; --bg-editor:#1a1917;
+    --bg-input:#24231f; --bg-card:#21201c; --bg-chip:#292823; --bg-hover:#292823;
+    --bg-active:#31302a; --bg-selected:#33322b; --bg-overlay:rgba(0,0,0,.55);
+    --border:#33312b; --border-soft:#2a2924; --border-strong:#4a473f;
+    --fg:#e8e6e0; --fg-muted:#a29d92; --fg-faint:#6e6a61; --fg-inverse:#1a1917;
+    --accent:#e8e6e0; --accent-fg:#1a1917;
+    --danger:#e06b62; --warning:#d29a3a; --success:#46b477; --success-bg:#17301f;
+    --info:#6ca1e8; --info-bg:#182739;
+    --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,'PingFang SC','Microsoft YaHei',sans-serif;
+    --font-display:'Charter','Iowan Old Style',Georgia,serif;
+    --font-mono:Menlo,Monaco,'SF Mono',Consolas,monospace;
+    --radius-card:14px; --radius-chip:9px;
+    --shadow-card:0 1px 2px rgba(0,0,0,.3),0 14px 40px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#100f0e;color:var(--fg);font-family:var(--font-ui);font-size:13px;padding-bottom:80px}
+  a{color:var(--info);text-decoration:none}
+
+  .mock-banner{background:#141312;border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:50}
+  .mock-banner .tag{font-size:11px;letter-spacing:.12em;color:var(--warning);border:1px solid var(--warning);border-radius:6px;padding:2px 8px}
+  .mock-banner h1{font-size:16px;font-weight:600}
+  .mock-banner p{color:var(--fg-muted);font-size:12.5px}
+  .mock-banner nav{margin-left:auto;display:flex;gap:14px;font-size:12.5px}
+  .mock-banner nav .cur{color:var(--fg);border-bottom:1px solid var(--fg)}
+
+  main{max-width:1280px;margin:0 auto;padding:0 24px}
+  section.screen{margin-top:44px}
+  section.screen>h2{font-size:14px;color:var(--fg-muted);font-weight:600;margin-bottom:6px}
+  section.screen>p.cap{font-size:12.5px;color:var(--fg-faint);margin-bottom:14px}
+
+  .app-window{width:100%;max-width:1200px;height:700px;margin:0 auto;background:var(--bg-app);
+    border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow-card);
+    display:flex;flex-direction:column;position:relative}
+
+  .titlebar{height:38px;background:var(--bg-titlebar);border-bottom:1px solid var(--border-soft);
+    display:flex;align-items:center;padding:0 14px;gap:14px;flex:none}
+  .traffic{display:flex;gap:7px}
+  .traffic i{width:11px;height:11px;border-radius:50%;background:#3a3833}
+  .tb-title{font-family:var(--font-display);font-size:14px}
+  .tb-chips{display:flex;gap:4px;margin-left:10px}
+  .tb-chip{padding:3px 11px;border-radius:var(--radius-chip);color:var(--fg-muted);font-size:12px}
+  .tb-chip.active{background:var(--bg-chip);color:var(--fg)}
+  .tb-right{margin-left:auto;display:flex;gap:14px;color:var(--fg-faint);font-size:11.5px;align-items:center}
+  kbd{font-family:var(--font-mono);font-size:10px;background:var(--bg-chip);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--fg-muted)}
+
+  .wb-main{flex:1;display:flex;min-height:0}
+  .rail{width:252px;flex:none;background:var(--bg-sidebar);border-right:1px solid var(--border-soft);
+    padding:10px 8px;display:flex;flex-direction:column;gap:2px}
+  .rail-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-faint);padding:10px 8px 3px;display:flex;align-items:center;gap:6px}
+  .rbadge{font-size:9px;letter-spacing:.06em;color:var(--info);border:1px solid #2b4360;border-radius:5px;padding:0 5px;text-transform:none}
+  .rail-row{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;color:var(--fg-muted)}
+  .rail-row.active{background:var(--bg-selected);color:var(--fg)}
+  .rail-row .ic{width:15px;text-align:center;color:var(--fg-faint);font-size:12px;flex:none}
+  .rail-row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
+  .dot{width:6px;height:6px;border-radius:50%;flex:none}
+  .dot.g{background:var(--success);box-shadow:0 0 6px rgba(70,180,119,.7)}
+  .dot.grey{background:var(--fg-faint)}
+
+  .surface{flex:1;display:flex;flex-direction:column;background:var(--bg-editor);min-width:0}
+  .statusbar{height:24px;background:var(--bg-titlebar);border-top:1px solid var(--border-soft);
+    display:flex;align-items:center;padding:0 12px;font-size:11px;color:var(--fg-faint);gap:16px;flex:none}
+  .statusbar .sp{flex:1}
+
+  /* remote bar */
+  .remote-bar{display:flex;align-items:center;gap:10px;background:var(--info-bg);border-bottom:1px solid #24354a;
+    padding:6px 16px;font-size:12px;color:#a9c6ec}
+  .remote-bar .mono{font-family:var(--font-mono);font-size:11px}
+  .remote-bar .sp{flex:1}
+  .remote-bar .lat{color:var(--success)}
+  .btn{font-size:12px;padding:4px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--fg-muted)}
+  .btn.sm{font-size:11px;padding:2px 9px}
+  .btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+
+  /* room timeline */
+  .room{flex:1;display:flex;flex-direction:column;min-height:0}
+  .timeline{flex:1;padding:20px 26px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+  .msg-user{align-self:flex-end;max-width:60%;background:var(--bg-selected);border:1px solid var(--border);
+    border-radius:14px 14px 4px 14px;padding:10px 14px;font-size:13px;line-height:1.55}
+  .card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-card);padding:12px 16px;max-width:78%}
+  .card .ttl{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg-muted);margin-bottom:8px}
+  .card .ttl b{color:var(--fg);font-weight:600}
+  .chip-remote{font-size:9.5px;color:var(--info);border:1px solid #2b4360;border-radius:5px;padding:0 5px}
+  .cmd{font-family:var(--font-mono);font-size:11.5px;color:var(--fg-muted);padding:3px 0 3px 18px;position:relative;line-height:1.6}
+  .cmd::before{content:'✓';position:absolute;left:0;color:var(--success);font-size:11px}
+  .cmd.run::before{content:'▸';color:var(--warning)}
+  .card p.body{font-size:12.5px;color:var(--fg-muted);line-height:1.6;margin-top:8px}
+  .card p.body b{color:var(--fg)}
+  .review-card{background:var(--success-bg);border:1px solid #245a3a;border-radius:var(--radius-card);
+    padding:12px 16px;max-width:78%;display:flex;align-items:center;gap:12px}
+  .review-card .rt{flex:1}
+  .review-card .rt b{font-size:13px;color:#7fd4a4}
+  .review-card .rt div{font-size:11.5px;color:#5f9e7c;margin-top:2px}
+  .composer{margin:0 26px 18px;background:var(--bg-input);border:1px solid var(--border);border-radius:12px;
+    padding:11px 14px;color:var(--fg-faint);font-size:12.5px;display:flex;align-items:center;gap:10px}
+  .composer .sp{flex:1}
+
+  /* dialog */
+  .overlay{position:absolute;inset:0;background:var(--bg-overlay);display:flex;align-items:flex-start;justify-content:center;padding-top:60px;z-index:10}
+  .dialog{width:560px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-card);
+    box-shadow:var(--shadow-card);padding:20px 22px}
+  .dialog h3{font-size:14px;font-weight:600;margin-bottom:14px}
+  .step{font-size:10.5px;letter-spacing:.1em;color:var(--fg-faint);margin:14px 0 8px}
+  .host-list{border:1px solid var(--border-soft);border-radius:10px;overflow:hidden}
+  .host-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border-soft)}
+  .host-row:last-child{border-bottom:none}
+  .host-row.sel{background:var(--bg-selected)}
+  .host-row .hn{font-size:12.5px;font-weight:600;width:120px}
+  .host-row .ha{font-family:var(--font-mono);font-size:11px;color:var(--fg-muted);flex:1}
+  .badge{font-size:10px;padding:1px 7px;border-radius:6px;background:var(--bg-chip);color:var(--fg-muted)}
+  .dir-input{display:flex;gap:8px}
+  .dir-input input{flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;
+    padding:7px 10px;color:var(--fg);font-family:var(--font-mono);font-size:12px;outline:none}
+  .recent{display:flex;gap:6px;margin-top:8px}
+  .recent .badge{font-family:var(--font-mono)}
+  .install-note{margin-top:14px;background:var(--bg-input);border:1px solid var(--border-soft);border-radius:10px;
+    padding:11px 13px;font-size:11.5px;color:var(--fg-muted);line-height:1.6}
+  .install-note b{color:var(--fg)}
+  .dialog-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+
+  .notes{margin-top:48px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-card);padding:22px 26px}
+  .notes h2{font-size:14px;margin-bottom:14px}
+  .notes .cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px}
+  .notes h4{font-size:12px;margin-bottom:8px;color:var(--fg-muted)}
+  .notes ul{list-style:none}
+  .notes li{font-size:12.5px;color:var(--fg-muted);padding:3px 0 3px 16px;position:relative;line-height:1.5}
+  .notes li::before{content:'·';position:absolute;left:4px;color:var(--fg-faint)}
+  .notes li.good::before{content:'+';color:var(--success)}
+  .notes li.bad::before{content:'−';color:var(--danger)}
+  .notes p.sum{font-size:12.5px;color:var(--fg-muted);line-height:1.6;margin-top:14px;border-top:1px solid var(--border-soft);padding-top:12px}
+  .notes code{font-family:var(--font-mono);font-size:11px;background:var(--bg-chip);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<header class="mock-banner">
+  <span class="tag">MOCKUP</span>
+  <h1>方案 C · 远程工作区（Remote Agent）</h1>
+  <p>VS Code Remote 思路：把 agent 部署到服务器上，Room / 终端 / 文件 / 审查门全部原生作用于远端</p>
+  <nav>
+    <a href="a-ssh-terminal-type.html">方案 A · 终端类型</a>
+    <a href="b-connection-manager.html">方案 B · 连接管理器</a>
+    <a class="cur" href="c-remote-workspace.html">方案 C · 远程工作区</a>
+  </nav>
+</header>
+
+<main>
+
+<!-- ============ 屏 1：远程 Room ============ -->
+<section class="screen">
+  <h2>屏 1 · 远程项目的 Task Room：agent 在服务器上干活</h2>
+  <p class="cap">rail 出现一个远程项目分组（带 REMOTE 徽章），其下的 task / 终端全在远端。Room 顶部有远程标识条。关键：REVIEW_READY 审查门、权限门、快照回滚照常生效——只是作用对象换成了服务器上的文件。</p>
+  <div class="app-window">
+    <div class="titlebar">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <span class="tb-title">Charter</span>
+      <div class="tb-chips"><span class="tb-chip active">Sessions</span><span class="tb-chip">Skills</span></div>
+      <div class="tb-right"><span>Quick Console <kbd>⌥Space</kbd></span><span>Commands <kbd>⌘⇧P</kbd></span></div>
+    </div>
+    <div class="wb-main">
+      <div class="rail">
+        <div class="rail-group">charter</div>
+        <div class="rail-row"><span class="ic">◆</span><span class="nm">Fix replay race condition</span><span class="dot grey"></span></div>
+        <div class="rail-group">api-server <span class="rbadge">⌁ prod-api-01</span></div>
+        <div class="rail-row active"><span class="ic">◆</span><span class="nm">Investigate worker OOM</span><span class="dot g"></span></div>
+        <div class="rail-row"><span class="ic">❯</span><span class="nm">Terminal — remote zsh</span><span class="dot g"></span></div>
+        <div class="rail-group">history</div>
+        <div class="rail-row"><span class="ic">◇</span><span class="nm">Refresh product overview</span></div>
+      </div>
+      <div class="surface">
+        <div class="remote-bar">
+          <span>⌁</span><b>prod-api-01</b>
+          <span class="mono">~/srv/api-server</span>
+          <span class="badge">remote agent v1.0.0-beta.2</span>
+          <span class="lat">● 42 ms</span>
+          <span class="sp"></span>
+          <button class="btn sm">Disconnect</button>
+        </div>
+        <div class="room">
+          <div class="timeline">
+            <div class="msg-user">昨晚 02:00 左右 api-worker OOM 被 kill 了，帮我查一下原因</div>
+            <div class="card">
+              <div class="ttl"><b>Agent</b><span class="chip-remote">runs on prod-api-01</span><span>· investigating</span></div>
+              <div class="cmd">journalctl -u api-worker --since "01:30" --until "02:30"</div>
+              <div class="cmd">cat /srv/api-server/config/worker.yaml</div>
+              <div class="cmd">node --inspect scripts/heap-summary.js /var/dumps/worker-0158.heapsnapshot</div>
+              <p class="body">02:07 内核 OOM-killer 终止了 PID 41283。堆快照显示 <b>job queue 积压了 31 万个未回收的 payload 对象</b> —— 上周 worker 并发从 8 调到 32，但 <b>queue 的高水位没有同步调整</b>，夜间批量任务把内存顶穿了。建议把 <code style="font-family:var(--font-mono);font-size:11px">queue.highWater</code> 降回并发×2k，并加内存背压。</p>
+            </div>
+            <div class="review-card">
+              <div class="rt">
+                <b>Changes ready for review</b>
+                <div>2 files on prod-api-01 · worker.yaml, queue.ts · snapshot taken, revertible</div>
+              </div>
+              <button class="btn">Open review</button>
+            </div>
+          </div>
+          <div class="composer"><span>Reply to the agent… 修改前先在 staging 验证一下</span><span class="sp"></span><kbd>⏎</kbd></div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>v1.0.0-beta.2</span><span class="sp"></span><span>⌁ prod-api-01 · agent connected</span><span>4 sessions</span></div>
+  </div>
+</section>
+
+<!-- ============ 屏 2：打开远程工作区 ============ -->
+<section class="screen">
+  <h2>屏 2 · 「Open Remote Workspace」流程</h2>
+  <p class="cap">选主机（复用 ~/.ssh/config 或主机库）→ 选远程目录 → 首次连接自动经 SSH 部署 remote agent（免 root、一键卸载、版本随桌面端锁定）。之后该目录成为一个常驻远程项目。</p>
+  <div class="app-window">
+    <div class="titlebar">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <span class="tb-title">Charter</span>
+      <div class="tb-chips"><span class="tb-chip active">Sessions</span><span class="tb-chip">Skills</span></div>
+      <div class="tb-right"><span>Quick Console <kbd>⌥Space</kbd></span><span>Commands <kbd>⌘⇧P</kbd></span></div>
+    </div>
+    <div class="wb-main">
+      <div class="rail">
+        <div class="rail-group">charter</div>
+        <div class="rail-row"><span class="ic">◆</span><span class="nm">Fix replay race condition</span><span class="dot grey"></span></div>
+        <div class="rail-group">history</div>
+        <div class="rail-row"><span class="ic">◇</span><span class="nm">Refresh product overview</span></div>
+      </div>
+      <div class="surface"></div>
+      <div class="overlay">
+        <div class="dialog">
+          <h3>Open Remote Workspace</h3>
+          <div class="step">01 — HOST</div>
+          <div class="host-list">
+            <div class="host-row sel"><span class="hn">prod-api-01</span><span class="ha">edy@10.0.4.21</span><span class="badge">agent installed</span></div>
+            <div class="host-row"><span class="hn">staging-db</span><span class="ha">root@10.1.0.8</span></div>
+            <div class="host-row"><span class="hn">gpu-box</span><span class="ha">edy@192.168.31.60</span><span class="badge">agent installed</span></div>
+          </div>
+          <div class="step">02 — REMOTE FOLDER</div>
+          <div class="dir-input"><input value="~/srv/api-server"><button class="btn">Browse…</button></div>
+          <div class="recent"><span class="badge">~/srv/api-server</span><span class="badge">~/experiments/rl-run</span></div>
+          <div class="install-note">
+            First connect installs the <b>Charter remote agent</b> (~18 MB, no root) into <b>~/.charter/remote</b> over SSH.
+            It runs only while you're connected, matches your desktop version, and can be removed with one command.
+            File edits, diffs, review gates and permissions all apply to the remote workspace.
+          </div>
+          <div class="dialog-foot"><button class="btn">Cancel</button><button class="btn primary">Open Workspace</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>v1.0.0-beta.2</span><span class="sp"></span><span>2 sessions</span></div>
+  </div>
+</section>
+
+<!-- ============ 说明 ============ -->
+<section class="notes">
+  <h2>方案 C 要点</h2>
+  <div class="cols">
+    <div>
+      <h4>本质</h4>
+      <ul>
+        <li>经 SSH 往远端部署一个 headless 的 agent-host（复用现有 agent worker + Tool Gateway），本地只是 UI</li>
+        <li>「远程目录」成为一等 project：task / Room / 终端 / 文件操作全部原生作用于远端</li>
+        <li>SSH 只是引导 + 隧道层；产品协议跑在隧道里（版本化，同现有 IPC 契约思路）</li>
+      </ul>
+    </div>
+    <div>
+      <h4>优点 / 缺点</h4>
+      <ul>
+        <li class="good">与产品定位深度契合：不是「连上服务器自己敲命令」，而是「让 agent 在服务器上干活」</li>
+        <li class="good">审查门 / 权限门 / 快照回滚在远端照常生效 —— 这是 Termius/Warp 都没有的差异化能力</li>
+        <li class="good">大文件 / 大 repo 不用拉到本地</li>
+        <li class="bad">工程量最大（数周）：远端二进制分发、版本匹配、断线恢复、平台矩阵</li>
+        <li class="bad">远端环境要求（glibc / 架构）带来支持成本</li>
+        <li class="bad">对「只想快速 ssh 上去看看」的场景太重，仍需要 A 兜底</li>
+      </ul>
+    </div>
+    <div>
+      <h4>适合谁</h4>
+      <ul>
+        <li>开发 / 调试主要发生在服务器上的用户（GPU 盒子、staging、生产排障）</li>
+        <li>希望把 Charter 的 agent 工作流带到远端的用户</li>
+        <li>定位是长期路线：以 A 为地基分阶段实现（先远程终端 → 远程只读 → 完整远程 Room）</li>
+      </ul>
+    </div>
+  </div>
+  <p class="sum">VS Code Remote-SSH 的架构（本地 UI + 远端 server，版本严格匹配，经 SSH 隧道通信）。对 Charter 而言额外的红利是：agent 运行时本来就与 UI 进程隔离、走版本化契约，把它放到网络另一端在架构上是自然延伸，而不是重构。</p>
+</section>
+
+</main>
+</body>
+</html>

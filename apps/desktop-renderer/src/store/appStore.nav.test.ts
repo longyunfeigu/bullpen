@@ -45,6 +45,7 @@ describe('railGroupOf / mainSurfaceOf', () => {
         sessionTerminalId: 'term1',
         archaeology: { scope: null },
         projectTool: 'editor',
+        remotesOpen: false,
       }),
     ).toEqual({ kind: 'terminal', terminalId: 'term1' });
     expect(
@@ -53,6 +54,7 @@ describe('railGroupOf / mainSurfaceOf', () => {
         sessionTerminalId: null,
         archaeology: null,
         projectTool: null,
+        remotesOpen: false,
       }),
     ).toEqual({ kind: 'room', taskId: 't1' });
     expect(
@@ -61,6 +63,7 @@ describe('railGroupOf / mainSurfaceOf', () => {
         sessionTerminalId: null,
         archaeology: null,
         projectTool: null,
+        remotesOpen: false,
       }),
     ).toEqual({ kind: 'home' });
   });

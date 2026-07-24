@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { SshHostRecordSchema } from './ssh.js';
+
 export const SETTINGS_SCHEMA_VERSION = 1;
 
 export const ThemeSchema = z.enum(['light', 'dark', 'system']);
@@ -127,6 +129,17 @@ export const SettingsSchema = z.object({
     .object({
       ignoreGlobs: z.array(z.string()).default([]),
       trustProjectPiResources: z.boolean().default(false),
+    })
+    .prefault({}),
+  /** ADR-0047: SSH host book — non-sensitive metadata only. Passwords and key
+   * passphrases live in the OS keychain (SshVaultService), never here. */
+  ssh: z
+    .object({
+      hosts: z.array(SshHostRecordSchema).default([]),
+      /** Keepalive probe interval; 0 disables application-level keepalive. */
+      keepaliveSeconds: z.number().int().min(0).max(600).default(30),
+      /** Auto-reconnect the transport with exponential backoff on drops. */
+      autoReconnect: z.boolean().default(true),
     })
     .prefault({}),
 });

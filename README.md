@@ -153,6 +153,7 @@ Charter combines agent orchestration, a desktop IDE, controlled execution, live 
 - **Persistent real PTYs:** terminals survive surface changes and preserve command boundaries, output, exit status, duration, progress, and reruns.
 - **Quick Console:** press `Option+Space` for a persistent scratch or project terminal, then send selected output into the current Room.
 - **Clickable terminal paths:** command output can open a file, line, or local HTML page directly in Charter or the default browser.
+- **SSH Remotes:** save hosts in a built-in connection manager and open remote shells as normal terminal sessions in the rail. One host multiplexes as many sessions as you like from its card. Move files over SFTP in a dual-pane browser — local and remote side by side, multi-select, drag between panes — with every transfer tracked (progress, speed, cancel, retry) in a global transfer center; and set up local port forwards (with single-hop jump-host support) right from the host. Passwords and key passphrases are kept in the OS keychain, host keys are verified on first use, and `~/.ssh/config` imports in one click.
 - **Four coordinated skins:** Studio, Terminal, Archive, and Index change the complete interface language, not just one accent color.
 
 ### Preview, change control, and evidence

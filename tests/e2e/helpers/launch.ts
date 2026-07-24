@@ -74,6 +74,13 @@ export async function launchApp(
       ...options.env,
     },
   });
+  // Drain main-process stdio. The pipes are never consumed otherwise, so once
+  // the 64KB kernel buffer fills, every console.log in main BLOCKS the event
+  // loop — the app half-freezes mid-test (events stop broadcasting) and specs
+  // fail in ways that track total log volume, not the code under test.
+  app.process().stdout?.resume();
+  app.process().stderr?.resume();
+
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
 

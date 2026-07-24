@@ -19,6 +19,7 @@ const alias = Object.fromEntries(
     'document-service',
     'search-service',
     'git-service',
+    'ssh-service',
     'terminal-service',
     'change-service',
     'verification-service',
@@ -37,7 +38,7 @@ export const bundles = [
     sourcemap: true,
     target: 'node22',
     alias,
-    external: ['electron', 'node-pty', '@vscode/ripgrep'],
+    external: ['electron', 'node-pty', '@vscode/ripgrep', 'ssh2'],
     define: { 'process.env.NODE_ENV': '"production"' },
   },
   {

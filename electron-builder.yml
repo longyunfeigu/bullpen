@@ -16,6 +16,10 @@ files:
   - apps/agent-worker/dist/**
   - apps/desktop-renderer/dist/**
   - '!**/*.map'
+  # ADR-0047: ssh2's optional native accelerator is excluded so packaged apps
+  # always take ssh2's pure-JS fallback (no Electron ABI risk on any platform).
+  - '!node_modules/cpu-features/**'
+  - '!node_modules/nan/**'
 
 asarUnpack:
   - 'node_modules/node-pty/**'

@@ -15,6 +15,10 @@ export interface AppPaths {
   skillsDir: string;
   /** Project-memory scratch (ADR-0028) — external-memory delete backups live here. */
   memoryDir: string;
+  /** SSH host-key trust store (ADR-0047) — trusted-hosts.json lives here. */
+  sshDir: string;
+  /** Encrypted SSH passwords/passphrases (ADR-0047), isolated from provider secrets. */
+  sshSecretsDir: string;
 }
 
 export function createAppPaths(userData: string): AppPaths {
@@ -29,6 +33,8 @@ export function createAppPaths(userData: string): AppPaths {
     logsDir: join(userData, 'logs'),
     skillsDir: join(userData, 'skills'),
     memoryDir: join(userData, 'memory'),
+    sshDir: join(userData, 'ssh'),
+    sshSecretsDir: join(userData, 'secrets', 'ssh'),
   };
   for (const dir of [
     paths.secretsDir,
@@ -38,6 +44,8 @@ export function createAppPaths(userData: string): AppPaths {
     paths.logsDir,
     paths.skillsDir,
     paths.memoryDir,
+    paths.sshDir,
+    paths.sshSecretsDir,
   ]) {
     mkdirSync(dir, { recursive: true });
   }

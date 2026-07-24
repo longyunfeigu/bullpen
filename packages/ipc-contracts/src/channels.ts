@@ -59,6 +59,16 @@ import {
   ArtifactFeedbackRefsSchema,
   ArtifactOpenResultSchema,
 } from './artifacts.js';
+import {
+  SftpEntrySchema,
+  SshConfigCandidateSchema,
+  SshForwardInputSchema,
+  SshForwardRecordSchema,
+  SshForwardStateSchema,
+  SshHostDtoSchema,
+  SshHostInputSchema,
+  SshSecretKindSchema,
+} from './ssh.js';
 
 const SettingsStateSchema = z.object({
   effective: SettingsSchema,
@@ -94,6 +104,15 @@ export const TERMINAL_EXTERNAL_OPEN_EXTENSIONS = [
   '.pdf',
 ] as const;
 
+/** ADR-0047: present when the session runs on a remote SSH host; pid is -1. */
+const TerminalRemoteInfoSchema = z.object({
+  hostId: z.string(),
+  hostLabel: z.string(),
+  username: z.string(),
+  host: z.string(),
+  port: z.number().int(),
+});
+
 const TerminalInfoSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -106,6 +125,7 @@ const TerminalInfoSchema = z.object({
   contextLabel: z.string(),
   contextTaskId: z.string().nullable(),
   launch: z.enum(['shell', 'claude', 'codex']),
+  remote: TerminalRemoteInfoSchema.optional(),
 });
 
 export interface ChannelDef<Req extends z.ZodType = z.ZodType, Res extends z.ZodType = z.ZodType> {
@@ -480,7 +500,7 @@ export const CHANNELS = {
   ),
   'terminal.create': ch(
     'terminal.create',
-    3,
+    4,
     z
       .object({
         /** Legacy task shortcut; still host-resolved and never an absolute renderer path. */
@@ -495,6 +515,12 @@ export const CHANNELS = {
          * ignored for plain shell launches.
          */
         initialPrompt: z.string().min(1).max(20000).optional(),
+        /** ADR-0047: run this session on a saved SSH host instead of a local
+         * PTY. Orthogonal to launch — claude/codex start on the remote. */
+        target: z
+          .object({ kind: z.literal('ssh'), hostId: z.string().min(1) })
+          .strict()
+          .optional(),
       })
       .strict(),
     TerminalInfoSchema,
@@ -532,7 +558,7 @@ export const CHANNELS = {
   ),
   'terminal.list': ch(
     'terminal.list',
-    3,
+    4,
     z.object({}).strict(),
     z.object({
       items: z.array(TerminalInfoSchema),
@@ -540,6 +566,242 @@ export const CHANNELS = {
        * current VT screen instead of replaying lossy ANSI-stripped text. */
       recentData: z.record(z.string(), z.string().max(128 * 1024)),
     }),
+  ),
+  // ADR-0047: SSH Remotes. Secrets flow renderer→main only — no response below
+  // carries secret material, and setSecret/respondAuth requests are the only
+  // channels allowed to contain it (asserted by the security test matrix).
+  'ssh.listHosts': ch(
+    'ssh.listHosts',
+    1,
+    z.object({}).strict(),
+    z.object({ hosts: z.array(SshHostDtoSchema) }),
+  ),
+  'ssh.saveHost': ch(
+    'ssh.saveHost',
+    1,
+    z.object({ host: SshHostInputSchema }).strict(),
+    z.object({ host: SshHostDtoSchema }),
+  ),
+  'ssh.deleteHost': ch(
+    'ssh.deleteHost',
+    1,
+    z.object({ hostId: z.string().min(1) }).strict(),
+    z.object({ deleted: z.boolean() }),
+  ),
+  'ssh.connect': ch(
+    'ssh.connect',
+    1,
+    z.object({ hostId: z.string().min(1) }).strict(),
+    /** Kick-off ack; progress and outcome stream via the ssh.state event. */
+    z.object({ started: z.boolean() }),
+  ),
+  'ssh.disconnect': ch(
+    'ssh.disconnect',
+    1,
+    z.object({ hostId: z.string().min(1) }).strict(),
+    z.object({ disconnected: z.boolean() }),
+  ),
+  'ssh.setSecret': ch(
+    'ssh.setSecret',
+    1,
+    z
+      .object({
+        hostId: z.string().min(1),
+        kind: SshSecretKindSchema,
+        value: z.string().min(1).max(4000),
+      })
+      .strict(),
+    z.object({ saved: z.boolean() }),
+  ),
+  'ssh.clearSecret': ch(
+    'ssh.clearSecret',
+    1,
+    z.object({ hostId: z.string().min(1), kind: SshSecretKindSchema }).strict(),
+    z.object({ cleared: z.boolean() }),
+  ),
+  'ssh.importConfig': ch(
+    'ssh.importConfig',
+    1,
+    z.object({}).strict(),
+    /** Read-only preview of ~/.ssh/config; nothing is written until applyImport. */
+    z.object({ candidates: z.array(SshConfigCandidateSchema) }),
+  ),
+  'ssh.applyImport': ch(
+    'ssh.applyImport',
+    1,
+    z.object({ hosts: z.array(SshHostInputSchema).max(200) }).strict(),
+    z.object({ added: z.number().int().min(0) }),
+  ),
+  'ssh.probeCli': ch(
+    'ssh.probeCli',
+    1,
+    z.object({ hostId: z.string().min(1), cli: z.enum(['claude', 'codex']) }).strict(),
+    z.object({ found: z.boolean(), path: z.string().nullable() }),
+  ),
+  'ssh.respondHostKey': ch(
+    'ssh.respondHostKey',
+    1,
+    z
+      .object({
+        requestId: z.string().min(1),
+        accept: z.boolean(),
+        remember: z.boolean(),
+      })
+      .strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  'ssh.respondAuth': ch(
+    'ssh.respondAuth',
+    1,
+    z
+      .object({
+        requestId: z.string().min(1),
+        /** User-typed prompt answers (may include a password) — renderer→main only. */
+        answers: z.array(z.string().max(4000)).max(8),
+        /** Persist a password/passphrase answer to the keychain vault. */
+        save: z.boolean().default(false),
+      })
+      .strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  // PR2: SFTP file panel. Directory listings and progress numbers only — file
+  // bytes stream fs↔sftp inside the main process and never cross IPC.
+  'ssh.sftpHome': ch(
+    'ssh.sftpHome',
+    1,
+    z.object({ hostId: z.string().min(1) }).strict(),
+    z.object({ path: z.string() }),
+  ),
+  'ssh.sftpList': ch(
+    'ssh.sftpList',
+    1,
+    z.object({ hostId: z.string().min(1), path: z.string().min(1).max(4096) }).strict(),
+    /** path echoes the server-resolved absolute directory. */
+    z.object({ path: z.string(), entries: z.array(SftpEntrySchema).max(5000) }),
+  ),
+  'ssh.sftpMkdir': ch(
+    'ssh.sftpMkdir',
+    1,
+    z.object({ hostId: z.string().min(1), path: z.string().min(1).max(4096) }).strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  'ssh.sftpRename': ch(
+    'ssh.sftpRename',
+    1,
+    z
+      .object({
+        hostId: z.string().min(1),
+        from: z.string().min(1).max(4096),
+        to: z.string().min(1).max(4096),
+      })
+      .strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  'ssh.sftpDelete': ch(
+    'ssh.sftpDelete',
+    1,
+    z
+      .object({
+        hostId: z.string().min(1),
+        path: z.string().min(1).max(4096),
+        /** 'dir' deletes recursively (bounded); confirmation happens in the UI. */
+        type: z.enum(['file', 'dir']),
+      })
+      .strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  'ssh.sftpUpload': ch(
+    'ssh.sftpUpload',
+    1,
+    z
+      .object({
+        hostId: z.string().min(1),
+        remoteDir: z.string().min(1).max(4096),
+        /** Absolute local file paths from the OS drop (preload pathForFile). */
+        localPaths: z.array(z.string().min(1).max(4096)).min(1).max(100),
+      })
+      .strict(),
+    /** One transfer per file; progress streams via ssh.sftpProgress. */
+    z.object({ transferIds: z.array(z.string()).max(100) }),
+  ),
+  'ssh.sftpDownload': ch(
+    'ssh.sftpDownload',
+    2,
+    z
+      .object({
+        hostId: z.string().min(1),
+        remotePath: z.string().min(1).max(4096),
+        name: z.string().min(1).max(1024),
+        /** v2: download straight into this local directory (dual-pane target);
+         * name collisions are uniquified. Omitted = OS save dialog. */
+        localDir: z.string().min(1).max(4096).optional(),
+      })
+      .strict(),
+    /** transferId null = user dismissed the save dialog. */
+    z.object({ transferId: z.string().nullable() }),
+  ),
+  'ssh.sftpCancel': ch(
+    'ssh.sftpCancel',
+    1,
+    z.object({ transferId: z.string().min(1) }).strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  /** Re-run a finished/failed transfer with its original endpoints (the main
+   * process keeps them; they never crossed IPC). Null = unknown/still running. */
+  'ssh.sftpRetry': ch(
+    'ssh.sftpRetry',
+    1,
+    z.object({ transferId: z.string().min(1) }).strict(),
+    z.object({ transferId: z.string().nullable() }),
+  ),
+  // Dual-pane Files panel: local side. Metadata listings only — file bytes
+  // never cross IPC (transfers stream fs↔sftp inside the main process).
+  'ssh.localHome': ch('ssh.localHome', 1, z.object({}).strict(), z.object({ path: z.string() })),
+  'ssh.localList': ch(
+    'ssh.localList',
+    1,
+    z.object({ path: z.string().min(1).max(4096) }).strict(),
+    /** path echoes the resolved absolute directory. */
+    z.object({ path: z.string(), entries: z.array(SftpEntrySchema).max(5000) }),
+  ),
+  /** Panel closed — release the SFTP channel so the connection can idle out. */
+  'ssh.sftpClose': ch(
+    'ssh.sftpClose',
+    1,
+    z.object({ hostId: z.string().min(1) }).strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  // PR3: local port forwards.
+  'ssh.saveForward': ch(
+    'ssh.saveForward',
+    1,
+    z.object({ hostId: z.string().min(1), forward: SshForwardInputSchema }).strict(),
+    z.object({ forward: SshForwardRecordSchema }),
+  ),
+  'ssh.deleteForward': ch(
+    'ssh.deleteForward',
+    1,
+    z.object({ hostId: z.string().min(1), forwardId: z.string().min(1) }).strict(),
+    z.object({ deleted: z.boolean() }),
+  ),
+  'ssh.startForward': ch(
+    'ssh.startForward',
+    1,
+    z.object({ hostId: z.string().min(1), forwardId: z.string().min(1) }).strict(),
+    /** Resolves once the local listener is bound (errors reject the call). */
+    z.object({ ok: z.boolean() }),
+  ),
+  'ssh.stopForward': ch(
+    'ssh.stopForward',
+    1,
+    z.object({ hostId: z.string().min(1), forwardId: z.string().min(1) }).strict(),
+    z.object({ ok: z.boolean() }),
+  ),
+  'ssh.listForwardStates': ch(
+    'ssh.listForwardStates',
+    1,
+    z.object({}).strict(),
+    z.object({ states: z.array(SshForwardStateSchema).max(500) }),
   ),
   'orchestration.getState': ch(
     'orchestration.getState',

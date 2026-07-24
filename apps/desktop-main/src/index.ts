@@ -34,6 +34,12 @@ import { WorkspaceHost } from './services/workspace-host.js';
 import { registerWorkspaceHandlers } from './ipc/workspace-handlers.js';
 import { M4Services, registerM4Handlers } from './ipc/m4-handlers.js';
 import { registerTerminalOpenHandlers } from './ipc/terminal-open-handlers.js';
+import { SshService } from './services/ssh-service.js';
+import { SshVaultService } from './services/ssh-vault-service.js';
+import { SshSftpService } from './services/ssh-sftp-service.js';
+import { SshForwardService } from './services/ssh-forward-service.js';
+import { LocalFilesService } from './services/local-files-service.js';
+import { registerSshHandlers } from './ipc/ssh-handlers.js';
 import { M5Services, registerM5Handlers } from './ipc/m5-handlers.js';
 import { registerM6Handlers } from './ipc/m6-handlers.js';
 import { registerM7Handlers } from './ipc/m7-handlers.js';
@@ -115,6 +121,9 @@ let skillStoreRef: SkillStore | null = null;
 let screenshotWatcherRef: ScreenshotWatcher | null = null;
 let clipboardWatcherRef: ClipboardScreenshotWatcher | null = null;
 let terminalControlRef: TerminalControlService | null = null;
+let sshServiceRef: SshService | null = null;
+let sshSftpRef: SshSftpService | null = null;
+let sshForwardsRef: SshForwardService | null = null;
 let terminalIdentitiesRef: TerminalControlIdentityRegistry | null = null;
 let ctlServerRef: CtlServer | null = null;
 export function getM5(): M5Services | null {
@@ -556,6 +565,50 @@ if (!gotLock) {
         recordEvent: (taskId, type, payload) => taskServiceRef?.recordEvent(taskId, type, payload),
       });
       registerOrchestrationHandlers(terminalControlRef, logger.child('ipc'));
+      // ADR-0047: SSH Remotes. Vault (keychain) + connection manager + host
+      // book; wired into terminal.create as a remote launcher below.
+      const sshVault = new SshVaultService(paths.sshSecretsDir, logger.child('ssh-vault'));
+      sshServiceRef = new SshService(settings, sshVault, m4.terminals, logger.child('ssh'), {
+        sshDir: paths.sshDir,
+        // E2E points config/known_hosts at fixtures (mirrors PI_IDE_SKILLS_HOME).
+        ...(process.env.PI_IDE_SSH_CONFIG ? { sshConfigPath: process.env.PI_IDE_SSH_CONFIG } : {}),
+        ...(process.env.PI_IDE_SSH_KNOWN_HOSTS
+          ? { knownHostsPath: process.env.PI_IDE_SSH_KNOWN_HOSTS }
+          : {}),
+      });
+      // PR2/PR3: SFTP panel + local port forwards on the same transports.
+      sshSftpRef = new SshSftpService({
+        openSession: (hostId) => sshServiceRef!.openSftpSession(hostId),
+        chooseSavePath: async (suggestedName) => {
+          const win = mainWindow ?? BrowserWindow.getFocusedWindow();
+          const options = {
+            defaultPath: join(app.getPath('downloads'), suggestedName),
+          };
+          const res = win
+            ? await dialog.showSaveDialog(win, options)
+            : await dialog.showSaveDialog(options);
+          return res.canceled || !res.filePath ? null : res.filePath;
+        },
+        emit: (state) => broadcast('ssh.sftpProgress', state),
+        logger: logger.child('ssh-sftp'),
+      });
+      sshForwardsRef = new SshForwardService({
+        getForward: (hostId, forwardId) => sshServiceRef!.getForward(hostId, forwardId),
+        openStream: (hostId, dstHost, dstPort) =>
+          sshServiceRef!.openForwardStream(hostId, dstHost, dstPort),
+        connect: (hostId) => sshServiceRef!.connect(hostId),
+        hold: (hostId, token) => sshServiceRef!.holdConnection(hostId, token),
+        release: (hostId, token) => sshServiceRef!.releaseConnection(hostId, token),
+        emit: (state) => broadcast('ssh.forwardState', state),
+        logger: logger.child('ssh-fwd'),
+      });
+      registerSshHandlers(
+        sshServiceRef,
+        sshSftpRef,
+        sshForwardsRef,
+        new LocalFilesService(),
+        logger.child('ipc'),
+      );
       registerM4Handlers(
         m4,
         workspaceHost,
@@ -622,6 +675,9 @@ if (!gotLock) {
           },
         },
         externalLaunchIntents,
+        {
+          create: (options) => sshServiceRef!.createRemoteTerminal(options),
+        },
       );
       registerTerminalOpenHandlers(m4, workspaceHost, logger.child('ipc'));
       m5Ref = new M5Services(workspaceHost, state, paths, logger.child('m5'));
@@ -1010,6 +1066,9 @@ if (!gotLock) {
     externalSessionsRef?.dispose(); // before terminals: sessions close into review while the DB is open
     taskServiceRef?.shutdown();
     terminalControlRef?.dispose();
+    sshForwardsRef?.stopAll(); // listeners first, so nothing re-dials mid-quit
+    sshSftpRef?.closeAll();
+    sshServiceRef?.disconnectAll(); // close ssh transports before their PTY-equivalents
     m4Ref?.dispose();
     terminalIdentitiesRef?.clear();
     const disposal = Promise.all([

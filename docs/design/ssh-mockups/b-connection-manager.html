@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>方案 B · 内置 SSH 连接管理器 — Charter mockup</title>
+<style>
+  :root{
+    --bg-app:#171614; --bg-titlebar:#1d1c19; --bg-sidebar:#1d1c19; --bg-editor:#1a1917;
+    --bg-input:#24231f; --bg-card:#21201c; --bg-chip:#292823; --bg-hover:#292823;
+    --bg-active:#31302a; --bg-selected:#33322b; --bg-overlay:rgba(0,0,0,.55);
+    --border:#33312b; --border-soft:#2a2924; --border-strong:#4a473f;
+    --fg:#e8e6e0; --fg-muted:#a29d92; --fg-faint:#6e6a61; --fg-inverse:#1a1917;
+    --accent:#e8e6e0; --accent-fg:#1a1917;
+    --danger:#e06b62; --warning:#d29a3a; --success:#46b477; --info:#6ca1e8; --info-bg:#182739;
+    --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,'PingFang SC','Microsoft YaHei',sans-serif;
+    --font-display:'Charter','Iowan Old Style',Georgia,serif;
+    --font-mono:Menlo,Monaco,'SF Mono',Consolas,monospace;
+    --radius-card:14px; --radius-chip:9px;
+    --shadow-card:0 1px 2px rgba(0,0,0,.3),0 14px 40px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#100f0e;color:var(--fg);font-family:var(--font-ui);font-size:13px;padding-bottom:80px}
+  a{color:var(--info);text-decoration:none}
+
+  .mock-banner{background:#141312;border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:50}
+  .mock-banner .tag{font-size:11px;letter-spacing:.12em;color:var(--warning);border:1px solid var(--warning);border-radius:6px;padding:2px 8px}
+  .mock-banner h1{font-size:16px;font-weight:600}
+  .mock-banner p{color:var(--fg-muted);font-size:12.5px}
+  .mock-banner nav{margin-left:auto;display:flex;gap:14px;font-size:12.5px}
+  .mock-banner nav .cur{color:var(--fg);border-bottom:1px solid var(--fg)}
+
+  main{max-width:1280px;margin:0 auto;padding:0 24px}
+  section.screen{margin-top:44px}
+  section.screen>h2{font-size:14px;color:var(--fg-muted);font-weight:600;margin-bottom:6px}
+  section.screen>p.cap{font-size:12.5px;color:var(--fg-faint);margin-bottom:14px}
+
+  .app-window{width:100%;max-width:1200px;height:700px;margin:0 auto;background:var(--bg-app);
+    border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow-card);
+    display:flex;flex-direction:column;position:relative}
+
+  .titlebar{height:38px;background:var(--bg-titlebar);border-bottom:1px solid var(--border-soft);
+    display:flex;align-items:center;padding:0 14px;gap:14px;flex:none}
+  .traffic{display:flex;gap:7px}
+  .traffic i{width:11px;height:11px;border-radius:50%;background:#3a3833}
+  .tb-title{font-family:var(--font-display);font-size:14px}
+  .tb-chips{display:flex;gap:4px;margin-left:10px}
+  .tb-chip{padding:3px 11px;border-radius:var(--radius-chip);color:var(--fg-muted);font-size:12px}
+  .tb-chip.active{background:var(--bg-chip);color:var(--fg)}
+  .tb-chip.new{outline:1px dashed var(--border-strong)}
+  .tb-right{margin-left:auto;display:flex;gap:14px;color:var(--fg-faint);font-size:11.5px;align-items:center}
+  kbd{font-family:var(--font-mono);font-size:10px;background:var(--bg-chip);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--fg-muted)}
+
+  .wb-main{flex:1;display:flex;min-height:0}
+  .rail{width:252px;flex:none;background:var(--bg-sidebar);border-right:1px solid var(--border-soft);
+    padding:10px 8px;display:flex;flex-direction:column;gap:2px}
+  .rail-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-faint);padding:10px 8px 3px}
+  .rail-row{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;color:var(--fg-muted)}
+  .rail-row.active{background:var(--bg-selected);color:var(--fg)}
+  .rail-row .ic{width:15px;text-align:center;color:var(--fg-faint);font-size:12px;flex:none}
+  .rail-row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
+  .dot{width:6px;height:6px;border-radius:50%;flex:none}
+  .dot.g{background:var(--success);box-shadow:0 0 6px rgba(70,180,119,.7)}
+  .dot.grey{background:var(--fg-faint)}
+
+  .surface{flex:1;display:flex;flex-direction:column;background:var(--bg-editor);min-width:0}
+
+  .statusbar{height:24px;background:var(--bg-titlebar);border-top:1px solid var(--border-soft);
+    display:flex;align-items:center;padding:0 12px;font-size:11px;color:var(--fg-faint);gap:16px;flex:none}
+  .statusbar .sp{flex:1}
+
+  /* remotes 页 */
+  .remotes-page{flex:1;padding:26px 30px;overflow:hidden}
+  .remotes-head{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+  .remotes-head h2{font-family:var(--font-display);font-size:19px;font-weight:600}
+  .remotes-head .search{flex:1;max-width:340px;background:var(--bg-input);border:1px solid var(--border);
+    border-radius:9px;padding:6px 12px;color:var(--fg-faint);font-size:12.5px}
+  .btn{font-size:12px;padding:5px 13px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--fg-muted)}
+  .btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+  .btn.sm{font-size:11.5px;padding:3px 10px}
+  .btn.danger{color:var(--danger);border-color:#4a2c29}
+
+  .host-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .host-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-card);padding:15px 16px 13px;display:flex;flex-direction:column;gap:8px}
+  .host-card .row1{display:flex;align-items:center;gap:8px}
+  .host-card .hn{font-size:13.5px;font-weight:600;flex:1}
+  .host-card .addr{font-family:var(--font-mono);font-size:11.5px;color:var(--fg-muted)}
+  .badges{display:flex;gap:6px;flex-wrap:wrap}
+  .badge{font-size:10px;padding:1px 7px;border-radius:6px;background:var(--bg-chip);color:var(--fg-muted)}
+  .badge.prod{color:var(--danger)}
+  .badge.stg{color:var(--warning)}
+  .badge.key{color:var(--info)}
+  .host-card .foot{display:flex;align-items:center;gap:8px;margin-top:4px;border-top:1px solid var(--border-soft);padding-top:10px}
+  .host-card .last{font-size:11px;color:var(--fg-faint);flex:1}
+  .host-card.import{border-style:dashed;align-items:center;justify-content:center;color:var(--fg-faint);text-align:center;gap:6px}
+  .host-card.import b{color:var(--fg-muted);font-weight:600;font-size:12.5px}
+  .host-card.import span{font-size:11.5px;line-height:1.5}
+
+  /* 已连接视图 */
+  .sess-head{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border-soft)}
+  .sess-head .t{font-size:13px;font-weight:600}
+  .sess-head .sub{color:var(--fg-faint);font-size:11.5px}
+  .sess-head .sp{flex:1}
+  .split{flex:1;display:flex;min-height:0}
+  .term{flex:1;background:#181818;color:#cccccc;font-family:var(--font-mono);font-size:12.5px;
+    line-height:1.6;padding:14px 16px;white-space:pre-wrap;min-width:0}
+  .term .p{color:#46b477}.term .h{color:#6ca1e8}.term .d{color:#8a877e}
+  .term .cursor{display:inline-block;width:7px;height:14px;background:#cccccc;vertical-align:text-bottom}
+
+  .sftp{width:300px;flex:none;border-left:1px solid var(--border-soft);background:var(--bg-panel,#1d1c19);display:flex;flex-direction:column}
+  .sftp-head{padding:9px 12px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:8px}
+  .sftp-head .t{font-size:11px;letter-spacing:.08em;color:var(--fg-faint);text-transform:uppercase;flex:1}
+  .sftp-path{font-family:var(--font-mono);font-size:11px;color:var(--fg-muted);padding:8px 12px;border-bottom:1px solid var(--border-soft);background:var(--bg-input)}
+  .sftp-list{flex:1;padding:6px;overflow:hidden}
+  .f-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;color:var(--fg-muted);font-size:12px}
+  .f-row.sel{background:var(--bg-selected);color:var(--fg)}
+  .f-row .fi{width:14px;text-align:center;color:var(--fg-faint);font-size:11px}
+  .f-row .fn{flex:1;font-family:var(--font-mono);font-size:11.5px}
+  .f-row .fs{font-size:10.5px;color:var(--fg-faint)}
+  .sftp-drop{margin:8px;border:1px dashed var(--border-strong);border-radius:10px;padding:12px;text-align:center;color:var(--fg-faint);font-size:11px;line-height:1.5}
+
+  .fwd-bar{border-top:1px solid var(--border-soft);background:var(--bg-titlebar);padding:6px 14px;display:flex;align-items:center;gap:10px}
+  .fwd-bar .lbl{font-size:10.5px;letter-spacing:.08em;color:var(--fg-faint);text-transform:uppercase}
+  .fwd-chip{display:flex;align-items:center;gap:7px;background:var(--bg-chip);border:1px solid var(--border);
+    border-radius:8px;padding:3px 10px;font-family:var(--font-mono);font-size:11px;color:var(--fg-muted)}
+  .fwd-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--success)}
+  .fwd-add{font-size:11.5px;color:var(--fg-faint);border:1px dashed var(--border-strong);border-radius:8px;padding:3px 10px}
+
+  .notes{margin-top:48px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-card);padding:22px 26px}
+  .notes h2{font-size:14px;margin-bottom:14px}
+  .notes .cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px}
+  .notes h4{font-size:12px;margin-bottom:8px;color:var(--fg-muted)}
+  .notes ul{list-style:none}
+  .notes li{font-size:12.5px;color:var(--fg-muted);padding:3px 0 3px 16px;position:relative;line-height:1.5}
+  .notes li::before{content:'·';position:absolute;left:4px;color:var(--fg-faint)}
+  .notes li.good::before{content:'+';color:var(--success)}
+  .notes li.bad::before{content:'−';color:var(--danger)}
+  .notes p.sum{font-size:12.5px;color:var(--fg-muted);line-height:1.6;margin-top:14px;border-top:1px solid var(--border-soft);padding-top:12px}
+  .notes code{font-family:var(--font-mono);font-size:11px;background:var(--bg-chip);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<header class="mock-banner">
+  <span class="tag">MOCKUP</span>
+  <h1>方案 B · 内置 SSH 连接管理器</h1>
+  <p>ssh2 协议栈 + 主机库（keychain 凭据）+ SFTP 面板 + 端口转发 —— Termius / electerm 式完整产品</p>
+  <nav>
+    <a href="a-ssh-terminal-type.html">方案 A · 终端类型</a>
+    <a class="cur" href="b-connection-manager.html">方案 B · 连接管理器</a>
+    <a href="c-remote-workspace.html">方案 C · 远程工作区</a>
+  </nav>
+</header>
+
+<main>
+
+<!-- ============ 屏 1：Remotes 主机库 ============ -->
+<section class="screen">
+  <h2>屏 1 · 新增「Remotes」一级入口：主机库</h2>
+  <p class="cap">titlebar 的 Sessions / Skills 旁新增 Remotes chip。主机卡片存 settings.json（非敏感字段），密码 / passphrase 走 OS keychain（safeStorage）。支持从 ~/.ssh/config 一键导入。</p>
+  <div class="app-window">
+    <div class="titlebar">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <span class="tb-title">Charter</span>
+      <div class="tb-chips"><span class="tb-chip">Sessions</span><span class="tb-chip">Skills</span><span class="tb-chip active new">Remotes</span></div>
+      <div class="tb-right"><span>Quick Console <kbd>⌥Space</kbd></span><span>Commands <kbd>⌘⇧P</kbd></span></div>
+    </div>
+    <div class="wb-main">
+      <div class="rail">
+        <div class="rail-group">charter</div>
+        <div class="rail-row"><span class="ic">◆</span><span class="nm">Fix replay race condition</span><span class="dot g"></span></div>
+        <div class="rail-row"><span class="ic">❯</span><span class="nm">Terminal — zsh</span><span class="dot grey"></span></div>
+        <div class="rail-group">history</div>
+        <div class="rail-row"><span class="ic">◇</span><span class="nm">Refresh product overview</span></div>
+      </div>
+      <div class="surface">
+        <div class="remotes-page">
+          <div class="remotes-head">
+            <h2>Remotes</h2>
+            <div class="search">Search hosts, tags…</div>
+            <button class="btn">Keys</button>
+            <button class="btn primary">New Host</button>
+          </div>
+          <div class="host-grid">
+            <div class="host-card">
+              <div class="row1"><span class="dot g"></span><span class="hn">prod-api-01</span><span class="badge prod">prod</span></div>
+              <div class="addr">edy@10.0.4.21:22</div>
+              <div class="badges"><span class="badge key">key · id_ed25519</span><span class="badge">agent-forward</span></div>
+              <div class="foot"><span class="last">connected now · 2 sessions</span><button class="btn sm">Connect</button><button class="btn sm">SFTP</button></div>
+            </div>
+            <div class="host-card">
+              <div class="row1"><span class="dot grey"></span><span class="hn">staging-db</span><span class="badge stg">staging</span></div>
+              <div class="addr">root@10.1.0.8:22</div>
+              <div class="badges"><span class="badge">jump: bastion</span><span class="badge key">password · keychain</span></div>
+              <div class="foot"><span class="last">last: 2h ago</span><button class="btn sm">Connect</button><button class="btn sm">SFTP</button></div>
+            </div>
+            <div class="host-card">
+              <div class="row1"><span class="dot grey"></span><span class="hn">gpu-box</span></div>
+              <div class="addr">edy@192.168.31.60:22</div>
+              <div class="badges"><span class="badge key">key · id_rsa</span><span class="badge">forwards ×2</span></div>
+              <div class="foot"><span class="last">last: yesterday</span><button class="btn sm">Connect</button><button class="btn sm">SFTP</button></div>
+            </div>
+            <div class="host-card import">
+              <b>Import from ~/.ssh/config</b>
+              <span>Detected 12 hosts · keys and ProxyJump<br>are mapped automatically</span>
+              <button class="btn sm">Import…</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>v1.0.0-beta.2</span><span class="sp"></span><span>3 hosts · 1 connected</span></div>
+  </div>
+</section>
+
+<!-- ============ 屏 2：终端 + SFTP + 端口转发 ============ -->
+<section class="screen">
+  <h2>屏 2 · 已连接：终端 + SFTP 侧栏 + 端口转发条</h2>
+  <p class="cap">同一条 ssh2 连接上多路复用：左侧 shell channel（仍是 xterm 渲染），右侧 SFTP channel 文件面板（拖拽上传/下载），底部本地⇆远程端口转发管理。断线自动重连并恢复转发。</p>
+  <div class="app-window">
+    <div class="titlebar">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <span class="tb-title">Charter</span>
+      <div class="tb-chips"><span class="tb-chip active">Sessions</span><span class="tb-chip">Skills</span><span class="tb-chip">Remotes</span></div>
+      <div class="tb-right"><span>Quick Console <kbd>⌥Space</kbd></span><span>Commands <kbd>⌘⇧P</kbd></span></div>
+    </div>
+    <div class="wb-main">
+      <div class="rail">
+        <div class="rail-group">charter</div>
+        <div class="rail-row"><span class="ic">◆</span><span class="nm">Fix replay race condition</span><span class="dot g"></span></div>
+        <div class="rail-group">prod-api-01</div>
+        <div class="rail-row active"><span class="ic">⌁</span><span class="nm">SSH — edy@prod-api-01</span><span class="dot g"></span></div>
+        <div class="rail-row"><span class="ic">⇅</span><span class="nm">SFTP — /srv/api</span><span class="dot g"></span></div>
+        <div class="rail-group">history</div>
+        <div class="rail-row"><span class="ic">◇</span><span class="nm">Refresh product overview</span></div>
+      </div>
+      <div class="surface">
+        <div class="sess-head">
+          <span class="t">prod-api-01</span>
+          <span class="sub">edy@10.0.4.21 · key id_ed25519 · 42 ms</span>
+          <span class="sp"></span>
+          <button class="btn sm">New channel</button>
+          <button class="btn sm danger">Disconnect</button>
+        </div>
+        <div class="split">
+          <div class="term"><span class="p">edy@prod-api-01</span>:<span class="h">/srv/api</span>$ ls -lt releases | head -4
+<span class="d">total 40
+drwxr-xr-x 12 deploy deploy 4096 Jul 23 09:58 v2.14.1
+drwxr-xr-x 12 deploy deploy 4096 Jul 21 18:22 v2.14.0
+drwxr-xr-x 12 deploy deploy 4096 Jul 18 11:07 v2.13.9</span>
+<span class="p">edy@prod-api-01</span>:<span class="h">/srv/api</span>$ <span class="cursor"></span></div>
+          <div class="sftp">
+            <div class="sftp-head"><span class="t">SFTP</span><button class="btn sm">Upload</button><button class="btn sm">Download</button></div>
+            <div class="sftp-path">/srv/api/releases/v2.14.1</div>
+            <div class="sftp-list">
+              <div class="f-row"><span class="fi">▸</span><span class="fn">config/</span></div>
+              <div class="f-row"><span class="fi">▸</span><span class="fn">public/</span></div>
+              <div class="f-row sel"><span class="fi">·</span><span class="fn">app.js</span><span class="fs">1.2 MB</span></div>
+              <div class="f-row"><span class="fi">·</span><span class="fn">package.json</span><span class="fs">2.1 KB</span></div>
+              <div class="f-row"><span class="fi">·</span><span class="fn">ecosystem.yaml</span><span class="fs">844 B</span></div>
+              <div class="f-row"><span class="fi">·</span><span class="fn">.env.production</span><span class="fs">312 B</span></div>
+              <div class="sftp-drop">Drop files here to upload<br>⌥-drag to download to Desktop</div>
+            </div>
+          </div>
+        </div>
+        <div class="fwd-bar">
+          <span class="lbl">Forwards</span>
+          <span class="fwd-chip"><span class="dot"></span>L 8080 → 127.0.0.1:8080</span>
+          <span class="fwd-chip"><span class="dot"></span>L 5433 → db:5432</span>
+          <span class="fwd-add">＋ Forward</span>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>v1.0.0-beta.2</span><span class="sp"></span><span>⌁ prod-api-01 · 2 channels · 2 forwards</span></div>
+  </div>
+</section>
+
+<!-- ============ 说明 ============ -->
+<section class="notes">
+  <h2>方案 B 要点</h2>
+  <div class="cols">
+    <div>
+      <h4>本质</h4>
+      <ul>
+        <li>引入纯 JS 的 <code>ssh2</code> 库做协议层，一条连接多路复用 shell / SFTP / 转发</li>
+        <li>「主机」成为产品一等实体：主机库、标签、密钥引用、最近连接</li>
+        <li>非敏感配置进 settings.json 新 <code>ssh</code> section；密码 / passphrase 进 keychain（SecretService）</li>
+      </ul>
+    </div>
+    <div>
+      <h4>优点 / 缺点</h4>
+      <ul>
+        <li class="good">SFTP 拖拽传文件、端口转发 UI、断线重连 —— 覆盖运维日常全场景</li>
+        <li class="good">可编程控制连接（未来 agent 可复用同一条连接跑远程命令）</li>
+        <li class="good">electerm / SimpleShell 均验证过 node-pty + ssh2 混合架构可行</li>
+        <li class="bad">ssh_config 兼容要自己做（ProxyJump/agent 是重灾区）</li>
+        <li class="bad">凭据管理引入新安全面，需要 ADR + 安全测试</li>
+        <li class="bad">工程量 1–2 周量级，UI 面积大</li>
+      </ul>
+    </div>
+    <div>
+      <h4>适合谁</h4>
+      <ul>
+        <li>管理多台服务器、常传文件、常开隧道的用户</li>
+        <li>希望摆脱 Termius 订阅、把 SSH 工作流收进 Charter 的用户</li>
+        <li>可分期：先主机库+终端（复用 A 的 spawn），SFTP / 转发二期</li>
+      </ul>
+    </div>
+  </div>
+  <p class="sum">Termius / electerm / Tabby 的路线。注意与产品安全架构的契合点：ssh2 连接由主进程持有，renderer 只经由既有版本化 IPC 通道收发数据，SFTP 写本地文件走既有 Tool Gateway 式白名单目录——不新开任意文件读写口子。</p>
+</section>
+
+</main>
+</body>
+</html>

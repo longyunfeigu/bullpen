@@ -32,6 +32,8 @@ export default defineConfig({
       'apps/desktop-main/src/services/skill-store.test.ts',
       'apps/desktop-main/src/services/permission-store.test.ts',
       'apps/desktop-main/src/ipc/context-attachment-handlers.test.ts',
+      // ADR-0047: SSH secret boundary (renderer→main only) + vault disk isolation
+      'apps/desktop-main/src/services/ssh-vault-service.test.ts',
     ],
   },
 });

@@ -1,0 +1,233 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TerminalManager, type ProcessTableEntry, type TerminalBackend } from './index.js';
+
+/**
+ * A non-pty backend used to prove the manager is transport agnostic (ADR-0047).
+ * `emit`/`exit` let a test drive the backend the way a real SSH channel would.
+ */
+class FakeBackend implements TerminalBackend {
+  readonly writes: string[] = [];
+  readonly resizes: Array<[number, number]> = [];
+  killed = 0;
+  private dataCb: ((data: string) => void) | null = null;
+  private exitCb: ((exitCode: number) => void) | null = null;
+
+  constructor(private readonly title: string | null = null) {}
+
+  write(data: string): void {
+    this.writes.push(data);
+  }
+
+  resize(cols: number, rows: number): void {
+    this.resizes.push([cols, rows]);
+  }
+
+  kill(): void {
+    this.killed += 1;
+  }
+
+  hasChildren(): boolean {
+    return false;
+  }
+
+  processTitle(): string | null {
+    return this.title;
+  }
+
+  onData(cb: (data: string) => void): void {
+    this.dataCb = cb;
+  }
+
+  onExit(cb: (exitCode: number) => void): void {
+    this.exitCb = cb;
+  }
+
+  /** Simulate the remote channel producing output. */
+  emit(data: string): void {
+    this.dataCb?.(data);
+  }
+
+  /** Simulate the remote channel closing. */
+  exit(code: number): void {
+    this.exitCb?.(code);
+  }
+}
+
+describe('TerminalManager.adoptBackend (SSH remote sessions, ADR-0047)', () => {
+  let manager: TerminalManager | null = null;
+
+  afterEach(() => {
+    manager?.dispose();
+    manager = null;
+  });
+
+  it('adopts a backend and fans out data, exit and list membership like a local pty', () => {
+    const output: Array<{ id: string; data: string }> = [];
+    const exits: Array<{ id: string; exitCode: number }> = [];
+    manager = new TerminalManager(
+      (id, data) => output.push({ id, data }),
+      (id, exitCode) => exits.push({ id, exitCode }),
+      { agentPollMs: 0 },
+    );
+    const dataEvents: Array<{ id: string; data: string }> = [];
+    const exitEvents: Array<{ id: string; exitCode: number }> = [];
+    manager.onDataEvent((e) => dataEvents.push(e));
+    manager.onExitEvent((e) => exitEvents.push(e));
+
+    const backend = new FakeBackend();
+    const info = manager.adoptBackend(backend, {
+      title: 'web (remote)',
+      cwd: '/srv/app',
+      projectName: 'app',
+      remote: {
+        hostId: 'h1',
+        hostLabel: 'prod',
+        username: 'deploy',
+        host: 'example.com',
+        port: 22,
+      },
+    });
+
+    // No local process behind a remote session.
+    expect(info.pid).toBe(-1);
+    expect(info.remote).toEqual({
+      hostId: 'h1',
+      hostLabel: 'prod',
+      username: 'deploy',
+      host: 'example.com',
+      port: 22,
+    });
+    expect(manager.list().map((t) => t.id)).toEqual([info.id]);
+
+    // Input reaches the backend, not a pty.
+    manager.write(info.id, 'ls\r', 'user');
+    expect(backend.writes).toEqual(['ls\r']);
+
+    // Output fans out to onData, the data-event mirror and the replay buffer.
+    backend.emit('file1\n');
+    expect(output).toEqual([{ id: info.id, data: 'file1\n' }]);
+    expect(dataEvents).toEqual([{ id: info.id, data: 'file1\n' }]);
+    expect(manager.recentData(info.id)).toBe('file1\n');
+
+    // Exit fans out to onExit and the exit-event mirror, then drops the session.
+    backend.exit(0);
+    expect(exits).toEqual([{ id: info.id, exitCode: 0 }]);
+    expect(exitEvents).toEqual([{ id: info.id, exitCode: 0 }]);
+    expect(manager.list()).toEqual([]);
+  });
+
+  it('delegates kill to the backend once and forgets the session', () => {
+    manager = new TerminalManager(
+      () => {},
+      () => {},
+      { agentPollMs: 0 },
+    );
+    const backend = new FakeBackend();
+    const info = manager.adoptBackend(backend, { title: 't', cwd: '/x', projectName: 'x' });
+
+    manager.kill(info.id);
+    expect(backend.killed).toBe(1);
+    expect(manager.list()).toEqual([]);
+
+    // Killing an already-removed session is a no-op (does not re-hit the backend).
+    manager.kill(info.id);
+    expect(backend.killed).toBe(1);
+  });
+
+  it('delegates resize to the backend within the usual bounds guard', () => {
+    manager = new TerminalManager(
+      () => {},
+      () => {},
+      { agentPollMs: 0 },
+    );
+    const backend = new FakeBackend();
+    const info = manager.adoptBackend(backend, { title: 't', cwd: '/x', projectName: 'x' });
+
+    manager.resize(info.id, 120, 40);
+    manager.resize(info.id, 1, 0); // out of bounds — ignored before reaching the backend
+    expect(backend.resizes).toEqual([[120, 40]]);
+  });
+
+  it('reports no running children for a non-pty backend', () => {
+    manager = new TerminalManager(
+      () => {},
+      () => {},
+      { agentPollMs: 0 },
+    );
+    const backend = new FakeBackend();
+    const info = manager.adoptBackend(backend, { title: 't', cwd: '/x', projectName: 'x' });
+    expect(manager.hasRunningChildren(info.id)).toBe(false);
+  });
+
+  it('notifies a known-agent backend immediately and never downgrades it on poll', async () => {
+    manager = new TerminalManager(
+      () => {},
+      () => {},
+      { agentPollMs: 0 },
+    );
+    const events: Array<{ id: string; agent: string | null }> = [];
+    manager.onAgentState((e) => events.push({ id: e.id, agent: e.agent }));
+
+    // Even a title that would match is irrelevant: knownAgent gates polling.
+    const backend = new FakeBackend('claude');
+    const info = manager.adoptBackend(backend, {
+      title: 'claude (remote)',
+      cwd: '/x',
+      projectName: 'x',
+      knownAgent: 'claude',
+      launch: 'claude',
+    });
+
+    expect(manager.agentFor(info.id)).toBe('claude');
+    await vi.waitFor(() => expect(events).toEqual([{ id: info.id, agent: 'claude' }]));
+
+    manager.pollOnce();
+    manager.pollOnce();
+    expect(events).toEqual([{ id: info.id, agent: 'claude' }]);
+    expect(manager.agentFor(info.id)).toBe('claude');
+  });
+
+  it('skips agent detection entirely for a backend with no local process', () => {
+    const readProcessTable = vi.fn((): ProcessTableEntry[] => []);
+    manager = new TerminalManager(
+      () => {},
+      () => {},
+      { agentPollMs: 0, readProcessTable },
+    );
+    const events: Array<{ id: string; agent: string | null }> = [];
+    manager.onAgentState((e) => events.push({ id: e.id, agent: e.agent }));
+
+    manager.adoptBackend(new FakeBackend(null), { title: 'remote', cwd: '/x', projectName: 'x' });
+    manager.pollOnce();
+    manager.pollOnce();
+
+    // processTitle() === null short-circuits before any title read or ps scan.
+    expect(readProcessTable).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
+  it('injectData surfaces synthetic output through the data fan-out only', () => {
+    const output: Array<{ id: string; data: string }> = [];
+    manager = new TerminalManager(
+      (id, data) => output.push({ id, data }),
+      () => {},
+      { agentPollMs: 0 },
+    );
+    const dataEvents: Array<{ id: string; data: string }> = [];
+    manager.onDataEvent((e) => dataEvents.push(e));
+
+    const backend = new FakeBackend();
+    const info = manager.adoptBackend(backend, { title: 't', cwd: '/x', projectName: 'x' });
+
+    manager.injectData(info.id, '\r\n[connection lost]\r\n');
+    expect(output).toEqual([{ id: info.id, data: '\r\n[connection lost]\r\n' }]);
+    expect(dataEvents).toEqual([{ id: info.id, data: '\r\n[connection lost]\r\n' }]);
+    expect(manager.recentData(info.id)).toBe('\r\n[connection lost]\r\n');
+    // Display-only: it must not travel the backend's write/input path.
+    expect(backend.writes).toEqual([]);
+
+    // Unknown id is a no-op.
+    manager.injectData('term_missing', 'ignored');
+    expect(output).toHaveLength(1);
+  });
+});

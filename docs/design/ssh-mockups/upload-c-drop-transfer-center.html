@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SFTP 上传 · 方案 C · 环境拖放 + 全局传输中心</title>
+    <style>
+      :root,
+      [data-theme='light'] {
+        color-scheme: light;
+        --bg-app: #eceae5;
+        --bg-editor: #fbfaf7;
+        --bg-panel: #f6f5f1;
+        --bg-input: #ffffff;
+        --bg-card: #ffffff;
+        --bg-chip: #edeae3;
+        --bg-hover: #e8e5de;
+        --border: #e5e1d8;
+        --border-soft: #edeae3;
+        --border-strong: #cfcabf;
+        --fg: #201e1a;
+        --fg-muted: #6e6a61;
+        --fg-faint: #a39e94;
+        --accent: #1b1a16;
+        --accent-fg: #ffffff;
+        --danger: #c4453d;
+        --warning: #b06f10;
+        --success: #2f9e63;
+        --info: #3f7bd9;
+        --shadow-card: 0 1px 2px rgba(30, 26, 18, 0.05), 0 14px 40px rgba(30, 26, 18, 0.08);
+        --shadow-menu: 0 30px 90px rgba(30, 26, 18, 0.22);
+        --radius-card: 14px;
+      }
+      [data-theme='dark'] {
+        color-scheme: dark;
+        --bg-app: #171614;
+        --bg-editor: #1a1917;
+        --bg-panel: #1d1c19;
+        --bg-input: #232120;
+        --bg-card: #211f1c;
+        --bg-chip: #2a2825;
+        --bg-hover: #2b2926;
+        --border: #322e29;
+        --border-soft: #26231f;
+        --border-strong: #443f39;
+        --fg: #ece9e3;
+        --fg-muted: #9c968b;
+        --fg-faint: #6b665d;
+        --accent: #ede9e2;
+        --accent-fg: #1b1a16;
+        --danger: #e0655c;
+        --warning: #d3922e;
+        --success: #4fb37f;
+        --info: #6c9fe6;
+        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 50px rgba(0, 0, 0, 0.5);
+        --shadow-menu: 0 30px 90px rgba(0, 0, 0, 0.6);
+        --radius-card: 14px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+        background: var(--bg-app);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'PingFang SC', sans-serif;
+        --font-mono: Menlo, Monaco, 'SF Mono', Consolas, monospace;
+        --font-display: 'Charter', 'Iowan Old Style', Georgia, serif;
+      }
+      .chrome {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 22px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-panel);
+      }
+      .chrome .badge {
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--accent-fg);
+        font-size: 11px;
+        font-weight: 650;
+      }
+      .chrome h1 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 19px;
+        font-weight: 650;
+      }
+      .chrome p {
+        margin: 0;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .chrome .sp {
+        margin-left: auto;
+      }
+      .toggle {
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg-muted);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .stage {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        padding: 26px;
+      }
+      .surface {
+        position: relative;
+        width: min(880px, 100%);
+        background: var(--bg-editor);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 15px 18px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .back {
+        padding: 5px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg-muted);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .title strong {
+        display: block;
+        font-family: var(--font-display);
+        font-size: 16px;
+      }
+      .title span {
+        color: var(--fg-faint);
+        font: 11px var(--font-mono);
+      }
+      .tools {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 11px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-card);
+        color: var(--fg);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .btn:hover {
+        background: var(--bg-hover);
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--accent-fg);
+        border-color: var(--accent);
+        font-weight: 600;
+      }
+      .crumbs {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 9px 18px;
+        border-bottom: 1px solid var(--border-soft);
+        font: 11.5px var(--font-mono);
+        color: var(--fg-muted);
+        background: var(--bg-panel);
+      }
+      .crumbs b {
+        color: var(--fg);
+      }
+      .crumbs .sep {
+        color: var(--fg-faint);
+      }
+      .rows {
+        min-height: 340px;
+        max-height: 340px;
+        overflow: auto;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 24px minmax(0, 1fr) 80px 80px;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 18px;
+        font-size: 12.5px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .row:hover {
+        background: var(--bg-hover);
+      }
+      .row.dir .ic {
+        color: var(--info);
+      }
+      .row .nm {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row .sz,
+      .row .mt {
+        text-align: right;
+        color: var(--fg-faint);
+        font: 10.5px var(--font-mono);
+      }
+      /* footer hint */
+      .foot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 18px;
+        border-top: 1px solid var(--border-soft);
+        color: var(--fg-faint);
+        font-size: 11px;
+      }
+      .foot code {
+        font: 10.5px var(--font-mono);
+        color: var(--fg-muted);
+      }
+
+      /* dragover overlay (shown to illustrate the drop affordance) */
+      .dropzone {
+        position: absolute;
+        inset: 46px 0 0;
+        z-index: 6;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 6px;
+        border-radius: 0 0 var(--radius-card) var(--radius-card);
+        background: color-mix(in srgb, var(--bg-editor) 82%, transparent);
+        border: 2px dashed var(--accent);
+        text-align: center;
+      }
+      .dropzone .ring {
+        width: 56px;
+        height: 56px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        font-size: 24px;
+      }
+      .dropzone strong {
+        font-family: var(--font-display);
+        font-size: 17px;
+      }
+      .dropzone span {
+        color: var(--fg-muted);
+        font: 11.5px var(--font-mono);
+      }
+
+      /* ---- global Transfer Center pill + popover ---- */
+      .tc-anchor {
+        position: absolute;
+        right: 16px;
+        bottom: 16px;
+        z-index: 8;
+      }
+      .pill {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 8px 14px 8px 9px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--bg-card);
+        box-shadow: var(--shadow-card);
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .pill .ringp {
+        --p: 68;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: conic-gradient(
+          var(--accent) calc(var(--p) * 1%),
+          var(--bg-chip) 0
+        );
+        display: grid;
+        place-items: center;
+      }
+      .pill .ringp::after {
+        content: '↑';
+        width: 18px;
+        height: 18px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--bg-card);
+        font-size: 11px;
+        color: var(--accent);
+      }
+      .pill b {
+        font-weight: 650;
+      }
+      .pill .rate {
+        color: var(--fg-faint);
+        font: 10.5px var(--font-mono);
+      }
+      /* expanded popover */
+      .popover {
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 10px);
+        width: 340px;
+        border: 1px solid var(--border);
+        border-radius: 13px;
+        background: var(--bg-card);
+        box-shadow: var(--shadow-menu);
+        overflow: hidden;
+      }
+      .pop-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .pop-head h3 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 14px;
+      }
+      .pop-head .clear {
+        margin-left: auto;
+        color: var(--info);
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .pop-list {
+        max-height: 280px;
+        overflow: auto;
+        padding: 6px;
+      }
+      .tgroup {
+        padding: 5px 8px 2px;
+        color: var(--fg-faint);
+        font: 10px var(--font-mono);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .t {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) 20px;
+        align-items: center;
+        gap: 9px;
+        padding: 7px 8px;
+        border-radius: 9px;
+      }
+      .t:hover {
+        background: var(--bg-hover);
+      }
+      .t .d {
+        font: 12px var(--font-mono);
+        color: var(--fg-muted);
+      }
+      .t.up .d {
+        color: var(--success);
+      }
+      .t .m {
+        min-width: 0;
+      }
+      .t .m .r1 {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .t .m .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      .t .m .meta {
+        color: var(--fg-faint);
+        font: 10px var(--font-mono);
+        white-space: nowrap;
+      }
+      .t .m .meta.ok {
+        color: var(--success);
+      }
+      .t .m .meta.err {
+        color: var(--danger);
+      }
+      .bar {
+        height: 4px;
+        margin-top: 4px;
+        border-radius: 3px;
+        background: var(--bg-chip);
+        overflow: hidden;
+      }
+      .bar > i {
+        display: block;
+        height: 100%;
+        border-radius: 3px;
+        background: var(--accent);
+      }
+      .t .act {
+        width: 20px;
+        height: 20px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 5px;
+        background: transparent;
+        color: var(--fg-faint);
+        cursor: pointer;
+      }
+      .t .act:hover {
+        color: var(--fg);
+        background: var(--bg-chip);
+      }
+      .note {
+        width: min(880px, 100%);
+        margin: 16px auto 0;
+        color: var(--fg-muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .note b {
+        color: var(--fg);
+      }
+      .kbd {
+        padding: 1px 6px;
+        border: 1px solid var(--border-strong);
+        border-radius: 5px;
+        background: var(--bg-card);
+        font: 10.5px var(--font-mono);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chrome">
+      <span class="badge">方案 C</span>
+      <div>
+        <h1>环境拖放 + 全局传输中心 &nbsp;·&nbsp; Drop &amp; Transfer Center</h1>
+        <p>整个列表即拖放靶,一拖即传;所有传输(跨主机)收进右下角常驻胶囊,可随时展开查看。浏览器下载栏 / Dropbox 范式。</p>
+      </div>
+      <div class="sp"></div>
+      <button class="toggle" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme==='dark'?'light':'dark'">明 / 暗</button>
+    </div>
+
+    <div class="stage">
+      <div>
+        <div class="surface">
+          <div class="head">
+            <button class="back">← Hosts</button>
+            <div class="title">
+              <strong>prod-api-01</strong>
+              <span>root@10.0.3.46 · Files</span>
+            </div>
+            <div class="tools">
+              <button class="btn">＋ New Folder</button>
+              <button class="btn primary">↑ Upload…</button>
+            </div>
+          </div>
+          <div class="crumbs">/<span class="sep"></span>home<span class="sep">/</span>deploy<span class="sep">/</span><b>releases</b></div>
+
+          <div class="rows">
+            <div class="row dir"><span class="ic">📁</span><span class="nm">v0.9.3</span><span class="sz">—</span><span class="mt">昨天</span></div>
+            <div class="row dir"><span class="ic">📁</span><span class="nm">current</span><span class="sz">—</span><span class="mt">3d</span></div>
+            <div class="row"><span class="ic">📄</span><span class="nm">manifest.json</span><span class="sz">1.1 KB</span><span class="mt">14:02</span></div>
+            <div class="row"><span class="ic">📄</span><span class="nm">deploy.log</span><span class="sz">44 KB</span><span class="mt">14:05</span></div>
+          </div>
+
+          <div class="foot">⤓ 把文件拖到此处即上传到 <code>/home/deploy/releases</code></div>
+
+          <!-- illustrative dragover overlay -->
+          <div class="dropzone">
+            <div class="ring">⤓</div>
+            <strong>松开即上传</strong>
+            <span>到 /home/deploy/releases</span>
+          </div>
+
+          <!-- global transfer center -->
+          <div class="tc-anchor">
+            <div class="popover">
+              <div class="pop-head">
+                <h3>传输中心</h3>
+                <span class="clear">清除已完成</span>
+              </div>
+              <div class="pop-list">
+                <div class="tgroup">prod-api-01 · root@10.0.3.46</div>
+                <div class="t up">
+                  <span class="d">↑</span>
+                  <div class="m">
+                    <div class="r1"><span class="nm">charter-1.0.0.dmg</span><span class="meta">8.2 MB/s · 4s</span></div>
+                    <div class="bar"><i style="width: 61%"></i></div>
+                  </div>
+                  <button class="act">✕</button>
+                </div>
+                <div class="t up">
+                  <span class="d">↑</span>
+                  <div class="m">
+                    <div class="r1"><span class="nm">release-notes.md</span><span class="meta ok">完成</span></div>
+                  </div>
+                  <button class="act">↺</button>
+                </div>
+                <div class="tgroup">staging-2 · deploy@10.0.3.51</div>
+                <div class="t">
+                  <span class="d">↓</span>
+                  <div class="m">
+                    <div class="r1"><span class="nm">nginx.access.log</span><span class="meta err">失败 · 连接中断</span></div>
+                  </div>
+                  <button class="act">↺</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="pill">
+              <span class="ringp"></span>
+              <b>2 项传输中</b>
+              <span class="rate">· 68% · 8.2 MB/s</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="note">
+          <b>心智模型:被动、环境化、后台化。</b>列表本身就是拖放靶,拖进来 <span class="kbd">一拖即传</span> 到当前目录 —— 或点
+          <span class="kbd">↑ Upload…</span> 选文件。所有传输(含其他主机、下载)统一收进右下角常驻「传输中心」胶囊,展开可跨主机查看进度、重试、取消,切换主机也不丢。
+          <br />
+          <b>优点:</b>摩擦最低、最接近现有实现的自然演进;传输升级为一等、跨主机、常驻的对象,取代现在拥挤的内嵌传输条。
+          <b>代价:</b>控制最隐式(冲突默认自动改名或临时弹确认);全局 HUD 需要一处跨面板的传输状态中枢。
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

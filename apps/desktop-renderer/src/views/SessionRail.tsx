@@ -270,13 +270,22 @@ function TerminalSessionRow({
         <span className="sr-session-copy">
           <span className="sr-session-title">
             <span className={`sr-live-dot ${item.exited ? '' : 'live'}`} />
+            {item.remote ? (
+              <span className="sr-remote-mark" title={`SSH · ${item.contextLabel}`}>
+                ⌁
+              </span>
+            ) : null}
             <b>{sessionName}</b>
             {item.exited ? <span className="sr-state neutral">Ended</span> : null}
           </span>
           <span className="sr-session-detail">
             <span>
               {showProject ? `${item.projectName} · ` : ''}
-              {item.exited ? 'Process ended · session retained' : 'Terminal session is live'}
+              {item.exited
+                ? 'Process ended · session retained'
+                : item.remote
+                  ? 'Remote SSH session is live'
+                  : 'Terminal session is live'}
             </span>
           </span>
         </span>
@@ -394,8 +403,10 @@ export function SessionRail(): React.JSX.Element {
         (terminal) =>
           !terminal.hidden &&
           !taskByTerminal[terminal.id] &&
+          // ADR-0047: remote SSH sessions always earn a rail row (grouped by host).
           (terminal.launch === 'claude' ||
             terminal.launch === 'codex' ||
+            Boolean(terminal.remote) ||
             workerTerminalIds.has(terminal.id)),
       )
       .map((terminal) => ({
@@ -405,6 +416,7 @@ export function SessionRail(): React.JSX.Element {
         launch: terminal.launch,
         projectName: terminal.projectName,
         exited: terminal.exited,
+        remote: Boolean(terminal.remote),
       }));
     const base = [...terminalEntries.toReversed(), ...taskEntries];
     const workerTaskIds = new Set(

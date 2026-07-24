@@ -14,20 +14,13 @@ import {
   type SkillAgent,
   type SkillGroup,
 } from './skills-model.js';
-import { lastUsedLabel, preambleTotalTokens } from './skills-insight.js';
+import { lastUsedLabel } from './skills-insight.js';
 import '../styles/skills-main.css';
 
 type DrawerScope = 'all' | SkillAgent | 'custom';
 
 function agentCopies(group: SkillGroup, agent: SkillAgent): SkillDto[] {
   return group.copies.filter((copy) => skillAgent(copy) === agent);
-}
-
-function groupDecision(group: SkillGroup): { label: string; tone: string } {
-  if (group.protectedOnly) return { label: 'Built-in · keep', tone: 'system' };
-  if (group.review) return { label: 'Review', tone: 'review' };
-  if (group.uses > 0) return { label: 'Keep', tone: 'keep' };
-  return { label: 'No evidence', tone: 'quiet' };
 }
 
 function SkillDrawer(props: { group: SkillGroup; onClose(): void }): React.JSX.Element {
@@ -270,7 +263,6 @@ export function SkillsView(): React.JSX.Element {
   const usage = useSkillsStore((state) => state.usage);
   const usageWindowDays = useSkillsStore((state) => state.usageWindowDays);
   const usageLoaded = useSkillsStore((state) => state.usageLoaded);
-  const overhead = useSkillsStore((state) => state.preambleOverheadTokens);
   const loaded = useSkillsStore((state) => state.loaded);
   const init = useSkillsStore((state) => state.init);
   const rescan = useSkillsStore((state) => state.rescan);
@@ -294,7 +286,6 @@ export function SkillsView(): React.JSX.Element {
     [agent, groups, query, sort, status],
   );
   const now = Date.now();
-  const contextTokens = preambleTotalTokens(usage, overhead);
   const disabledCopies = skills.filter((copy) => !isAgentEnabled(copy)).length;
 
   return (
@@ -412,7 +403,6 @@ export function SkillsView(): React.JSX.Element {
           >
             <option value="uses">Most used</option>
             <option value="recent">Recently used</option>
-            <option value="context">Highest Charter context</option>
             <option value="name">Name</option>
           </select>
         </div>
@@ -424,7 +414,6 @@ export function SkillsView(): React.JSX.Element {
               <col className="skills-col-installed" />
               <col className="skills-col-usage" />
               <col className="skills-col-last" />
-              <col className="skills-col-context" />
               <col className="skills-col-manage" />
             </colgroup>
             <thead>
@@ -435,15 +424,11 @@ export function SkillsView(): React.JSX.Element {
                   Usage by Agent<span>Charter · Claude · Codex</span>
                 </th>
                 <th className="numeric">Last used</th>
-                <th className="numeric">
-                  Charter context<span>per turn</span>
-                </th>
-                <th>Decision</th>
+                <th aria-label="Manage" />
               </tr>
             </thead>
             <tbody>
               {visible.map((group) => {
-                const decision = groupDecision(group);
                 const last = lastUsedLabel(group.lastUsedAt, now);
                 const allOff = group.copies.every((copy) => !isAgentEnabled(copy));
                 return (
@@ -498,13 +483,8 @@ export function SkillsView(): React.JSX.Element {
                       <strong>{last ?? 'never'}</strong>
                       <small>{group.uses} total</small>
                     </td>
-                    <td className="skills-metric">
-                      <strong>≈{group.preambleTokens.toLocaleString()}</strong>
-                      <small>{contextTokens.toLocaleString()} total</small>
-                    </td>
                     <td>
                       <div className="skills-decision">
-                        <span className={decision.tone}>{decision.label}</span>
                         <button
                           data-testid={`skills-manage-${group.key}`}
                           onClick={() => setSelectedKey(group.key)}

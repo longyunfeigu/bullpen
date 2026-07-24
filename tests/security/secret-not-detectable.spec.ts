@@ -102,19 +102,30 @@ test.describe('M11-02 secret not detectable (four paths)', () => {
       const bundlePath = (bundle as { path: string }).path;
       expect(readFileSync(bundlePath, 'utf8').includes(SENTINEL)).toBe(false);
 
-      // ── on-disk secret store: ciphertext only, meta carries just the hint ──
+      // ── on-disk secret store: ciphertext only, meta carries at most a hint ──
+      // Walks recursively: provider keys live in secrets/, SSH credentials in
+      // secrets/ssh/ (ADR-0047) — same invariant for both.
       const secretsDir = join(userDataDir, 'secrets');
-      if (existsSync(secretsDir)) {
-        for (const f of readdirSync(secretsDir)) {
-          const raw = readFileSync(join(secretsDir, f));
-          expect(raw.includes(SENTINEL)).toBe(false); // .bin encrypted, .meta hint-only
-          if (f.endsWith('.meta')) {
-            const meta = JSON.parse(raw.toString('utf8')) as { hint: string };
-            expect(meta.hint).not.toContain(SENTINEL);
-            expect(meta.hint.length).toBeLessThan(12); // '…' + last 4
+      const walkSecrets = (dir: string): void => {
+        for (const e of readdirSync(dir, { withFileTypes: true })) {
+          const full = join(dir, e.name);
+          if (e.isDirectory()) {
+            walkSecrets(full);
+            continue;
+          }
+          const raw = readFileSync(full);
+          expect(raw.includes(SENTINEL)).toBe(false); // .bin encrypted, .meta plaintext-free
+          if (e.name.endsWith('.meta')) {
+            const meta = JSON.parse(raw.toString('utf8')) as { hint?: string };
+            // Provider metas keep a short display hint; SSH metas none at all.
+            if (meta.hint !== undefined) {
+              expect(meta.hint).not.toContain(SENTINEL);
+              expect(meta.hint.length).toBeLessThan(12); // '…' + last 4
+            }
           }
         }
-      }
+      };
+      if (existsSync(secretsDir)) walkSecrets(secretsDir);
     } finally {
       await app.close();
     }

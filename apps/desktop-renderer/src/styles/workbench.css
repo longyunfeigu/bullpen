@@ -850,6 +850,10 @@ html.xp-resizing * {
   background: var(--bg-card);
   text-align: left;
 }
+.terminal-type-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .terminal-type-option.selected {
   border-color: var(--warning);
   background: color-mix(in srgb, var(--warning) 8%, var(--bg-card));

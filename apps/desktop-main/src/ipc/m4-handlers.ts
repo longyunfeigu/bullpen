@@ -7,7 +7,7 @@ import {
   type Logger,
 } from '@pi-ide/foundation';
 import { SearchService } from '@pi-ide/search-service';
-import { TerminalManager } from '@pi-ide/terminal-service';
+import { TerminalManager, type TerminalInfo } from '@pi-ide/terminal-service';
 import {
   findPythonServer,
   PythonLspClient,
@@ -259,6 +259,12 @@ export class M4Services {
   }
 }
 
+/** ADR-0047: creates a terminal that runs on a remote SSH host. Injected so
+ * m4-handlers stays free of ssh2 while terminal.create keeps one code path. */
+export interface RemoteTerminalLauncher {
+  create(options: { hostId: string; launch: 'shell' | 'claude' | 'codex' }): Promise<TerminalInfo>;
+}
+
 export function registerM4Handlers(
   services: M4Services,
   host: WorkspaceHost,
@@ -267,6 +273,8 @@ export function registerM4Handlers(
   contextResolvers?: TerminalContextResolvers,
   /** ADR-0017 amendment: launch intents consumed by ExternalSessionService. */
   externalLaunches?: ExternalLaunchIntents,
+  /** ADR-0047: present once SshService is assembled; enables ssh targets. */
+  remoteTerminals?: RemoteTerminalLauncher,
 ): void {
   const resolveTerminalContext = async (
     requested:
@@ -354,7 +362,19 @@ export function registerM4Handlers(
         return { outcomes };
       },
 
-      'terminal.create': async ({ taskId, context, launch, initialPrompt }) => {
+      'terminal.create': async ({ taskId, context, launch, initialPrompt, target }) => {
+        // ADR-0047: a remote target runs on an SSH host — SshService owns the
+        // connect + shell channel + adoptBackend, and delivers the CLI launch.
+        if (target?.kind === 'ssh') {
+          if (!remoteTerminals) {
+            throw new ProductFailure(
+              productError('SSH_UNAVAILABLE', {
+                userMessage: 'SSH support is not available in this session.',
+              }),
+            );
+          }
+          return remoteTerminals.create({ hostId: target.hostId, launch });
+        }
         const requested =
           context ?? (taskId ? { kind: 'task' as const, taskId } : { kind: 'focused' as const });
         const resolved = await resolveTerminalContext(requested);
@@ -381,6 +401,15 @@ export function registerM4Handlers(
         return info;
       },
       'terminal.setContext': async ({ id, context }) => {
+        // ADR-0047: a remote session's cwd lives on the server; retargeting it
+        // to a local context is meaningless, so reject it explicitly.
+        if (services.terminals.list().find((t) => t.id === id)?.remote) {
+          throw new ProductFailure(
+            productError('TERMINAL_REMOTE_CONTEXT', {
+              userMessage: 'A remote SSH session cannot be moved to a local project context.',
+            }),
+          );
+        }
         if (services.terminals.hasRunningChildren(id)) {
           throw new ProductFailure(
             productError('TERMINAL_CONTEXT_BUSY', {

@@ -14,11 +14,50 @@ import {
   useTerminalStore,
 } from './TerminalPanel.js';
 import { OrchestrationWorkerBand } from './OrchestrationFleet.js';
+import { useSshStore } from '../store/sshStore.js';
 
 function launchName(launch: 'shell' | 'claude' | 'codex'): string {
   if (launch === 'claude') return 'Claude Code';
   if (launch === 'codex') return 'Codex';
   return 'Terminal';
+}
+
+/** ADR-0047: remote-session header controls (Reconnect / Disconnect). Reconnect
+ * starts a fresh session on the same host + launch; the exited tile stays as
+ * history because a dropped shell channel cannot be resurrected. */
+function RemoteControls({
+  hostId,
+  hostLabel,
+  launch,
+  exited,
+}: {
+  hostId: string;
+  hostLabel: string;
+  launch: 'shell' | 'claude' | 'codex';
+  exited: boolean;
+}): React.JSX.Element {
+  const reconnect = async (): Promise<void> => {
+    const id = await useTerminalStore
+      .getState()
+      .create({ target: { kind: 'ssh', hostId }, launch });
+    if (id) useAppStore.getState().openTerminalSession(id);
+  };
+  const disconnect = (): void => {
+    void useSshStore.getState().disconnect(hostId);
+  };
+  return (
+    <>
+      {exited ? (
+        <button data-testid="ssh-reconnect" onClick={() => void reconnect()}>
+          <Ic name="terminal" size={12} /> Reconnect
+        </button>
+      ) : (
+        <button data-testid="ssh-disconnect" onClick={disconnect} title={`Disconnect ${hostLabel}`}>
+          Disconnect
+        </button>
+      )}
+    </>
+  );
 }
 
 export function SessionTerminalView({ terminalId }: { terminalId: string }): React.JSX.Element {
@@ -64,9 +103,11 @@ export function SessionTerminalView({ terminalId }: { terminalId: string }): Rea
         <header className="stv-header">
           <ProviderMark provider="shell" size={19} />
           <div className="stv-title">
-            <strong>Terminal Session</strong>
+            <strong>{item.remote ? `SSH · ${item.remote.hostLabel}` : 'Terminal Session'}</strong>
             <span>
-              {item.contextLabel} · {item.projectName}
+              {item.remote
+                ? `${item.remote.username}@${item.remote.host}:${item.remote.port}`
+                : `${item.contextLabel} · ${item.projectName}`}
             </span>
           </div>
           <span className={`stv-status ${item.exited ? 'ended' : ''}`}>
@@ -74,6 +115,14 @@ export function SessionTerminalView({ terminalId }: { terminalId: string }): Rea
             {item.exited ? 'Ended' : 'Live'}
           </span>
           <span className="stv-spacer" />
+          {item.remote ? (
+            <RemoteControls
+              hostId={item.remote.hostId}
+              hostLabel={item.remote.hostLabel}
+              launch={item.launch}
+              exited={item.exited}
+            />
+          ) : null}
           <button onClick={app.closeTaskRoom}>
             <Ic name="chevron" size={12} /> Sessions
           </button>
@@ -111,7 +160,9 @@ export function SessionTerminalView({ terminalId }: { terminalId: string }): Rea
             {launchName(item.launch)} · {item.title}
           </strong>
           <span>
-            {item.contextLabel} · {item.projectName}
+            {item.remote
+              ? `${item.remote.username}@${item.remote.host} · ${launchName(item.launch)}`
+              : `${item.contextLabel} · ${item.projectName}`}
           </span>
         </div>
         <span className={`stv-status ${item.exited ? 'ended' : ''}`}>
@@ -119,6 +170,14 @@ export function SessionTerminalView({ terminalId }: { terminalId: string }): Rea
           {item.exited ? 'Ended' : 'Live'}
         </span>
         <span className="stv-spacer" />
+        {item.remote ? (
+          <RemoteControls
+            hostId={item.remote.hostId}
+            hostLabel={item.remote.hostLabel}
+            launch={item.launch}
+            exited={item.exited}
+          />
+        ) : null}
         <button className={toolOpen ? 'active' : ''} onClick={() => setToolOpen((open) => !open)}>
           <Ic name="layout" size={13} /> {toolOpen ? 'Hide tools' : 'Show tools'}
         </button>

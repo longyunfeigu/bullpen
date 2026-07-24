@@ -11,6 +11,8 @@ import { Ic } from '../views/home-icons.js';
 import { SessionRail } from '../views/SessionRail.js';
 import { SkillsView } from '../views/SkillsView.js';
 import { ScreenshotQuickCard } from '../views/ScreenshotQuickCard.js';
+import { SshPromptHost } from '../views/SshPromptHost.js';
+import { TransferCenter } from '../views/TransferCenter.js';
 import type { BottomTab, SideBarView } from '@pi-ide/ipc-contracts';
 import { useTaskStore } from '../store/taskStore.js';
 import { stepZoom, ZOOM_DEFAULT } from '../views/ui-zoom.js';
@@ -38,6 +40,12 @@ function useRegisterCoreCommands(): void {
         title: 'Open Diagnostics',
         category: 'Help',
         run: () => store.getState().setOverlay('diagnostics'),
+      },
+      {
+        id: 'view.remotes',
+        title: 'Open SSH Remotes',
+        category: 'View',
+        run: () => store.getState().openRemotes(),
       },
       {
         id: 'app.about',
@@ -230,6 +238,7 @@ export function Workbench(): React.JSX.Element {
   const pushToast = useAppStore((s) => s.pushToast);
   const appInfo = useAppStore((s) => s.appInfo);
   const railView = useAppStore((s) => s.railView);
+  const remotesOpen = useAppStore((s) => s.remotesOpen);
   const overlayDialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -298,6 +307,18 @@ export function Workbench(): React.JSX.Element {
         >
           <Ic name={railView === 'skills' ? 'puzzle' : 'home'} size={12} />{' '}
           {railView === 'skills' ? 'Skills' : 'Sessions'}
+        </button>
+        <button
+          className={`tb-chip ${remotesOpen ? 'active' : ''}`}
+          data-testid="surface-remotes"
+          title="SSH Remotes — manage hosts and open remote sessions"
+          onClick={() => {
+            const store = useAppStore.getState();
+            if (store.remotesOpen) store.closeRemotes();
+            else store.openRemotes();
+          }}
+        >
+          <Ic name="terminal" size={12} /> Remotes
         </button>
         {titleBarRegistry.center.map((C, i) => (
           <C key={i} />
@@ -473,6 +494,12 @@ export function Workbench(): React.JSX.Element {
 
       {/* ADR-0036: fresh OS screenshots pop the quick card here. */}
       <ScreenshotQuickCard />
+
+      {/* ADR-0047: SSH host-key / interactive-auth modals, from any surface. */}
+      <SshPromptHost />
+
+      {/* SFTP transfers stay visible across hosts and surfaces (fused mockup). */}
+      <TransferCenter />
 
       <div className={`toasts ${taskRoomTaskId ? 'with-task-room' : ''}`} aria-live="polite">
         {toasts.map((t) => (

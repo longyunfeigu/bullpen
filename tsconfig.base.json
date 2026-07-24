@@ -31,6 +31,7 @@
       "@pi-ide/document-service": ["./packages/document-service/src/index.ts"],
       "@pi-ide/search-service": ["./packages/search-service/src/index.ts"],
       "@pi-ide/git-service": ["./packages/git-service/src/index.ts"],
+      "@pi-ide/ssh-service": ["./packages/ssh-service/src/index.ts"],
       "@pi-ide/terminal-service": ["./packages/terminal-service/src/index.ts"],
       "@pi-ide/change-service": ["./packages/change-service/src/index.ts"],
       "@pi-ide/verification-service": ["./packages/verification-service/src/index.ts"],

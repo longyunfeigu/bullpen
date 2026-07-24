@@ -18,6 +18,7 @@ export default defineConfig({
       '@pi-ide/document-service': r('./packages/document-service/src/index.ts'),
       '@pi-ide/search-service': r('./packages/search-service/src/index.ts'),
       '@pi-ide/git-service': r('./packages/git-service/src/index.ts'),
+      '@pi-ide/ssh-service': r('./packages/ssh-service/src/index.ts'),
       '@pi-ide/terminal-service': r('./packages/terminal-service/src/index.ts'),
       '@pi-ide/change-service': r('./packages/change-service/src/index.ts'),
       '@pi-ide/verification-service': r('./packages/verification-service/src/index.ts'),

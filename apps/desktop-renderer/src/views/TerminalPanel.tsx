@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import type { RecentWorkspaceDto } from '@pi-ide/ipc-contracts';
+import type { RecentWorkspaceDto, SshHostDto } from '@pi-ide/ipc-contracts';
 import { Terminal, type IMarker, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -22,6 +22,7 @@ import {
 } from './terminal-file-links.js';
 import { useExternalStore } from '../store/externalStore.js';
 import { useTaskStore } from '../store/taskStore.js';
+import { useSshStore } from '../store/sshStore.js';
 import { useDraftStore } from '../store/draftStore.js';
 import { Ic } from './home-icons.js';
 import { useQuickConsoleStore } from '../store/quickConsoleStore.js';
@@ -35,6 +36,14 @@ import {
 } from './terminal-renderer.js';
 
 export type TerminalLaunch = 'shell' | 'claude' | 'codex';
+/** ADR-0047: identifies the remote SSH host a session runs on. */
+export interface TerminalRemote {
+  hostId: string;
+  hostLabel: string;
+  username: string;
+  host: string;
+  port: number;
+}
 export type TerminalWorkingContext =
   | { kind: 'focused' }
   | { kind: 'recent'; projectPath: string }
@@ -59,6 +68,8 @@ export interface TermInstance {
   contextLabel: string;
   contextTaskId: string | null;
   launch: TerminalLaunch;
+  /** ADR-0047: set when this session runs on a remote SSH host. */
+  remote?: TerminalRemote | null;
   quick: boolean;
   currentInput: string;
   lastCommand: string;
@@ -73,6 +84,8 @@ interface CreateTerminalRequest {
   launch?: TerminalLaunch;
   /** Composer first message — delivered by the host once the CLI TUI is ready. */
   initialPrompt?: string;
+  /** ADR-0047: run the session on a saved SSH host instead of a local PTY. */
+  target?: { kind: 'ssh'; hostId: string };
   quick?: boolean;
   reveal?: boolean;
 }
@@ -87,6 +100,7 @@ interface TerminalHostInfo {
   contextLabel: string;
   contextTaskId: string | null;
   launch: TerminalLaunch;
+  remote?: TerminalRemote | null;
 }
 
 interface TerminalStore {
@@ -934,6 +948,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       ...(options?.taskId ? { taskId: options.taskId } : {}),
       ...(options?.context ? { context: options.context } : {}),
       ...(options?.initialPrompt?.trim() ? { initialPrompt: options.initialPrompt } : {}),
+      ...(options?.target ? { target: options.target } : {}),
       launch,
     });
     if (!okOrToast(res)) return null;
@@ -1469,13 +1484,17 @@ function NewTerminalDialog({
 }): React.JSX.Element | null {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const tasks = useTaskStore((s) => s.tasks);
+  const sshHosts = useSshStore((s) => s.hosts);
   const [recent, setRecent] = useState<RecentWorkspaceDto[]>([]);
   const [launch, setLaunch] = useState<TerminalLaunch>('shell');
   const [selectedKey, setSelectedKey] = useState('focused');
+  /** null = local PTY; otherwise a saved SSH host id (ADR-0047). */
+  const [targetHostId, setTargetHostId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    useSshStore.getState().init();
     void rpcResult('workspace.recent', {}).then((result) => {
       if (result.ok) setRecent(result.data.items);
     });
@@ -1548,21 +1567,28 @@ function NewTerminalDialog({
   }, [contexts, selectedKey]);
 
   if (!open) return null;
+  const remoteHost = targetHostId ? sshHosts.find((h) => h.id === targetHostId) : null;
+  const isRemote = Boolean(remoteHost);
   const selected = contexts.find((context) => context.key === selectedKey) ?? contexts[0];
-  if (!selected) return null;
-  const sameTree = useTerminalStore
-    .getState()
-    .items.some(
-      (item) =>
-        (selected.request.kind === 'task' && item.cwd === selected.cwd) ||
-        (selected.projectPath !== null && item.projectPath === selected.projectPath),
-    );
+  if (!selected && !isRemote) return null;
+  const sameTree =
+    !isRemote &&
+    selected !== undefined &&
+    useTerminalStore
+      .getState()
+      .items.some(
+        (item) =>
+          (selected.request.kind === 'task' && item.cwd === selected.cwd) ||
+          (selected.projectPath !== null && item.projectPath === selected.projectPath),
+      );
   const launchLabel = launch === 'shell' ? 'Shell' : launch === 'claude' ? 'Claude Code' : 'Codex';
   const createSelected = async (): Promise<void> => {
     setCreating(true);
     try {
       const id = await useTerminalStore.getState().create({
-        context: selected.request,
+        ...(isRemote
+          ? { target: { kind: 'ssh' as const, hostId: targetHostId! } }
+          : { context: selected!.request }),
         launch,
         title: launch === 'shell' ? undefined : launchLabel,
       });
@@ -1594,6 +1620,39 @@ function NewTerminalDialog({
           </button>
         </header>
         <div className="terminal-create-body">
+          {sshHosts.length > 0 ? (
+            <section className="terminal-form-section">
+              <div className="terminal-form-label">
+                00 · Target <span>local machine or a saved SSH host</span>
+              </div>
+              <div className="terminal-type-grid">
+                <button
+                  className={`terminal-type-option ${targetHostId === null ? 'selected' : ''}`}
+                  data-testid="terminal-target-local"
+                  onClick={() => setTargetHostId(null)}
+                >
+                  <strong>Local</strong>
+                  <small>This machine</small>
+                </button>
+                {sshHosts.map((host) => (
+                  <button
+                    key={host.id}
+                    className={`terminal-type-option ${targetHostId === host.id ? 'selected' : ''}`}
+                    data-testid={`terminal-target-${host.id}`}
+                    onClick={() => {
+                      setTargetHostId(host.id);
+                      setLaunch('shell'); // remote sessions are shell-only for now
+                    }}
+                  >
+                    <strong>{host.label}</strong>
+                    <small>
+                      {host.username}@{host.host}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <section className="terminal-form-section">
             <div className="terminal-form-label">
               01 · Type <span>always a real shell + PTY</span>
@@ -1610,50 +1669,78 @@ function NewTerminalDialog({
                   key={value}
                   className={`terminal-type-option ${launch === value ? 'selected' : ''}`}
                   data-testid={`terminal-type-${value}`}
+                  disabled={isRemote && value !== 'shell'}
+                  title={
+                    isRemote && value !== 'shell'
+                      ? 'Remote sessions are shell-only for now'
+                      : undefined
+                  }
                   onClick={() => setLaunch(value)}
                 >
                   <strong>{title}</strong>
-                  <small>{detail}</small>
+                  <small>
+                    {isRemote && value !== 'shell' ? 'Not available on remotes' : detail}
+                  </small>
                 </button>
               ))}
             </div>
           </section>
-          <section className="terminal-form-section">
-            <div className="terminal-form-label">
-              02 · Working context <span>does not change Editor focus</span>
-            </div>
-            <div className="terminal-context-list">
-              {contexts.map((context) => (
-                <button
-                  key={context.key}
-                  className={`terminal-context-option ${selected.key === context.key ? 'selected' : ''}`}
-                  data-testid={`terminal-context-${context.request.kind}`}
-                  onClick={() => setSelectedKey(context.key)}
-                >
-                  <span className="terminal-radio" />
-                  <span className="terminal-context-copy">
-                    <strong>{context.title}</strong>
-                    <small>{compactTerminalPath(context.cwd)}</small>
-                  </span>
-                  <span className="terminal-context-kind">{context.kindLabel}</span>
-                </button>
-              ))}
-            </div>
-            <div className={`terminal-resolved ${sameTree && launch !== 'shell' ? 'warning' : ''}`}>
-              <span className="terminal-resolved-key">resolved cwd</span>
-              <span>{compactTerminalPath(selected.cwd)}</span>
-              <span className="terminal-resolved-key">owner</span>
-              <span>{selected.owner}</span>
-              <span className="terminal-resolved-key">editor focus</span>
-              <span>unchanged: {workspace?.displayName ?? 'no focused workspace'}</span>
-              <span className="terminal-resolved-key">accounting</span>
-              <span>
-                {sameTree && launch !== 'shell'
-                  ? 'Same working tree · changes may overlap'
-                  : selected.accounting}
-              </span>
-            </div>
-          </section>
+          {isRemote ? (
+            <section className="terminal-form-section">
+              <div className="terminal-form-label">
+                02 · Working context <span>resolved on the remote host</span>
+              </div>
+              <div className="terminal-resolved">
+                <span className="terminal-resolved-key">host</span>
+                <span>
+                  {remoteHost!.username}@{remoteHost!.host}:{remoteHost!.port}
+                </span>
+                <span className="terminal-resolved-key">working dir</span>
+                <span>{remoteHost!.remoteWorkdir ?? 'login default (~)'}</span>
+                <span className="terminal-resolved-key">accounting</span>
+                <span>remote session · no local project accounting</span>
+              </div>
+            </section>
+          ) : (
+            <section className="terminal-form-section">
+              <div className="terminal-form-label">
+                02 · Working context <span>does not change Editor focus</span>
+              </div>
+              <div className="terminal-context-list">
+                {contexts.map((context) => (
+                  <button
+                    key={context.key}
+                    className={`terminal-context-option ${selected!.key === context.key ? 'selected' : ''}`}
+                    data-testid={`terminal-context-${context.request.kind}`}
+                    onClick={() => setSelectedKey(context.key)}
+                  >
+                    <span className="terminal-radio" />
+                    <span className="terminal-context-copy">
+                      <strong>{context.title}</strong>
+                      <small>{compactTerminalPath(context.cwd)}</small>
+                    </span>
+                    <span className="terminal-context-kind">{context.kindLabel}</span>
+                  </button>
+                ))}
+              </div>
+              <div
+                className={`terminal-resolved ${sameTree && launch !== 'shell' ? 'warning' : ''}`}
+              >
+                <span className="terminal-resolved-key">resolved cwd</span>
+                <span>{compactTerminalPath(selected!.cwd)}</span>
+                <span className="terminal-resolved-key">owner</span>
+                <span>{selected!.owner}</span>
+                <span className="terminal-resolved-key">editor focus</span>
+                <span>unchanged: {workspace?.displayName ?? 'no focused workspace'}</span>
+                <span className="terminal-resolved-key">accounting</span>
+                <span>
+                  {sameTree && launch !== 'shell'
+                    ? 'Same working tree · changes may overlap'
+                    : selected!.accounting}
+                </span>
+              </div>
+            </section>
+          )}
         </div>
         <footer className="terminal-create-foot">
           <span>
