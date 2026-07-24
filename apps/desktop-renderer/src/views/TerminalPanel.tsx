@@ -118,7 +118,17 @@ const quickCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const adoptingTerminalIds = new Set<string>();
 
 const terminalInputTrackers = new WeakMap<Terminal, TerminalUserInputTracker>();
+const terminalPasteDeadlines = new WeakMap<Terminal, number>();
 const wiredInputElements = new WeakSet<HTMLElement>();
+const PASTE_PROVENANCE_MS = 250;
+
+function isRecentTerminalPaste(term: Terminal): boolean {
+  const deadline = terminalPasteDeadlines.get(term);
+  if (deadline === undefined) return false;
+  if (Date.now() <= deadline) return true;
+  terminalPasteDeadlines.delete(term);
+  return false;
+}
 
 function wireTerminalUserInput(term: Terminal): void {
   const element = term.element;
@@ -127,7 +137,16 @@ function wireTerminalUserInput(term: Terminal): void {
   wiredInputElements.add(element);
   const mark = (): void => tracker.mark();
   // Capture before xterm's textarea handlers translate these DOM events into onData.
-  element.addEventListener('paste', mark, true);
+  element.addEventListener(
+    'paste',
+    () => {
+      tracker.mark();
+      // xterm can emit one native paste as several onData calls. Keep all of
+      // those fragments paced even after the first consumes user provenance.
+      terminalPasteDeadlines.set(term, Date.now() + PASTE_PROVENANCE_MS);
+    },
+    true,
+  );
   element.addEventListener('input', mark, true);
   element.addEventListener('compositionend', mark, true);
 }
@@ -738,12 +757,6 @@ function createTermInstance(
     settings?.terminal.fontSize ?? 12,
     settings?.terminal.scrollback ?? 5000,
   );
-  const blocks = new TerminalBlocks(xtermBlocksHost(term), {
-    onChange: () => useBlocksVersion.getState().bump(info.id),
-    onCommandEnd: (block, durationMs) => reportCommandEnd(info.id, block, durationMs),
-  });
-  term.parser.registerOscHandler(133, (data) => blocks.handleOsc133(data));
-  term.parser.registerOscHandler(9, (data) => blocks.handleOsc9(data));
   const inputTracker = new TerminalUserInputTracker();
   const inputWriter = new TerminalInputWriter(
     async (input) => {
@@ -752,12 +765,25 @@ function createTermInstance(
     { startupDelayMs: 500 },
   );
   terminalInputTrackers.set(term, inputTracker);
+  const blocks = new TerminalBlocks(xtermBlocksHost(term), {
+    onChange: () => useBlocksVersion.getState().bump(info.id),
+    onCommandEnd: (block, durationMs) => reportCommandEnd(info.id, block, durationMs),
+  });
+  term.parser.registerOscHandler(133, (data) => {
+    if (data === 'A') inputWriter.markPrompt();
+    else if (data === 'C') inputWriter.markCommandStart();
+    return blocks.handleOsc133(data);
+  });
+  term.parser.registerOscHandler(9, (data) => blocks.handleOsc9(data));
   term.onKey(() => inputTracker.mark());
   term.onData((data) => {
+    const paste = isRecentTerminalPaste(term);
+    const userInitiated = inputTracker.consume();
     inputWriter.enqueue({
       id: info.id,
       data,
-      userInitiated: inputTracker.consume(),
+      userInitiated: paste || userInitiated,
+      paste,
     });
   });
   term.onResize(({ cols, rows }) => {
@@ -832,7 +858,6 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     onEvent('terminal.data', ({ id, data }) => {
       const item = get().items.find((t) => t.id === id);
       if (!item) return;
-      item.inputWriter.markReady();
       item.term.write(data);
       // ADR-0021: plain-output progress fallback (OSC 9;4 always wins).
       item.blocks.feedOutput(data);
@@ -1001,6 +1026,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       useAppStore.getState().pushToast('info', '“⌥ quick” closed · undo within 5 seconds with ⌘Z');
       return;
     }
+    await item?.inputWriter.settle();
     const res = await rpcResult('terminal.kill', { id, force: false });
     if (!res.ok) return;
     if (res.data.needsConfirm) {
